@@ -1,0 +1,24 @@
+{
+    global:
+        isr0_handler;
+        isr1_handler;
+        isr2_handler;
+        isr3_handler;
+        isr4_handler;
+        isr5_handler;
+        isr6_handler;
+        isr7_handler;
+        isr8_handler;
+        isr9_handler;
+        isr10_handler;
+        isr11_handler;
+        isr12_handler;
+        isr13_handler;
+        isr14_handler;
+        isr15_handler;
+        isr16_handler;
+        isr17_handler;
+        isr18_handler;
+        isr19_handler;
+    local: *;
+};

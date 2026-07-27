@@ -99,8 +99,8 @@ def is_in_excluded_folder(file_path: Path, base_folder: Path) -> bool:
 def copy_tree_filtered(src_folder: Path, dst_folder: Path) -> None:
     """
     Copy a directory tree, only including .pyi and VERSIONS files.
-    Skips any folder starting with '@'.
-    
+    Renames .pyi to .vpi during copy. Skips any folder starting with '@'.
+
     Args:
         src_folder: Source directory
         dst_folder: Destination directory
@@ -110,14 +110,18 @@ def copy_tree_filtered(src_folder: Path, dst_folder: Path) -> None:
             # Skip files in folders starting with '@'
             if is_in_excluded_folder(src_path, src_folder):
                 continue
-            
+
             # Calculate relative path and destination
             rel_path = src_path.relative_to(src_folder)
             dst_path = dst_folder / rel_path
-            
+
+            # Rename .pyi to .vpi for Viper
+            if dst_path.suffix == ".pyi":
+                dst_path = dst_path.with_suffix(".vpi")
+
             # Create parent directories if needed
             dst_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Copy the file
             shutil.copy2(src_path, dst_path)
 

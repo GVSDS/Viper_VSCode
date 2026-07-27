@@ -1,0 +1,121 @@
+# Viper C stdlib.h 函数存根。
+# 姑息策略：
+#   - malloc/calloc/realloc 返回 int（指针整数，NULL=0 表示失败）
+#   - free 接受 int（指针）
+#   - system 返回 int（命令退出码）
+
+from stdint import *
+
+
+def malloc(size: int) -> int:
+    """分配 size 字节的内存。
+
+    Args:
+        size: 要分配的字节数
+    Returns:
+        成功返回指向分配内存的指针（int），失败返回 0（NULL）
+    """
+    return 0
+
+
+def calloc(nmemb: int, size: int) -> int:
+    """分配 nmemb 个 size 字节的内存并清零。
+
+    Args:
+        nmemb: 元素个数
+        size: 每个元素的字节数
+    Returns:
+        成功返回指针（int），失败返回 0
+    """
+    return 0
+
+
+def realloc(p: int, size: int) -> int:
+    """重新调整已分配内存的大小。
+
+    Args:
+        p: 原指针（int），可为 0（NULL）表示新分配
+        size: 新大小
+    Returns:
+        成功返回新指针（int），失败返回 0（原内存不变）
+    """
+    return 0
+
+
+def free(p: int) -> None:
+    """释放已分配的内存。
+
+    Args:
+        p: malloc/calloc/realloc 返回的指针，传 0（NULL）无操作
+    """
+    ...
+
+
+def system(cmd: str) -> int:
+    """执行系统命令。
+
+    Args:
+        cmd: 命令字符串（C 风格 const char*）
+    Returns:
+        命令退出码（平台相关），cmd 为 None 时返回非 0 表示 shell 可用
+    """
+    return 0
+
+
+def exit(status: int) -> None:
+    """终止进程。
+
+    Args:
+        status: 退出码（0 表示成功）
+    """
+    ...
+
+
+def abort() -> None:
+    """异常终止进程（触发 SIGABRT）。"""
+    ...
+
+
+def atof(s: str) -> float:
+    """字符串转 double。
+
+    Args:
+        s: 数字字符串
+    Returns:
+        解析得到的浮点数
+    """
+    return 0.0
+
+
+def atoi(s: str) -> int:
+    """字符串转 int。
+
+    Args:
+        s: 数字字符串
+    Returns:
+        解析得到的整数
+    """
+    return 0
+
+
+def atol(s: str) -> int:
+    """字符串转 long。
+
+    Args:
+        s: 数字字符串
+    Returns:
+        解析得到的整数
+    """
+    return 0
+
+
+def qsort(base: int, nmemb: int, size: int, compar: int) -> None:
+    """快速排序。
+
+    Args:
+        base: 数组基址指针（int）
+        nmemb: 元素个数
+        size: 每个元素字节数
+        compar: 比较函数指针（int），签名 int (*)(const void*, const void*)
+    """
+    ...

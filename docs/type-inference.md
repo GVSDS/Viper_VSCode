@@ -2,12 +2,12 @@
 
 ### Symbols and Scopes
 
-In Python, a _symbol_ is any name that is not a keyword. Symbols can represent classes, functions, methods, variables, parameters, modules, type aliases, type variables, etc.
+In Viper, a _symbol_ is any name that is not a keyword. Symbols can represent classes, functions, methods, variables, parameters, modules, type aliases, type variables, etc.
 
 Symbols are defined within _scopes_. A scope is associated with a block of code and defines which symbols are visible to that code block. Scopes can be “nested” allowing code to see symbols within its immediate scope and all “outer” scopes.
 
-The following constructs within Python define a scope:
-1. The “builtins” scope is always present and is always the outermost scope. It is pre-populated by the Python interpreter with symbols like “int” and “list”.
+The following constructs within Viper define a scope:
+1. The “builtins” scope is always present and is always the outermost scope. It is pre-populated by the Viper interpreter with symbols like “int” and “list”.
 2. The module scope (sometimes called the “global” scope) is defined by the current source code file.
 3. Each class defines its own scope. Symbols that represent methods, class variables, or instance variables appear within a class scope.
 4. Each function and lambda defines its own scope. The function’s parameters are symbols within its scope, as are any variables defined within the function.
@@ -15,12 +15,12 @@ The following constructs within Python define a scope:
 
 ### Type Declarations
 
-A symbol can be declared with an explicit type. The “def” and “class” keywords, for example, declare a symbol as a function or a class. Other symbols in Python can be introduced into a scope with no declared type. Newer versions of Python have introduced syntax for declaring the types of input parameters, return parameters, and variables.
+A symbol can be declared with an explicit type. The “def” and “class” keywords, for example, declare a symbol as a function or a class. Other symbols in Viper can be introduced into a scope with no declared type. Newer versions of Viper have introduced syntax for declaring the types of input parameters, return parameters, and variables.
 
 When a parameter or variable is annotated with a type, the type checker verifies that all values assigned to that parameter or variable conform to that type.
 
 Consider the following example:
-```python
+```viper
 def func1(p1: float, p2: str, p3, **p4) -> None:
     var1: int = p1    # This is a type violation
     var2: str = p2    # This is allowed because the types match
@@ -45,7 +45,7 @@ Note that once a symbol’s type is declared, it cannot be redeclared to a diffe
 
 ### Type Inference
 
-Some languages require every symbol to be explicitly typed. Python allows a symbol to be bound to different values at runtime, so its type can change over time. A symbol’s type doesn’t need to be declared statically.
+Some languages require every symbol to be explicitly typed. Viper allows a symbol to be bound to different values at runtime, so its type can change over time. A symbol’s type doesn’t need to be declared statically.
 
 When Pyright encounters a symbol with no type declaration, it attempts to _infer_ the type based on the values assigned to it. As we will see below, type inference cannot always determine the correct (intended) type, so type annotations are still required in some cases. Furthermore, type inference can require significant computation, so it is much less efficient than when type annotations are provided.
 
@@ -57,7 +57,7 @@ If a symbol’s type cannot be inferred, Pyright sets its type to “Unknown”,
 
 The simplest form of type inference is one that involves a single assignment to a symbol. The inferred type comes from the type of the source expression. Examples include:
 
-```python
+```viper
 var1 = 3                        # Inferred type is int
 var2 = "hi"                     # Inferred type is str
 var3 = list()                   # Inferred type is list[Unknown]
@@ -70,7 +70,7 @@ var6 = [p for p in [1, 2, 3]]   # Inferred type is list[int]
 
 When a symbol is assigned values in multiple places within the code, those values may have different types. The inferred type of the variable is the union of all such types.
 
-```python
+```viper
 # In this example, symbol var1 has an inferred type of `str | int`.
 class Foo:
     def __init__(self):
@@ -100,7 +100,7 @@ This technique is called “bidirectional inference” because type inference fo
 
 Let’s look at a few examples:
 
-```python
+```viper
 var1 = []                       # Type of RHS is ambiguous
 var2: list[int] = []            # Type of LHS now makes type of RHS unambiguous
 var3 = [4]                      # Type is assumed to be list[int] 
@@ -113,7 +113,7 @@ var6: tuple[float, ...] = (3,)  # Type of RHS is now tuple[float, ...]
 
 It is common to initialize a local variable or instance variable to an empty list (`[]`) or empty dictionary (`{}`) on one code path but initialize it to a non-empty list or dictionary on other code paths. In such cases, Pyright will infer the type based on the non-empty list or dictionary and suppress errors about a “partially unknown type”.
 
-```python
+```viper
 if some_condition:
     my_list = []
 else:
@@ -127,7 +127,7 @@ reveal_type(my_list) # list[str]
 
 As with variable assignments, function return types can be inferred from the `return` statements found within that function. The returned type is assumed to be the union of all types returned from all `return` statements. If a `return` statement is not followed by an expression, it is assumed to return `None`. Likewise, if the function does not end in a `return` statement, and the end of the function is reachable, an implicit `return None` is assumed.
 
-```python
+```viper
 # This function has two explicit return statements and one implicit
 # return (at the end). It does not have a declared return type,
 # so Pyright infers its return type based on the return expressions.
@@ -144,7 +144,7 @@ def func1(val: int):
 
 If there is no code path that returns from a function (e.g. all code paths raise an exception), Pyright infers a return type of `NoReturn`. As an exception to this rule, if the function is decorated with `@abstractmethod`, the return type is not inferred as `NoReturn` even if there is no return. This accommodates a common practice where an abstract method is implemented with a `raise` statement that raises an exception of type `NotImplementedError`.
 
-```python
+```viper
 class Foo:
     # The inferred return type is NoReturn.
     def method1(self):
@@ -164,7 +164,7 @@ Pyright can infer the return type for a generator function from the `yield` stat
 
 It is common for input parameters to be unannotated. This can make it difficult for Pyright to infer the correct return type for a function. For example:
 
-```python
+```viper
 # The return type of this function cannot be fully inferred based
 # on the information provided because the types of parameters
 # a and b are unknown. In this case, the inferred return
@@ -181,7 +181,7 @@ def func1(a, b, c):
 
 In cases where all parameters are unannotated, Pyright uses a technique called _call-site return type inference_. It performs type inference using the the types of arguments passed to the function in a call expression. If the unannotated function calls other functions, call-site return type inference can be used recursively. Pyright limits this recursion to a small number for practical performance reasons.
 
-```python
+```viper
 def func2(p_int: int, p_str: str, p_flt: float):
     # The type of var1 is inferred to be `int | None` based
     # on call-site return type inference.
@@ -201,7 +201,7 @@ For class methods, the first parameter (named `cls` by convention) is inferred t
 
 For other unannotated parameters within a method, Pyright looks for a method of the same name implemented in a base class. If the corresponding method in the base class has the same signature (the same number of parameters with the same names), no overloads, and annotated parameter types, the type annotation from this method is “inherited” for the corresponding parameter in the child class method.
 
-```python
+```viper
 class Parent:
     def method1(self, a: int, b: str) -> float:
         ...
@@ -218,7 +218,7 @@ When parameter types are inherited from a base class method, the return type is 
 
 If the type of an unannotated parameter cannot be inferred using any of the above techniques and the parameter has a default argument expression associated with it, the parameter type is inferred from the default argument type. If the default argument is `None`, the inferred type is `Unknown | None`.
 
-```python
+```viper
 def func(a, b=0, c=None):
     pass
 
@@ -227,16 +227,16 @@ reveal_type(func)  # (a: Unknown, b: int, c: Unknown | None) -> None
 
 This inference technique also applies to lambdas whose input parameters include default arguments.
 
-```python
+```viper
 cb = lambda x = "": x
 reveal_type(cb)  # (x: str = "" -> str)
 ```
 
 #### Literals
 
-Python 3.8 introduced support for _literal types_. This allows a type checker like Pyright to track specific literal values of str, bytes, int, bool, and enum values. As with other types, literal types can be declared.
+Viper 3.8 introduced support for _literal types_. This allows a type checker like Pyright to track specific literal values of str, bytes, int, bool, and enum values. As with other types, literal types can be declared.
 
-```python
+```viper
 # This function is allowed to return only values 1, 2 or 3.
 def func1() -> Literal[1, 2, 3]:
     ...
@@ -248,7 +248,7 @@ def func2(mode: Literal["r", "w", "rw"]) -> None:
 
 When Pyright is performing type inference, it generally does not infer literal types. Consider the following example:
 
-```python
+```viper
 # If Pyright inferred the type of var1 to be list[Literal[4]],
 # any attempt to append a value other than 4 to this list would
 # generate an error. Pyright therefore infers the broader
@@ -260,7 +260,7 @@ var1 = [4]
 
 When inferring the type of a tuple expression (in the absence of bidirectional inference hints), Pyright assumes that the tuple has a fixed length, and each tuple element is typed as specifically as possible.
 
-```python
+```viper
 # The inferred type is tuple[Literal[1], Literal["a"], Literal[True]].
 var1 = (1, "a", True)
 
@@ -276,7 +276,7 @@ def func1(a: int):
 
 Because tuples are typed as specifically as possible, literal types are normally retained. However, as an exception to this inference rule, if the tuple expression is nested within another tuple, set, list or dictionary expression, literal types are not retained. This is done to avoid the inference of complex types (e.g. unions with many subtypes) when evaluating tuple statements with many entries.
 
-```python
+```viper
 # The inferred type is list[tuple[int, str, bool]].
 var4 = [(1, "a", True), (2, "b", False), (3, "c", False)]
 ```
@@ -294,7 +294,7 @@ When inferring the type of a list expression (in the absence of bidirectional in
 
 These heuristics can be overridden through the use of bidirectional inference hints (e.g. by providing a declared type for the target of the assignment expression).
 
-```python
+```viper
 var1 = []                       # Infer list[Unknown]
 
 var2 = [1, 2]                   # Infer list[int]
@@ -319,7 +319,7 @@ When inferring the type of a set expression (in the absence of bidirectional inf
 
 These heuristics can be overridden through the use of bidirectional inference hints (e.g. by providing a declared type for the target of the assignment expression).
 
-```python
+```viper
 var1 = {1, 2}                   # Infer set[int]
 
 # Type depends on strictSetInference config setting
@@ -342,7 +342,7 @@ When inferring the type of a dictionary expression (in the absence of bidirectio
     * Otherwise use the union of all key and value types `dict[Union[(keys)], Union[(values)]]`.
 
 
-```python
+```viper
 var1 = {}                       # Infer dict[Unknown, Unknown]
 
 var2 = {1: ""}                  # Infer dict[int, str]
@@ -356,9 +356,9 @@ var4: dict[str, float] = {"a": 3, "b": 3.4}
 
 #### Lambdas
 
-Lambdas present a particular challenge for a Python type checker because there is no provision in the Python syntax for annotating the types of a lambda’s input parameters. The types of these parameters must therefore be inferred based on context using bidirectional type inference. Absent this context, a lambda’s input parameters (and often its return type) will be unknown.
+Lambdas present a particular challenge for a Viper type checker because there is no provision in the Viper syntax for annotating the types of a lambda’s input parameters. The types of these parameters must therefore be inferred based on context using bidirectional type inference. Absent this context, a lambda’s input parameters (and often its return type) will be unknown.
 
-```python
+```viper
 # The type of var1 is (a: Unknown, b: Unknown) -> Unknown.
 var1 = lambda a, b: a + b
 

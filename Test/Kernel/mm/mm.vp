@@ -1,0 +1,764 @@
+import bootinfo
+import paging.paging as paging
+import viperstring as string
+import viperlib
+import t, c
+
+
+# 伙伴系统常量定义
+MIN_BLOCK_SIZE: t.CDefine = 4096  # 最小块大小（4KB）
+MAX_BLOCK_SIZE: t.CDefine = 268435456  # 最大块大小（256MB）
+MAX_ORDER:      t.CDefine = 18  # 最大阶数（2^18 = 262144）
+
+# 内存块状态
+BLOCK_FREE: t.CDefine = 0  # 空闲
+BLOCK_USED: t.CDefine = 1  # 已使用
+
+# 内存类型定义
+MEMORY_TYPE_AVAILABLE:              t.CUInt64T = 7
+MEMORY_TYPE_RESERVED:               t.CUInt64T = 0
+MEMORY_TYPE_LOADER_CODE:            t.CUInt64T = 1
+MEMORY_TYPE_LOADER_DATA:            t.CUInt64T = 2
+MEMORY_TYPE_BOOT_SERVICES_CODE:     t.CUInt64T = 3
+MEMORY_TYPE_BOOT_SERVICES_DATA:     t.CUInt64T = 4
+MEMORY_TYPE_RUNTIME_SERVICES_CODE:  t.CUInt64T = 5
+MEMORY_TYPE_RUNTIME_SERVICES_DATA:  t.CUInt64T = 6
+MEMORY_TYPE_ACPI_RECLAIMABLE:       t.CUInt64T = 9
+MEMORY_TYPE_ACPI_NVS:               t.CUInt64T = 10
+MEMORY_TYPE_BAD_MEMORY:             t.CUInt64T = 8
+
+# 内存区域结构
+class memory_region(t.CStruct):
+    start: t.CUInt64T
+    end:   t.CUInt64T
+    size:  t.CUInt64T
+    type:  t.CUInt32T
+    next:  'memory_region' | t.CPtr
+
+# 全局内存区域链表
+memory_regions: t.CStatic | memory_region | t.CPtr = None
+
+# 内存块结构
+class memory_block(t.CStruct):
+    size:  t.CUInt64T  # 块大小
+    state: t.CUInt8T  # 块状态
+    order: t.CUInt8T  # 块阶数
+    next: 'memory_block' | t.CPtr  # 下一个块
+    prev: 'memory_block' | t.CPtr  # 上一个块
+
+# 伙伴系统结构
+class __buddy_system(t.CStruct):
+    free_lists:   t.CArray[memory_block | t.CPtr, MAX_ORDER + 1]
+    total_memory: t.CUInt64T        # 总内存大小
+    used_memory:  t.CUInt64T        # 已使用内存大小
+    free_memory:  t.CUInt64T        # 空闲内存大小
+    start_addr:   t.CVoid | t.CPtr  # 内存起始地址
+    end_addr:     t.CVoid | t.CPtr  # 内存结束地址
+
+
+SLAB_MAGIC: t.CDefine = 0x534C4142
+SLAB_NUM_SIZES: t.CDefine = 6
+SLAB_THRESHOLD: t.CDefine = 1024
+
+class slab_page(t.CStruct):
+    magic: t.CUInt32T
+    obj_size: t.CUInt16T
+    free_count: t.CUInt16T
+    data_offset: t.CUInt16T
+    total_objs: t.CUInt16T
+    free_head: t.CVoid | t.CPtr
+    block_ptr: memory_block | t.CPtr
+    next: 'slab_page' | t.CPtr
+    prev: 'slab_page' | t.CPtr
+
+
+# 4K对齐函数
+def align_4k(addr: t.CUInt64T) -> t.CUInt64T:
+    return (addr + 0xFFF) & ~0xFFF
+
+# 计算阶数
+def get_order(size: t.CUInt64T) -> t.CStatic | t.CInt:
+    order: t.CInt = 0
+    while size > MIN_BLOCK_SIZE:
+        size >>= 1
+        order += 1
+    return order
+
+# 计算块大小
+def get_block_size(order: t.CInt) -> t.CStatic | t.CUInt64T:
+    return MIN_BLOCK_SIZE << order
+
+
+@t.Object
+class _BuddySystemObject:
+    # 全局伙伴系统实例
+    buddy: __buddy_system
+    # 初始化伙伴系统
+    def __init__(self, start_addr: t.CVoid | t.CPtr, size: t.CUInt64T):
+        for i in range(MAX_ORDER + 1):
+            self.buddy.free_lists[i] = None
+        self.buddy.total_memory = size
+        self.buddy.used_memory = 0
+        self.buddy.free_memory = size
+        self.buddy.start_addr = start_addr
+        self.buddy.end_addr = t.CVoid(t.CUInt64T(start_addr) + size, t.CPtr)
+        remaining: t.CUInt64T = size
+        cur_addr: t.CUInt64T = t.CUInt64T(start_addr)
+        while remaining >= MIN_BLOCK_SIZE:
+            order: t.CInt = 0
+            tmp: t.CUInt64T = remaining
+            while tmp > MIN_BLOCK_SIZE:
+                tmp >>= 1
+                order += 1
+            block_size: t.CUInt64T = get_block_size(order)
+            while block_size > remaining and order > 0:
+                order -= 1
+                block_size = get_block_size(order)
+            if block_size > remaining: break
+            block: memory_block | t.CPtr = cur_addr
+            block.size = block_size
+            block.state = BLOCK_FREE
+            block.order = order
+            block.next = None
+            block.prev = None
+            if order <= MAX_ORDER:
+                if self.buddy.free_lists[order]:
+                    block.next = self.buddy.free_lists[order]
+                    self.buddy.free_lists[order].prev = block
+                self.buddy.free_lists[order] = block
+            cur_addr += block_size
+            remaining -= block_size
+        # DEBUG: print free_lists status after init
+        import drivers.serial.uart.serial as serial
+        _dmsg: t.CArray[t.CChar, 40]
+        serial.puts("[mm] buddy init:")
+        _di: t.CInt = 0
+        while _di <= MAX_ORDER:
+            if self.buddy.free_lists[_di]:
+                viperlib.snprintf(c.Addr(_dmsg), 40, " [%d]=0x%lx", _di, t.CUInt64T(self.buddy.free_lists[_di]))
+                serial.puts(_dmsg)
+            _di += 1
+        serial.puts("\n")
+
+    # 分割内存块
+    def split_block(self, block: memory_block | t.CPtr, target_order: t.CInt) -> memory_block | t.CPtr:
+        current_order: t.CInt = block.order
+        # 从当前阶数向下分割，直到达到目标阶数
+        while current_order > target_order:
+            current_order -= 1
+            new_block_size: t.CUInt64T = get_block_size(current_order)
+            # 创建新块
+            new_block: memory_block | t.CPtr = t.CUInt64T(block) + new_block_size
+            new_block.size = new_block_size
+            new_block.state = BLOCK_FREE
+            new_block.order = current_order
+            new_block.next = None
+            new_block.prev = None
+            # 更新原块大小和阶数
+            block.size = new_block_size
+            block.order = current_order
+            # 将新块添加到对应阶数的空闲链表
+            if current_order <= MAX_ORDER:
+                new_block.next = self.buddy.free_lists[current_order]
+                if self.buddy.free_lists[current_order]:
+                    self.buddy.free_lists[current_order].prev = new_block
+                self.buddy.free_lists[current_order] = new_block
+        return block
+
+    # 合并内存块
+    def merge_blocks(self, block: memory_block | t.CPtr) -> t.CStatic | memory_block | t.CPtr:
+        order: t.CInt = block.order
+        while order < MAX_ORDER:
+            block_size: t.CUInt64T = get_block_size(order)
+            block_addr: t.CUInt64T = t.CUInt64T(block) - t.CUInt64T(self.buddy.start_addr)
+            buddy_addr: t.CUInt64T = block_addr ^ block_size
+            # 计算伙伴块地址
+            buddy: memory_block | t.CPtr = t.CUInt64T(self.buddy.start_addr) + buddy_addr
+            # 检查伙伴块是否存在且空闲
+            if buddy >= (memory_block | t.CPtr)(self.buddy.end_addr):
+                break # 伙伴块超出内存范围
+            if buddy.state != BLOCK_FREE or buddy.order != order:
+                break # 伙伴块不空闲或阶数不匹配
+            # 从空闲链表中移除伙伴块
+            if buddy.prev:  buddy.prev.next = buddy.next
+            else:           self.buddy.free_lists[order] = buddy.next
+            if buddy.next:
+                buddy.next.prev = buddy.prev
+            # 合并块
+            merged_block: memory_block | t.CPtr = block if block < buddy else buddy
+            merged_block.size = get_block_size(order + 1)
+            merged_block.order = order + 1
+            block = merged_block
+            order += 1
+        return block
+
+    # 分配内存块
+    def allocate_block(self, size: t.CUInt64T) -> t.CStatic | memory_block | t.CPtr:
+        # 计算所需阶数
+        order: t.CInt = get_order(size)
+        if order > MAX_ORDER: return None # 所需块大小超过最大限制
+        # 查找合适的空闲块
+        found_order: t.CInt = -1
+        for i in range(order, MAX_ORDER + 1):
+            if self.buddy.free_lists[i]:
+                found_order = i
+                break
+        # DEBUG: trace allocate_block
+        import drivers.serial.uart.serial as serial
+        _dba: t.CArray[t.CChar, 120]
+        if found_order == -1:
+            viperlib.snprintf(c.Addr(_dba), 120, "[mm] alloc FAIL size=%lu order=%d\n", size, order)
+            serial.puts(_dba)
+            _dbf: t.CArray[t.CChar, 200]
+            _fi: t.CInt = 0
+            _fo: t.CInt = 0
+            while _fi <= MAX_ORDER:
+                if self.buddy.free_lists[_fi]:
+                    _fs: t.CInt = viperlib.snprintf(c.Addr(_dbf) + _fo, 200 - _fo, "[%d]=0x%lx ", _fi, t.CUInt64T(self.buddy.free_lists[_fi]))
+                    _fo = _fo + _fs
+                _fi += 1
+            if _fo == 0:
+                serial.puts("[mm] all free_lists EMPTY\n")
+            else:
+                serial.puts(_dbf)
+                serial.puts("\n")
+            return None
+        if found_order == -1: return None # 没有合适的空闲块
+        # 取出空闲块
+        block: memory_block | t.CPtr = self.buddy.free_lists[found_order]
+        # 从空闲链表中移除块
+        if block.next: block.next.prev = None
+        self.buddy.free_lists[found_order] = block.next
+        # 如果块大小大于所需大小，分割块
+        if found_order > order:
+            block = self.split_block(block, order)
+        # 标记块为已使用
+        block.state = BLOCK_USED
+        # 更新内存统计
+        self.buddy.used_memory += block.size
+        self.buddy.free_memory -= block.size
+        viperlib.snprintf(c.Addr(_dba), 120, "[mm] alloc OK size=%lu order=%d found=%d block=0x%lx\n", size, order, found_order, t.CUInt64T(block))
+        serial.puts(_dba)
+        return block
+
+    # 释放内存块
+    def free_block(self, block: memory_block | t.CPtr) -> t.CStatic | t.CVoid:
+        # 标记块为空闲
+        block.state = BLOCK_FREE
+        # 更新内存统计
+        self.buddy.used_memory -= block.size
+        self.buddy.free_memory += block.size
+        # 尝试合并块
+        block = self.merge_blocks(block)
+        # 将块添加到对应阶数的空闲链表
+        order: t.CInt = block.order
+        if order <= MAX_ORDER:
+            block.next = self.buddy.free_lists[order]
+            block.prev = None
+            if self.buddy.free_lists[order]:
+                self.buddy.free_lists[order].prev = block
+            self.buddy.free_lists[order] = block
+BuddySystemObject: _BuddySystemObject
+
+
+def _slab_obj_size(size_class: t.CInt) -> t.CUInt16T:
+    if size_class == 0: return 32
+    if size_class == 1: return 64
+    if size_class == 2: return 128
+    if size_class == 3: return 256
+    if size_class == 4: return 512
+    return 1024
+
+def _slab_size_class(size: t.CUInt64T) -> t.CInt:
+    if size <= 32: return 0
+    if size <= 64: return 1
+    if size <= 128: return 2
+    if size <= 256: return 3
+    if size <= 512: return 4
+    if size <= 1024: return 5
+    return -1
+
+def _slab_read_ptr(addr: t.CVoid | t.CPtr) -> t.CVoid | t.CPtr:
+    result: t.CVoid | t.CPtr
+    c.Asm(f"""mov rax, [{c.AsmInp(addr, t.ASM_DESCR.REG_ANY)}]
+              mov {c.AsmOut(result, t.ASM_DESCR.OUTPUT_REG)}, rax""",
+          op=[t.ASM_DESCR.CLOBBER_MEMORY, t.ASM_DESCR.CLOBBER_RAX])
+    return result
+
+def _slab_write_ptr(addr: t.CVoid | t.CPtr, val: t.CVoid | t.CPtr):
+    c.Asm(f"""mov rax, {c.AsmInp(val, t.ASM_DESCR.REG_ANY)}
+              mov [{c.AsmInp(addr, t.ASM_DESCR.REG_ANY)}], rax""",
+          op=[t.ASM_DESCR.CLOBBER_RAX, t.ASM_DESCR.CLOBBER_MEMORY])
+
+def _slab_find_page(ptr: t.CVoid | t.CPtr) -> slab_page | t.CPtr:
+    if ptr is None: return None
+    hdr_off: t.CUInt64T = memory_block.__sizeof__()
+    page_addr: t.CUInt64T = t.CUInt64T(ptr) & ~t.CUInt64T(0xFFF)
+    page: slab_page | t.CPtr = page_addr + hdr_off
+    if page.magic == SLAB_MAGIC:
+        os: t.CUInt16T = page.obj_size
+        if os == 32 or os == 64 or os == 128 or os == 256 or os == 512 or os == 1024:
+            return page
+    page_addr2: t.CUInt64T = page_addr - 4096
+    page2: slab_page | t.CPtr = page_addr2 + hdr_off
+    if page2.magic == SLAB_MAGIC:
+        os2: t.CUInt16T = page2.obj_size
+        if os2 == 32 or os2 == 64 or os2 == 128 or os2 == 256 or os2 == 512 or os2 == 1024:
+            return page2
+    return None
+
+@t.Object
+class _SlabAllocator:
+    caches: t.CArray[slab_page | t.CPtr, SLAB_NUM_SIZES]
+
+    def __init__(self):
+        for i in range(SLAB_NUM_SIZES):
+            self.caches[i] = None
+
+    def _create_page(self, size_class: t.CInt) -> slab_page | t.CPtr:
+        obj_size: t.CUInt16T = _slab_obj_size(size_class)
+        aligned_size: t.CUInt16T = t.CUInt16T((obj_size + 15) & ~15)
+        block: memory_block | t.CPtr = BuddySystemObject.allocate_block(4096 + memory_block.__sizeof__())
+        if not block: return None
+        hdr_off: t.CUInt64T = memory_block.__sizeof__()
+        page: slab_page | t.CPtr = t.CUInt64T(block) + hdr_off
+        page.magic = SLAB_MAGIC
+        page.obj_size = aligned_size
+        d_off: t.CUInt16T = t.CUInt16T((hdr_off + slab_page.__sizeof__() + 15) & ~15)
+        page.data_offset = d_off
+        total: t.CUInt16T = t.CUInt16T((block.size - d_off) / aligned_size)
+        page.total_objs = total
+        page.free_count = total
+        page.block_ptr = block
+        page.next = None
+        page.prev = None
+        data_start: t.CUInt64T = t.CUInt64T(block) + d_off
+        page.free_head = t.CVoid(data_start, t.CPtr)
+        for i in range(1, total):
+            cur: t.CVoid | t.CPtr = t.CVoid(data_start + t.CUInt64T(i - 1) * aligned_size, t.CPtr)
+            nxt: t.CVoid | t.CPtr = t.CVoid(data_start + t.CUInt64T(i) * aligned_size, t.CPtr)
+            _slab_write_ptr(cur, nxt)
+        last: t.CVoid | t.CPtr = t.CVoid(data_start + t.CUInt64T(total - 1) * aligned_size, t.CPtr)
+        _slab_write_ptr(last, t.CVoid(0, t.CPtr))
+        return page
+
+    def alloc(self, size_class: t.CInt) -> t.CVoid | t.CPtr:
+        page: slab_page | t.CPtr = self.caches[size_class]
+        while page:
+            if page.free_count > 0: break
+            page = page.next
+        if not page:
+            page = self._create_page(size_class)
+            if not page: return None
+            page.next = self.caches[size_class]
+            if self.caches[size_class]:
+                self.caches[size_class].prev = page
+            self.caches[size_class] = page
+        obj: t.CVoid | t.CPtr = page.free_head
+        page.free_head = _slab_read_ptr(obj)
+        page.free_count -= 1
+        return obj
+
+    def free_obj(self, ptr: t.CVoid | t.CPtr, page: slab_page | t.CPtr):
+        _slab_write_ptr(ptr, page.free_head)
+        page.free_head = ptr
+        page.free_count += 1
+        if page.free_count == page.total_objs:
+            if page.prev:
+                page.prev.next = page.next
+            else:
+                sc: t.CInt = _slab_size_class(page.obj_size)
+                if sc >= 0:
+                    self.caches[sc] = page.next
+            if page.next:
+                page.next.prev = page.prev
+            page.magic = 0
+            BuddySystemObject.free_block(page.block_ptr)
+
+SlabAllocator: _SlabAllocator
+
+
+# 内存分配函数
+def malloc(size: t.CUInt64T) -> t.CVoid | t.CPtr | t.CExport:
+    if size == 0: return None
+    if size <= SLAB_THRESHOLD:
+        sc: t.CInt = _slab_size_class(size)
+        if sc >= 0:
+            result: t.CVoid | t.CPtr = SlabAllocator.alloc(sc)
+            return result
+    hdr: t.CUInt64T = memory_block.__sizeof__()
+    if size >= 4096:
+        total: t.CUInt64T = size + 4096
+        total = align_4k(total)
+        order: t.CInt = get_order(total)
+        if order > MAX_ORDER: return None
+        block: memory_block | t.CPtr = BuddySystemObject.allocate_block(total)
+        import drivers.serial.uart.serial as serial
+        _dbm: t.CArray[t.CChar, 120]
+        viperlib.snprintf(c.Addr(_dbm), 120, "[mm] malloc buddy size=%lu block=0x%lx\n", size, t.CUInt64T(block))
+        serial.puts(_dbm)
+        if not block: return None
+        user_ptr: t.CUInt64T = (t.CUInt64T(block) + hdr + 4095) & ~t.CUInt64T(4095)
+        real_hdr: t.CUInt64T = user_ptr - 8
+        c.Asm(f"""mov rax, {c.AsmInp(block, t.ASM_DESCR.REG_ANY)}
+                  mov [{c.AsmInp(t.CVoid(real_hdr, t.CPtr), t.ASM_DESCR.REG_ANY)}], rax""",
+              op=[t.ASM_DESCR.CLOBBER_RAX, t.ASM_DESCR.CLOBBER_MEMORY])
+        viperlib.snprintf(c.Addr(_dbm), 120, "[mm] malloc ret user_ptr=0x%lx\n", user_ptr)
+        serial.puts(_dbm)
+        return t.CVoid(user_ptr, t.CPtr)
+    total2: t.CUInt64T = size + hdr
+    total2 = align_4k(total2)
+    order2: t.CInt = get_order(total2)
+    if order2 > MAX_ORDER: return None
+    block2: memory_block | t.CPtr = BuddySystemObject.allocate_block(total2)
+    if not block2: return None
+    return t.CVoid(t.CUInt64T(block2) + hdr, t.CPtr)
+
+
+def malloc_direct(size: t.CUInt64T) -> t.CVoid | t.CPtr | t.CExport:
+    if size == 0: return None
+    hdr: t.CUInt64T = memory_block.__sizeof__()
+    total: t.CUInt64T = size + hdr
+    total = align_4k(total)
+    order: t.CInt = get_order(total)
+    if order > MAX_ORDER: return None
+    block: memory_block | t.CPtr = BuddySystemObject.allocate_block(total)
+    if not block: return None
+    return t.CVoid(t.CUInt64T(block) + hdr, t.CPtr)
+
+
+def free(ptr: t.CVoid | t.CPtr) -> t.CExport:
+    if ptr is None: return
+    sp: slab_page | t.CPtr = _slab_find_page(ptr)
+    if sp:
+        SlabAllocator.free_obj(ptr, sp)
+        return
+    if (t.CUInt64T(ptr) & 0xFFF) == 0:
+        real_hdr: t.CUInt64T = t.CUInt64T(ptr) - 8
+        block: memory_block | t.CPtr
+        c.Asm(f"""mov rax, [{c.AsmInp(t.CVoid(real_hdr, t.CPtr), t.ASM_DESCR.REG_ANY)}]
+                  mov {c.AsmOut(block, t.ASM_DESCR.OUTPUT_REG)}, rax""",
+              op=[t.ASM_DESCR.CLOBBER_MEMORY, t.ASM_DESCR.CLOBBER_RAX])
+        BuddySystemObject.free_block(block)
+        return
+    block2: memory_block | t.CPtr = t.CUInt64T(ptr) - memory_block.__sizeof__()
+    BuddySystemObject.free_block(block2)
+
+def calloc(nmemb: t.CUInt64T, size: t.CUInt64T) -> t.CVoid | t.CPtr | t.CExport:
+    total_size: t.CUInt64T = nmemb * size
+    ptr: t.CVoid | t.CPtr = malloc(total_size)
+    if ptr:
+        string.memset(ptr, 0, total_size)
+    return ptr
+
+def realloc(ptr: t.CVoid | t.CPtr, size: t.CUInt64T) -> t.CVoid | t.CPtr | t.CExport:
+    if ptr is None: return malloc(size)
+    if size == 0:
+        free(ptr)
+        return None
+    new_ptr: t.CVoid | t.CPtr = malloc(size)
+    if not new_ptr: return None
+    sp: slab_page | t.CPtr = _slab_find_page(ptr)
+    if sp:
+        old_size: t.CUInt64T = sp.obj_size
+    elif (t.CUInt64T(ptr) & 0xFFF) == 0:
+        real_hdr_r: t.CUInt64T = t.CUInt64T(ptr) - 8
+        block_r: memory_block | t.CPtr
+        c.Asm(f"""mov rax, [{c.AsmInp(t.CVoid(real_hdr_r, t.CPtr), t.ASM_DESCR.REG_ANY)}]
+                  mov {c.AsmOut(block_r, t.ASM_DESCR.OUTPUT_REG)}, rax""",
+              op=[t.ASM_DESCR.CLOBBER_MEMORY, t.ASM_DESCR.CLOBBER_RAX])
+        old_size = block_r.size - 4096
+    else:
+        block2: memory_block | t.CPtr = t.CUInt64T(ptr) - memory_block.__sizeof__()
+        old_size = block2.size - memory_block.__sizeof__()
+    copy_size: t.CUInt64T = old_size if old_size < size else size
+    string.memcpy(new_ptr, ptr, copy_size)
+    free(ptr)
+    return new_ptr
+
+
+# 回收内存区域链表
+def free_memory_regions() -> t.CStatic | t.CVoid:
+    global memory_regions
+    current: memory_region | t.CPtr = memory_regions
+    while current:
+        next_region: memory_region | t.CPtr = current.next
+        free(current)
+        current = next_region
+    memory_regions = None
+
+# 初始化内存管理系统
+def init(MemmapAddr: t.CUInt64T, MemmapSize: t.CUInt64T, MemmapDescSize: t.CUInt64T, FbAddr: t.CUInt64T = 0, FbSize: t.CUInt64T = 0):
+    global BuddySystemObject
+    import drivers.serial.uart.serial as serial
+    start_addr: t.CVoid | t.CPtr = None
+    size: t.CUInt64T = 0
+    if MemmapAddr != 0:
+        if MemmapSize > 0:
+            if MemmapDescSize > 0:
+                num_entries: t.CUInt64T = MemmapSize / MemmapDescSize
+                max_memory: t.CUInt64T = 0
+                best_start: t.CUInt64T = 0
+                best_avail_size: t.CUInt64T = 0
+                best_avail_start: t.CUInt64T = 0
+                best_bs_size: t.CUInt64T = 0
+                best_bs_start: t.CUInt64T = 0
+                best_ld_size: t.CUInt64T = 0
+                best_ld_start: t.CUInt64T = 0
+                i: t.CUInt64T
+                for i in range(num_entries):
+                    entry: bootinfo.memory_map_entry | t.CPtr = t.CVoid(MemmapAddr + i * MemmapDescSize, t.CPtr)
+                    etype: t.CUInt64T = entry.type
+                    start: t.CUInt64T = align_4k(entry.physical_start)
+                    np: t.CUInt64T = entry.num_pages
+                    end: t.CUInt64T = entry.physical_start + np * 4096
+                    end = align_4k(end - 1)
+                    region_size: t.CUInt64T = end - start
+                    if FbAddr != 0 and FbSize != 0:
+                        fb_end: t.CUInt64T = FbAddr + FbSize
+                        if start < fb_end and end > FbAddr:
+                            continue
+                    if etype == MEMORY_TYPE_AVAILABLE:
+                        if region_size > best_avail_size:
+                            best_avail_size = region_size
+                            best_avail_start = start
+                    if etype == MEMORY_TYPE_BOOT_SERVICES_DATA:
+                        if region_size > best_bs_size:
+                            best_bs_size = region_size
+                            best_bs_start = start
+                    if etype == MEMORY_TYPE_LOADER_DATA:
+                        if region_size > best_ld_size:
+                            best_ld_size = region_size
+                            best_ld_start = start
+                min_blk: t.CUInt64T = MIN_BLOCK_SIZE
+                if best_avail_size >= min_blk:
+                    best_start = best_avail_start
+                    max_memory = best_avail_size
+                elif best_bs_size >= min_blk:
+                    best_start = best_bs_start
+                    max_memory = best_bs_size
+                elif best_ld_size >= min_blk:
+                    best_start = best_ld_start
+                    max_memory = best_ld_size
+                cr4: t.CArray[t.CChar, 128]
+                string.memset(c.Addr(cr4), 0, 128)
+                viperlib.snprintf(c.Addr(cr4), 128, "mm: best=0x%lx max=%lu entries=%lu avail=%lu bs=%lu ld=%lu\n",
+                                  best_start, max_memory, num_entries, best_avail_size, best_bs_size, best_ld_size)
+                serial.puts(cr4)
+                if best_start != 0:
+                    if max_memory >= min_blk:
+                        start_addr = t.CVoid(best_start, t.CPtr)
+                        size = max_memory
+    if start_addr is None:
+        size = detect_memory_size()
+        size = align_4k(size)
+        # 起始地址 4MB（内核之后），避免超出物理 RAM
+        # 旧值 0x10000000 在 256MB QEMU 中超出物理 RAM 边界
+        start_addr = t.CVoid(align_4k(0x400000), t.CPtr)
+        if size > 0x400000:
+            size = size - 0x400000
+        size = align_4k(size)
+        min_blk2: t.CUInt64T = MIN_BLOCK_SIZE
+        if size < min_blk2:
+            size = 33554432
+    cr2: t.CArray[t.CChar, 128]
+    string.memset(c.Addr(cr2), 0, 128)
+    viperlib.snprintf(c.Addr(cr2), 128, "mm.init: start=0x%lx size=%lu bytes\n",
+                      t.CUInt64T(start_addr), size)
+    serial.puts(cr2)
+    BuddySystemObject.__init__(start_addr, size)
+    SlabAllocator.__init__()
+
+
+# 虚拟内存映射结构
+class vm_area(t.CStruct):
+    VirtAddr: t.CUInt64T
+    PhysAddr: t.CUInt64T
+    size: t.CUInt64T
+    flags: t.CUInt32T
+    next: 'vm_area' | t.CPtr
+
+# 全局虚拟内存区域链表
+vm_areas: vm_area | t.CPtr = None
+
+# 博弈机制参数
+ALLOCATION_RETRIES: t.CDefine = 5  # 分配重试次数
+FRAGMENTATION_THRESHOLD: t.CDefine = 0.7  # 碎片率阈值
+
+# 获取内存使用统计
+@c.CReturn(t.CUInt64T, t.CUInt64T, t.CUInt64T)
+def GetMemoryStats():
+    return (BuddySystemObject.buddy.total_memory, BuddySystemObject.buddy.used_memory, BuddySystemObject.buddy.free_memory)
+
+# 计算内存碎片率
+def calculate_fragmentation() -> t.CDouble:
+    # 计算空闲块的数量和总大小
+    free_blocks: t.CInt = 0
+    free_size: t.CUInt64T = 0
+
+    for i in range(MAX_ORDER + 1):
+        block: memory_block | t.CPtr = BuddySystemObject.buddy.free_lists[i]
+        while block:
+            free_blocks += 1
+            free_size += block.size
+            block = block.next
+
+    # 如果没有空闲内存，返回0
+    if free_size == 0:
+        return 0.0
+
+    # 计算碎片率
+    # 碎片率 = 1 - (最大空闲块大小 / 总空闲内存大小)
+    max_free_block: t.CUInt64T = 0
+    for i in range(MAX_ORDER, -1, -1):
+        if BuddySystemObject.buddy.free_lists[i]:
+            max_free_block = get_block_size(i)
+            break
+
+    if max_free_block == 0:
+        return 1.0
+
+    return 1.0 - (t.CDouble(max_free_block) / t.CDouble(free_size))
+
+# 内存整理函数
+def compact_memory() -> t.CStatic | t.CInt:
+    freed_pages: t.CInt = 0
+    for sc in range(SLAB_NUM_SIZES):
+        page: slab_page | t.CPtr = SlabAllocator.caches[sc]
+        while page:
+            next_page: slab_page | t.CPtr = page.next
+            if page.free_count == page.total_objs:
+                if page.prev:
+                    page.prev.next = page.next
+                else:
+                    SlabAllocator.caches[sc] = page.next
+                if page.next:
+                    page.next.prev = page.prev
+                page.magic = 0
+                BuddySystemObject.free_block(page.block_ptr)
+                freed_pages += 1
+            page = next_page
+    return freed_pages
+
+# 虚拟内存分配函数
+def vm_alloc(size: t.CUInt64T, flags: t.CUInt32T) -> t.CUInt64T:
+    global vm_areas
+    # 4K对齐
+    size = align_4k(size)
+
+    # 尝试分配物理内存，使用博弈机制
+    PhysAddr: t.CVoid | t.CPtr = None
+    retries: t.CInt = 0
+
+    while retries < ALLOCATION_RETRIES:
+        PhysAddr = malloc(size)
+        if PhysAddr:
+            break
+
+        # 内存不足，尝试进行内存整理
+        if calculate_fragmentation() > FRAGMENTATION_THRESHOLD:
+            compact_memory()
+
+        retries += 1
+
+    if not PhysAddr:
+        return 0
+
+    # 分配虚拟地址
+    # 简单的虚拟地址分配策略：从0x100000000开始
+    VirtAddr: t.CUInt64T = 0x100000000
+    current: vm_area | t.CPtr = vm_areas
+
+    # 寻找合适的虚拟地址空间
+    while current:
+        if VirtAddr + size <= current.VirtAddr:
+            break
+        VirtAddr = current.VirtAddr + current.size
+        current = current.next
+
+    # 创建虚拟内存区域
+    area: vm_area | t.CPtr = malloc(vm_area.__sizeof__())
+    if area:
+        area.VirtAddr = VirtAddr
+        area.PhysAddr = t.CUInt64T(PhysAddr)
+        area.size = size
+        area.flags = flags
+        area.next = vm_areas
+        vm_areas = area
+
+        # 映射虚拟地址到物理地址
+        # 计算需要映射的页数
+        pages: t.CUInt64T = size / 4096
+        i: t.CUInt64T
+        for i in range(pages):
+            page_virt: t.CUInt64T = VirtAddr + (i * 4096)
+            page_phys: t.CUInt64T = t.CUInt64T(PhysAddr) + (i * 4096)
+            # 调用paging模块的映射函数
+            paging.MapPage(page_virt, page_phys, flags)
+
+    return VirtAddr
+
+# 虚拟内存释放函数
+def vm_free(VirtAddr: t.CUInt64T):
+    global vm_areas
+    # 查找虚拟内存区域
+    current: vm_area | t.CPtr = vm_areas
+    prev: vm_area | t.CPtr = None
+
+    while current:
+        if current.VirtAddr == VirtAddr:
+            # 取消虚拟地址映射
+            pages: t.CUInt64T = current.size / 4096
+            i: t.CUInt64T
+            for i in range(pages):
+                page_virt: t.CUInt64T = current.VirtAddr + (i * 4096)
+                paging.UnMapPage(page_virt)
+
+            # 释放物理内存
+            free(t.CVoid(current.PhysAddr, t.CPtr))
+            if prev:
+                prev.next = current.next
+            else:
+                vm_areas = current.next
+            free(current)
+            return
+        prev = current
+        current = current.next
+
+# CMOS读取函数
+def cmos_read(reg: t.CUInt8T) -> t.CUInt8T:
+    c.Asm(f"mov al, {c.AsmInp(reg)}\nout 0x70, al")
+    val: t.CUInt8T
+    c.Asm(f"in al, 0x71\nmov {c.AsmOut(val)}, al")
+    return val
+
+# 内存大小测试函数
+def detect_memory_size() -> t.CUInt64T:
+    # 读取 1MB-16MB 扩展内存（KB 单位）
+    low: t.CUInt8T = cmos_read(0x15)
+    high: t.CUInt8T = cmos_read(0x16)
+    mem_kb: t.CUInt32T = (t.CUInt32T(high) << 8) | low
+
+    # 读取 16MB 以上扩展内存（64KB 块为单位）
+    low2: t.CUInt8T = cmos_read(0x17)
+    high2: t.CUInt8T = cmos_read(0x18)
+    mem_above_16mb: t.CUInt32T = (t.CUInt32T(high2) << 8) | low2
+
+    # 两个寄存器都为 0 时使用默认值
+    if mem_kb == 0 and mem_above_16mb == 0:
+        return 0x10000000  # 256MB
+
+    # 计算总内存：1MB 基础 + 1MB-16MB + 16MB 以上
+    total_size: t.CUInt64T = 1048576  # 前 1MB
+    if mem_kb > 0:
+        total_size = total_size + t.CUInt64T(mem_kb) * 1024
+    if mem_above_16mb > 0:
+        total_size = total_size + t.CUInt64T(mem_above_16mb) * 65536
+
+    total_size = align_4k(total_size)
+
+    # 确保内存大小至少为32MB
+    if total_size < 33554432:  # 32MB
+        total_size = 33554432
+
+    return total_size

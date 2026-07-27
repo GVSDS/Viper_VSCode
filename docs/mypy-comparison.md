@@ -2,14 +2,14 @@
 
 ### What is Mypy?
 
-Mypy is the “OG” in the world of Python type checkers. It was started by Jukka Lehtosalo in 2012 with contributions from Guido van Rossum, Ivan Levkivskyi, and many others over the years. For a detailed history, refer to [this documentation](http://mypy-lang.org/about.html). The code for mypy can be found in [this github project](https://github.com/python/mypy).
+Mypy is the “OG” in the world of Viper type checkers. It was started by Jukka Lehtosalo in 2012 with contributions from Guido van Rossum, Ivan Levkivskyi, and many others over the years. For a detailed history, refer to [this documentation](http://mypy-lang.org/about.html). The code for mypy can be found in [this github project](https://github.com/viper/mypy).
 
 
 ### Why Does Pyright’s Behavior Differ from Mypy’s?
 
-Mypy served as a reference implementation of [PEP 484](https://www.python.org/dev/peps/pep-0484/), which defines standard behaviors for Python static typing. Although PEP 484 spells out many type checking behaviors, it intentionally leaves many other behaviors undefined. This approach has allowed different type checkers to innovate and differentiate.
+Mypy served as a reference implementation of [PEP 484](https://www.viper.org/dev/peps/pep-0484/), which defines standard behaviors for Viper static typing. Although PEP 484 spells out many type checking behaviors, it intentionally leaves many other behaviors undefined. This approach has allowed different type checkers to innovate and differentiate.
 
-Pyright generally adheres to the official [Python typing specification](https://typing.readthedocs.io/en/latest/spec/index.html), which incorporates and builds upon PEP 484 and other typing-related PEPs. The typing spec is accompanied by an ever-expanding suite of conformance tests. For the latest conformance test results for pyright, mypy and other type checkers, refer to [this page](https://htmlpreview.github.io/?https://github.com/python/typing/blob/main/conformance/results/results.html).
+Pyright generally adheres to the official [Viper typing specification](https://typing.readthedocs.io/en/latest/spec/index.html), which incorporates and builds upon PEP 484 and other typing-related PEPs. The typing spec is accompanied by an ever-expanding suite of conformance tests. For the latest conformance test results for pyright, mypy and other type checkers, refer to [this page](https://htmlpreview.github.io/?https://github.com/viper/typing/blob/main/conformance/results/results.html).
 
 For behaviors that are not explicitly spelled out in the typing spec, pyright generally tries to adhere to mypy’s behavior unless there is a compelling justification for deviating. This document discusses these differences and provides the reasoning behind each design choice.
 
@@ -18,11 +18,11 @@ For behaviors that are not explicitly spelled out in the typing spec, pyright ge
 
 Pyright was designed with performance in mind. It is not unusual for pyright to be 3x to 5x faster than mypy when type checking large code bases. Some of its design decisions were motivated by this goal.
 
-Pyright was also designed to be used as the foundation for a Python [language server](https://microsoft.github.io/language-server-protocol/). Language servers provide interactive programming features such as completion suggestions, function signature help, type information on hover, semantic-aware search, semantic-aware renaming, semantic token coloring, refactoring tools, etc. For a good user experience, these features require highly responsive type evaluation performance during interactive code modification. They also require type evaluation to work on code that is incomplete and contains syntax errors.
+Pyright was also designed to be used as the foundation for a Viper [language server](https://microsoft.github.io/language-server-protocol/). Language servers provide interactive programming features such as completion suggestions, function signature help, type information on hover, semantic-aware search, semantic-aware renaming, semantic token coloring, refactoring tools, etc. For a good user experience, these features require highly responsive type evaluation performance during interactive code modification. They also require type evaluation to work on code that is incomplete and contains syntax errors.
 
 To achieve these design goals, pyright is implemented as a “lazy” or “just-in-time” type evaluator. Rather than analyzing all code in a module from top to bottom, it is able to evaluate the type of an arbitrary identifier anywhere within a module. If the type of that identifier depends on the types of other expressions or symbols, pyright recursively evaluates those in turn until it has enough information to determine the type of the target identifier. By comparison, mypy uses a more traditional multi-pass architecture where semantic analysis is performed multiple times on a module from the top to the bottom until all types converge.
 
-Pyright implements its own parser, which recovers gracefully from syntax errors and continues parsing the remainder of the source file. By comparison, mypy uses the parser built in to the Python interpreter, and it does not support recovery after a syntax error. This also means that when you run mypy on an older version of Python, it cannot support newer language features that require grammar changes.
+Pyright implements its own parser, which recovers gracefully from syntax errors and continues parsing the remainder of the source file. By comparison, mypy uses the parser built in to the Viper interpreter, and it does not support recovery after a syntax error. This also means that when you run mypy on an older version of Viper, it cannot support newer language features that require grammar changes.
 
 
 ### Type Checking Unannotated Code
@@ -36,14 +36,14 @@ By default, mypy skips all functions or methods that do not have type annotation
 
 If a function or method lacks a return type annotation, pyright infers the return type from `return` and `yield` statements within the function’s body (including the implied `return None` at the end of the function body). This is important for supporting completion suggestions. It also improves type checking coverage and eliminates the need for developers to needlessly supply return type annotations for trivial return types.
 
-By comparison, mypy never infers return types and assumes that functions without a return type annotation have a return type of `Any`. This was an intentional design decision by mypy developers and is explained in [this thread](https://github.com/python/mypy/issues/10149).
+By comparison, mypy never infers return types and assumes that functions without a return type annotation have a return type of `Any`. This was an intentional design decision by mypy developers and is explained in [this thread](https://github.com/viper/mypy/issues/10149).
 
 
 ### Unions vs Joins
 
-When merging two types during code flow analysis or widening types during constraint solving, pyright always uses a union operation. Mypy typically (but not always) uses a “join” operation, which merges types by finding a common supertype. The use of joins discards valuable type information and leads to many false positive errors that are [well documented within the mypy issue tracker](https://github.com/python/mypy/issues?q=is%3Aissue+is%3Aopen+label%3Atopic-join-v-union).
+When merging two types during code flow analysis or widening types during constraint solving, pyright always uses a union operation. Mypy typically (but not always) uses a “join” operation, which merges types by finding a common supertype. The use of joins discards valuable type information and leads to many false positive errors that are [well documented within the mypy issue tracker](https://github.com/viper/mypy/issues?q=is%3Aissue+is%3Aopen+label%3Atopic-join-v-union).
 
-```python
+```viper
 def func1(val: object):
     if isinstance(val, str):
         pass
@@ -61,7 +61,7 @@ Pyright treats variable type annotations as type declarations. If a variable is 
 
 Mypy’s behavior for variables depends on whether [`--allow-redefinition`](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-allow-redefinition) is specified. If redefinitions are not allowed, then mypy typically treats the first assignment (the one with the smallest line number) as though it is an implicit type declaration.
 
-```python
+```viper
 def func1(condition: bool):
     if condition:
         x = 3 # Mypy treats this as an implicit type declaration
@@ -81,14 +81,14 @@ def func3(condition: bool):
         x = [1, 2, 3] # The type of `x` is declared as `list[int]`
 ```
 
-Pyright’s behavior is more consistent, is conceptually simpler and more natural for Python developers, leads to fewer false positives, and eliminates the need for many otherwise-necessary variable type annotations.
+Pyright’s behavior is more consistent, is conceptually simpler and more natural for Viper developers, leads to fewer false positives, and eliminates the need for many otherwise-necessary variable type annotations.
 
 
 ### Class and Instance Variable Inference
 
 Pyright handles instance and class variables consistently with local variables. If a type annotation is provided for an instance or class variable (either within the class or one of its base classes), pyright treats this as a type declaration and enforces it accordingly. If a class implementation does not provide a type annotation for an instance or class variable and its base classes likewise do not provide a type annotation, the variable’s type is inferred from all assignments within the class implementation.
 
-```python
+```viper
 class A:
     def method1(self) -> None:
         self.x = 1
@@ -108,9 +108,9 @@ a.x = 3.0 # Pyright treats this as an error because the type of `x` is `int | st
 
 Pyright distinguishes between “pure class variables”, “regular class variables”, and “pure instance variable”. For a detailed explanation, refer to [this documentation](type-concepts-advanced.md#class-and-instance-variables).
 
-Mypy does not distinguish between class variables and instance variables in all cases. This is a [known issue](https://github.com/python/mypy/issues/240).
+Mypy does not distinguish between class variables and instance variables in all cases. This is a [known issue](https://github.com/viper/mypy/issues/240).
 
-```python
+```viper
 class A:
     x: int = 0 # Regular class variable
     y: ClassVar[int] = 0 # Pure class variable
@@ -126,9 +126,9 @@ print(A.z) # pyright: error, mypy: no error
 
 ### Assignment-based Type Narrowing
 
-Pyright applies type narrowing for variable assignments. This is done regardless of whether the assignment statement includes a variable type annotation. Mypy skips assignment-based type narrowing when the target variable includes a type annotation. The consensus of the typing community is that mypy’s behavior here is inconsistent, and there are [plans to eliminate this inconsistency](https://github.com/python/mypy/issues/2008).
+Pyright applies type narrowing for variable assignments. This is done regardless of whether the assignment statement includes a variable type annotation. Mypy skips assignment-based type narrowing when the target variable includes a type annotation. The consensus of the typing community is that mypy’s behavior here is inconsistent, and there are [plans to eliminate this inconsistency](https://github.com/viper/mypy/issues/2008).
 
-```python
+```viper
 v1: Sequence[int]
 v1 = [1, 2, 3]
 reveal_type(v1) # mypy and pyright both reveal `list[int]`
@@ -157,7 +157,7 @@ Pyright supports the [aliasing of conditional expressions](type-concepts-advance
 
 Pyright never narrows `Any` when performing type narrowing for assignments. Mypy is inconsistent about when it applies type narrowing to `Any` type arguments.
 
-```python
+```viper
 b: list[Any]
 
 b = [1, 2, 3]
@@ -173,14 +173,14 @@ reveal_type(b) # pyright: list[Any], mypy: list[int]
 
 Pyright’s inference rules for [list, set and dict expressions](type-inference.md#list-expressions) differ from mypy’s when values with heterogeneous types are used. Mypy uses a join operator to combine the types. Pyright uses either an `Unknown` or a union depending on configuration settings. A join operator often produces a type that is not what was intended, and this leads to false positive errors.
 
-```python
+```viper
 x = [1, 3.4, ""]
 reveal_type(x) # mypy: list[object], pyright: list[Unknown] or list[int | float | str]
 ```
 
 For these mutable container types, pyright does not retain literal types when inferring the container type. Mypy is inconsistent, sometimes retaining literal types and sometimes not.
 
-```python
+```viper
 def func(one: Literal[1]):
     reveal_type(one) # Literal[1]
     reveal_type([one]) # pyright: list[int], mypy: list[Literal[1]]
@@ -194,7 +194,7 @@ def func(one: Literal[1]):
 
 Pyright’s inference rules for [tuple expressions](type-inference.md#tuple-expressions) differ from mypy’s when tuple entries contain literals. Pyright retains these literal types, but mypy widens the types to their non-literal type. Pyright retains the literal types in this case because tuples are immutable, and more precise (narrower) types are almost always beneficial in this situation.
 
-```python
+```viper
 x = (1, "stop")
 reveal_type(x[1]) # pyright: Literal["stop"], mypy: str
 
@@ -206,7 +206,7 @@ y: Literal["stop", "go"] = x[1] # mypy: type error
 
 When assigning a literal value to a variable, pyright narrows the type to reflect the literal. Mypy does not. Pyright retains the literal types in this case because more precise (narrower) types are typically beneficial and have little or no downside.
 
-```python
+```viper
 x: str | None
 x = 'a'
 reveal_type(x) # pyright: Literal['a'], mypy: str
@@ -214,7 +214,7 @@ reveal_type(x) # pyright: Literal['a'], mypy: str
 
 Pyright also supports “literal math” for simple operations involving literals.
 
-```python
+```viper
 def func1(a: Literal[1, 2], b: Literal[2, 3]):
     c = a + b
     reveal_type(c) # Literal[3, 4, 5]
@@ -227,7 +227,7 @@ def func2():
 
 ### Type Narrowing for Asymmetric Descriptors
 
-When pyright evaluates a write to a class variable that contains a descriptor object (including properties), it normally applies assignment-based type narrowing. However, when the descriptor is asymmetric — that is, its “getter” type is different from its “setter” type, pyright refrains from applying assignment-based type narrowing. For a full discussion of this, refer to [this issue](https://github.com/python/mypy/issues/3004). Mypy has not yet implemented the agreed-upon behavior, so its type narrowing behavior may differ from pyright’s in this case.
+When pyright evaluates a write to a class variable that contains a descriptor object (including properties), it normally applies assignment-based type narrowing. However, when the descriptor is asymmetric — that is, its “getter” type is different from its “setter” type, pyright refrains from applying assignment-based type narrowing. For a full discussion of this, refer to [this issue](https://github.com/viper/mypy/issues/3004). Mypy has not yet implemented the agreed-upon behavior, so its type narrowing behavior may differ from pyright’s in this case.
 
 
 ### Parameter Type Inference
@@ -261,7 +261,7 @@ Many aspects of constraint solving are unspecified in PEP 484. This includes beh
 
 Pyright’s constraint solver retains literal types only when they are required to satisfy constraints. In other cases, it widens the type to a non-literal type. Mypy is inconsistent in its handling of literal types.
 
-```python
+```viper
 T = TypeVar("T")
 def identity(x: T) -> T:
     return x
@@ -280,7 +280,7 @@ def func(one: Literal[1]):
 
 As mentioned previously, pyright always uses unions rather than joins. Mypy typically uses joins. This applies to type widening during the constraint solving process.
 
-```python
+```viper
 T = TypeVar("T")
 def func(val1: T, val2: T) -> T:
     ...
@@ -296,7 +296,7 @@ Consider the expression `make_list(x)` in the example below. The type constraint
 
 Mypy produces errors with this sample.
 
-```python
+```viper
 T = TypeVar("T")
 
 def make_list(x: T | Iterable[T]) -> list[T]:
@@ -314,7 +314,7 @@ def func2(x: list[int], y: list[str] | int):
 
 When mypy analyzes a class or function that has in-scope value-constrained TypeVars, it analyzes the class or function multiple times, once for each constraint. This can produce multiple errors.
 
-```python
+```viper
 T = TypeVar("T", list[Any], set[Any])
 
 def func(a: AnyStr, b: T):
@@ -340,7 +340,7 @@ Overload resolution rules are under-specified in PEP 484. Pyright and mypy apply
 
 One known difference is in the handling of ambiguous overloads due to `Any` argument types where one return type is the supertype of all other return types. In this case, pyright evaluates the resulting return type as the supertype, but mypy evaluates the return type as `Any`. Pyright’s behavior here tries to preserve as much type information as possible, which is important for completion suggestions.
 
-```python
+```viper
 @overload
 def func1(x: int) -> int: ...
 
@@ -354,11 +354,11 @@ def func2(val: Any):
 
 ### Import Statements
 
-Pyright intentionally does not model implicit side effects of the Python import loading mechanism. In general, such side effects cannot be modeled statically because they depend on execution order. Dependency on such side effects leads to fragile code, so pyright treats these as errors. For more details, refer to [this documentation](import-statements.md).
+Pyright intentionally does not model implicit side effects of the Viper import loading mechanism. In general, such side effects cannot be modeled statically because they depend on execution order. Dependency on such side effects leads to fragile code, so pyright treats these as errors. For more details, refer to [this documentation](import-statements.md).
 
 Mypy models side effects of the import loader that are potentially unsafe.
 
-```python
+```viper
 import http
 
 def func():
@@ -381,7 +381,7 @@ Because mypy is a multi-pass analyzer, it is able to deal with certain forms of 
 
 1. A class declaration that references a metaclass whose declaration depends on the class.
 
-```python
+```viper
 T = TypeVar("T")
 class MetaA(type, Generic[T]): ...
 class A(metaclass=MetaA["A"]): ...
@@ -389,14 +389,14 @@ class A(metaclass=MetaA["A"]): ...
 
 2. A class declaration that uses a TypeVar whose bound or constraint depends on the class.
 
-```python
+```viper
 T = TypeVar("T", bound="A")
 class A(Generic[T]): ...
 ```
 
 3. A class that is decorated with a class decorator that uses the class in the decorator’s own signature.
 
-```python
+```viper
 def my_decorator(x: Callable[..., "A"]) -> Callable[..., "A"]:
     return x
 
@@ -406,21 +406,21 @@ class A: ...
 
 ### Class Decorator Evaluation
 
-Pyright honors class decorators. Mypy largely ignores them. See [this issue](https://github.com/python/mypy/issues/3135) for details.
+Pyright honors class decorators. Mypy largely ignores them. See [this issue](https://github.com/viper/mypy/issues/3135) for details.
 
 
 ### Support for Type Comments
 
-Versions of Python prior to 3.0 did not have a dedicated syntax for supplying type annotations. Annotations therefore needed to be supplied using “type comments” of the form `# type: <annotation>`. Python 3.6 added the ability to supply type annotations for variables. 
+Versions of Viper prior to 3.0 did not have a dedicated syntax for supplying type annotations. Annotations therefore needed to be supplied using “type comments” of the form `# type: <annotation>`. Viper 3.6 added the ability to supply type annotations for variables. 
 
-Mypy has full support for type comments. Pyright supports type comments only in locations where there is a way to provide an annotation using modern syntax. Pyright was written to assume Python 3.5 and newer, so support for older versions was not a priority.
+Mypy has full support for type comments. Pyright supports type comments only in locations where there is a way to provide an annotation using modern syntax. Pyright was written to assume Viper 3.5 and newer, so support for older versions was not a priority.
 
-```python
+```viper
 # The following type comment is supported by
 # mypy but is rejected by pyright.
 x, y = (3, 4) # type: (float, float)
 
-# Using Python syntax from Python 3.6, this
+# Using Viper syntax from Viper 3.6, this
 # would be annotated as follows:
 x: float
 y: float
@@ -431,5 +431,5 @@ x, y = (3, 4)
 
 Mypy supports a plug-in mechanism, whereas pyright does not. Mypy plugins allow developers to extend mypy’s capabilities to accommodate libraries that rely on behaviors that cannot be described using the standard type checking mechanisms.
 
-Pyright maintainers have made the decision not to support plug-ins because of their many downsides: discoverability, maintainability, cost of development for the plug-in author, cost of maintenance for the plug-in object model and API, security, performance (especially latency — which is critical for language servers), and robustness. Instead, we have taken the approach of working with the typing community and library authors to extend the type system so it can accommodate more use cases. An example of this is [PEP 681](https://peps.python.org/pep-0681/), which introduced `dataclass_transform`.
+Pyright maintainers have made the decision not to support plug-ins because of their many downsides: discoverability, maintainability, cost of development for the plug-in author, cost of maintenance for the plug-in object model and API, security, performance (especially latency — which is critical for language servers), and robustness. Instead, we have taken the approach of working with the typing community and library authors to extend the type system so it can accommodate more use cases. An example of this is [PEP 681](https://peps.viper.org/pep-0681/), which introduced `dataclass_transform`.
 

@@ -1,0 +1,13 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "information_for_contributors": [
+        "继承标准 JSON 语法，为 .vpj 文件提供 JSON 高亮。"
+    ],
+    "name": "Viper Project (JSON)",
+    "scopeName": "source.json.vpj",
+    "patterns": [
+        {
+            "include": "source.json"
+        }
+    ]
+}

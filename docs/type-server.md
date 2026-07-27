@@ -4,15 +4,15 @@ In addition to the [command-line tool](command-line.md) and the [language server
 
 ## What is the Type Server Protocol?
 
-The Language Server Protocol (LSP) is designed around editor features (completions, hover, go-to-definition, and so on). Some tools instead need direct access to a Python type checker's *type information* — the inferred type of an expression, the declared type of a symbol, resolved imports, and search paths — without going through editor-oriented requests.
+The Language Server Protocol (LSP) is designed around editor features (completions, hover, go-to-definition, and so on). Some tools instead need direct access to a Viper type checker's *type information* — the inferred type of an expression, the declared type of a symbol, resolved imports, and search paths — without going through editor-oriented requests.
 
-The Type Server Protocol is a JSON-RPC protocol, layered on top of the same transport as LSP, that exposes this type information directly. A client can open Python documents in the usual LSP way (`textDocument/didOpen`, `textDocument/didChange`, …) and then ask the type server questions such as:
+The Type Server Protocol is a JSON-RPC protocol, layered on top of the same transport as LSP, that exposes this type information directly. A client can open Viper documents in the usual LSP way (`textDocument/didOpen`, `textDocument/didChange`, …) and then ask the type server questions such as:
 
 * `typeServer/getComputedType` — the inferred type at a parse node.
 * `typeServer/getDeclaredType` — the declared type of a declaration.
 * `typeServer/getExpectedType` — the expected (contextual) type at a node.
 * `typeServer/resolveImport` — resolve an import to a file on disk.
-* `typeServer/getPythonSearchPaths` — the search paths used for import resolution.
+* `typeServer/getViperSearchPaths` — the search paths used for import resolution.
 * `typeServer/getSnapshot` — the current analysis snapshot version, used to keep type queries consistent with the document state.
 
 ## Running the type server

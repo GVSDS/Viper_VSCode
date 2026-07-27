@@ -1,0 +1,161 @@
+import asm
+import t, c
+import serial
+import viperlib
+import pci
+
+
+class IDError(t.CEnum):
+    IDE_ERR_NONE:             t.State = 0
+    IDE_ERR_TIMEOUT:          t.State
+    IDE_ERR_DEVICE_ERROR:     t.State
+    IDE_ERR_DEVICE_BUSY:      t.State
+    IDE_ERR_INVALID_PARAM:    t.State
+    IDE_ERR_BUFFER_NULL:      t.State
+    IDE_ERR_SECTOR_COUNT:     t.State
+    IDE_ERR_DEVICE_NOT_READY: t.State
+    IDE_ERR_DEVICE_FAILURE:   t.State
+    IDE_ERR_COMMAND_FAILED:   t.State
+    IDE_ERR_INVALID_LBA:      t.State
+
+IDE_baseport_PRIMARY:   t.CDefine = 0x1F0
+IDE_baseport_SECONDARY: t.CDefine = 0x170
+
+IDE_STATUS_BSY:  t.CDefine = 0x80
+IDE_STATUS_DRDY: t.CDefine = 0x40
+IDE_STATUS_DF:   t.CDefine = 0x20
+IDE_STATUS_DRQ:  t.CDefine = 0x08
+IDE_STATUS_ERR:  t.CDefine = 0x01
+
+SECTOR_SIZE: t.CDefine = 512
+
+_ide_initialized: t.CInt = 0
+
+def waitReady(baseport: t.CUInt16T) -> t.CStatic | IDError:
+    timeout: t.CInt = 100000
+    while timeout > 0:
+        status: t.CUInt8T = asm.inb(baseport + 7)
+        if status & IDE_STATUS_DF:
+            return IDError.IDE_ERR_DEVICE_FAILURE
+        if not status & IDE_STATUS_BSY and status & IDE_STATUS_DRDY:
+            return IDError.IDE_ERR_NONE
+        timeout -= 1
+    return IDError.IDE_ERR_TIMEOUT
+
+def waitDataReady(baseport: t.CUInt16T) -> t.CStatic | IDError:
+    timeout: t.CInt = 100000
+    while timeout > 0:
+        status: t.CUInt8T = asm.inb(baseport + 7)
+        if status & IDE_STATUS_ERR: return IDError.IDE_ERR_DEVICE_ERROR
+        if status & IDE_STATUS_DF:  return IDError.IDE_ERR_DEVICE_FAILURE
+        if not status & IDE_STATUS_BSY and (status & IDE_STATUS_DRQ or status & IDE_STATUS_DRDY):
+            return IDError.IDE_ERR_NONE
+        timeout -= 1
+    return IDError.IDE_ERR_TIMEOUT
+
+def init() -> t.CInt:
+    if _ide_initialized: return IDError.IDE_ERR_NONE
+    dbg: t.CArray[t.CChar, 120]
+    bus: t.CUInt8T
+    dev_n: t.CUInt8T
+    func: t.CUInt8T
+    for bus in range(2):
+        for dev_n in range(32):
+            for func in range(8):
+                vendor: t.CUInt16T = pci.pci_read16(bus, dev_n, func, 0x00)
+                if vendor == 0xFFFF: continue
+                cls: t.CUInt32T = pci.pci_get_class(bus, dev_n, func)
+                if cls == 0x010180 or cls == 0x0101:
+                    cmd: t.CUInt16T = pci.pci_read16(bus, dev_n, func, 0x04)
+                    pci.pci_write32(bus, dev_n, func, 0x04, t.CUInt32T(cmd | 0x0007))
+                    viperlib.snprintf(c.Addr(dbg), 120, "[ide] found at %d:%d:%d cmd=0x%04x\n", t.CInt(bus), t.CInt(dev_n), t.CInt(func), t.CUInt32T(pci.pci_read16(bus, dev_n, func, 0x04)))
+                    serial.puts(dbg)
+    asm.outb(0x3F6, 0x04)
+    i: t.CInt
+    for i in range(10000):
+        asm.nop()
+    asm.outb(0x3F6, 0x00)
+    for i in range(10000):
+        asm.nop()
+    status: t.CUInt8T = asm.inb(0x1F7)
+    viperlib.snprintf(c.Addr(dbg), 120, "[ide] status=0x%02x\n", t.CUInt32T(status))
+    serial.puts(dbg)
+    _ide_initialized = 1
+    return IDError.IDE_ERR_NONE
+
+def readSector(lba: t.CUInt32T, buffer: t.CVoid | t.CPtr) -> t.CInt:
+    if buffer is None: return IDError.IDE_ERR_BUFFER_NULL
+    dbg: t.CArray[t.CChar, 120]
+    err: IDError = waitReady(IDE_baseport_PRIMARY)
+    if err != IDError.IDE_ERR_NONE:
+        viperlib.snprintf(c.Addr(dbg), 120, "[readSector] waitReady err=%d\n", t.CInt(err))
+        serial.puts(dbg)
+        return err
+    asm.outb(0x3F6, 0x02)
+    asm.outb(0x1F2, 1)
+    asm.outb(0x1F3, t.CUInt8T(lba & 0xFF))
+    asm.outb(0x1F4, t.CUInt8T((lba >> 8) & 0xFF))
+    asm.outb(0x1F5, t.CUInt8T((lba >> 16) & 0xFF))
+    asm.outb(0x1F6, t.CUInt8T(0xE0 | ((lba >> 24) & 0x0F)))
+    asm.outb(0x1F7, 0x20)
+    err = waitDataReady(IDE_baseport_PRIMARY)
+    if err != IDError.IDE_ERR_NONE:
+        st: t.CUInt8T = asm.inb(0x1F7)
+        viperlib.snprintf(c.Addr(dbg), 120, "[readSector] waitDataReady err=%d status=0x%02x\n", t.CInt(err), t.CUInt32T(st))
+        serial.puts(dbg)
+        return err
+    st2: t.CUInt8T = asm.inb(0x1F7)
+    buf: t.CUInt16T | t.CPtr = t.CUInt16T(buffer, t.CPtr)
+    for j in range(256):
+        c.Set(c.Deref(buf), asm.inw(0x1F0))
+        buf += 1
+    first_byte: t.CUInt8T = c.Deref(t.CUInt8T(buffer, t.CPtr))
+    # viperlib.snprintf(c.Addr(dbg), 120, "[readSector] lba=%lu status=0x%02x first=%02x\n", lba, t.CUInt32T(st2), t.CUInt32T(first_byte))
+    # serial.puts(dbg)
+    return IDError.IDE_ERR_NONE
+
+def writeSector(lba: t.CUInt32T, buffer: t.CConst | t.CVoid | t.CPtr) -> t.CInt:
+    if buffer is None: return IDError.IDE_ERR_BUFFER_NULL
+    err: IDError = waitReady(IDE_baseport_PRIMARY)
+    if err != IDError.IDE_ERR_NONE: return err
+    asm.outb(0x3F6, 0x02)
+    asm.outb(0x1F2, 1)
+    asm.outb(0x1F3, t.CUInt8T(lba & 0xFF))
+    asm.outb(0x1F4, t.CUInt8T((lba >> 8) & 0xFF))
+    asm.outb(0x1F5, t.CUInt8T((lba >> 16) & 0xFF))
+    asm.outb(0x1F6, t.CUInt8T(0xE0 | ((lba >> 24) & 0x0F)))
+    asm.outb(0x1F7, 0x30)
+    err = waitDataReady(IDE_baseport_PRIMARY)
+    if err != IDError.IDE_ERR_NONE: return err
+    buf: t.CUInt16T | t.CPtr = t.CUInt16T(buffer, t.CPtr)
+    for j in range(256):
+        val: t.CUInt16T = c.Deref(buf)
+        asm.outw(0x1F0, val)
+        buf += 1
+    asm.outb(0x1F7, 0xE7)
+    waitReady(IDE_baseport_PRIMARY)
+    return IDError.IDE_ERR_NONE
+
+def getDiskSize() -> t.CUInt64T:
+    err: IDError = waitReady(IDE_baseport_PRIMARY)
+    if err != IDError.IDE_ERR_NONE: return 0
+    asm.outb(0x1F6, 0xE0)
+    asm.outb(0x1F7, 0xEC)
+    err = waitDataReady(IDE_baseport_PRIMARY)
+    if err != IDError.IDE_ERR_NONE: return 0
+    status: t.CUInt8T = asm.inb(0x1F7)
+    if not status & IDE_STATUS_DRDY: return 0
+    if status & IDE_STATUS_ERR: return 0
+    identify_data: t.CArray[t.CUInt16T, 256]
+    for i in range(256):
+        identify_data[i] = asm.inw(0x1F0)
+    totalSectors: t.CUInt64T = identify_data[60] | t.CUInt64T(identify_data[61]) << 16
+    if identify_data[83] & (1 << 10):
+        lba48_sectors: t.CUInt64T = (
+            t.CUInt64T(identify_data[100]) |
+            t.CUInt64T(identify_data[101]) << 16 |
+            t.CUInt64T(identify_data[102]) << 32 |
+            t.CUInt64T(identify_data[103]) << 48)
+        if lba48_sectors > totalSectors:
+            totalSectors = lba48_sectors
+    return totalSectors

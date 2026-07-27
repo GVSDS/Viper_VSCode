@@ -1,0 +1,296 @@
+import drivers.serial.uart.serial as serial
+import viperlib
+import t, c
+
+
+PTE_PRESENT:  t.CDefine = (1 << 0)
+PTE_WRITABLE: t.CDefine = (1 << 1)
+PTE_USER:     t.CDefine = (1 << 2)
+PTE_PWT:      t.CDefine = (1 << 3)
+PTE_PCD:      t.CDefine = (1 << 4)
+PTE_ACCESSED: t.CDefine = (1 << 5)
+PTE_DIRTY:    t.CDefine = (1 << 6)
+PTE_PS:       t.CDefine = (1 << 7)
+PTE_GLOBAL:   t.CDefine = (1 << 8)
+
+class _p:
+    entries: t.CArray[t.CUInt64T, 512]
+
+PT_POOL_PAGES: t.CDefine = 512
+pt_pool_raw: t.CVoid | t.CPtr = None
+pt_pool_start: t.CUInt64T = 0
+pt_pool_used: t.CUInt64T = 0
+
+AllocatedPages: t.CUInt64T = 0
+pml4: _p | t.CPtr = None
+pdp: _p | t.CPtr
+pd:  _p | t.CPtr
+pt:  _p | t.CPtr
+
+def init(MemmapAddr: t.CUInt64T, MemmapSize: t.CUInt64T):
+    global pml4
+    pml4 = GetCurrentPml4()
+    c.Asm(f"""
+        mov rax, cr0
+        and rax, ~0x10000
+        mov cr0, rax
+    """)
+
+def init_pool(buf: t.CVoid | t.CPtr, buf_size: t.CUInt64T):
+    global pt_pool_raw, pt_pool_start, pt_pool_used
+    pt_pool_raw = buf
+    if buf is None: return
+    raw_addr: t.CUInt64T = t.CUInt64T(buf)
+    aligned_addr: t.CUInt64T = (raw_addr + t.CUInt64T(0xFFF)) & ~t.CUInt64T(0xFFF)
+    pt_pool_start = aligned_addr
+    pt_pool_used = 0
+
+def AllocPage() -> t.CVoid | t.CPtr:
+    global AllocatedPages, pt_pool_used, pml4, pdp, pd, pt
+    if pt_pool_raw is None: return None
+    if pt_pool_used >= t.CUInt64T(PT_POOL_PAGES): return None
+    page: t.CVoid | t.CPtr = t.CVoid(pt_pool_start + pt_pool_used * t.CUInt64T(4096), t.CPtr)
+    pt_pool_used = pt_pool_used + t.CUInt64T(1)
+    c.Asm(f"""mov al, 0
+            mov ecx, 4096
+            mov rdi, {c.AsmInp(page, t.ASM_DESCR.REG_ANY)}
+            rep stosb""",
+        op = [t.ASM_DESCR.CLOBBER_AL, t.ASM_DESCR.CLOBBER_ECX, t.ASM_DESCR.CLOBBER_RDI])
+    AllocatedPages = AllocatedPages + t.CUInt64T(1)
+    return page
+
+def FreePage(page: t.CVoid | t.CPtr):
+    global AllocatedPages, pml4, pdp, pd, pt
+    if page is None: return
+    if AllocatedPages > t.CUInt64T(0): AllocatedPages = AllocatedPages - t.CUInt64T(1)
+
+def MapPage(VirtAddr: t.CUInt64T, PhysAddr: t.CUInt64T, flags: t.CUInt64T):
+    global pml4, pdp, pd, pt
+    if VirtAddr == 0 or PhysAddr == 0: return
+    VirtAddr = VirtAddr & ~t.CUInt64T(0xFFF)
+    PhysAddr = PhysAddr & ~t.CUInt64T(0xFFF)
+    Pml4Index: t.CUInt64T = (VirtAddr >> 39) & 0x1FF
+    PdpIndex:  t.CUInt64T = (VirtAddr >> 30) & 0x1FF
+    PdIndex:   t.CUInt64T = (VirtAddr >> 21) & 0x1FF
+    PtIndex:   t.CUInt64T = (VirtAddr >> 12) & 0x1FF
+
+    if not pml4:
+        pml4 = AllocPage()
+        if not pml4: return
+
+    if not (pml4.entries[Pml4Index] & PTE_PRESENT):
+        pdp: _p | t.CPtr = AllocPage()
+        if not pdp: return
+        pml4.entries[Pml4Index] = (t.CUInt64T(pdp) & ~t.CUInt64T(0xFFF)) | PTE_PRESENT | PTE_WRITABLE | (flags & PTE_USER)
+    else:
+        if (flags & PTE_USER) and not (pml4.entries[Pml4Index] & PTE_USER):
+            pml4.entries[Pml4Index] = pml4.entries[Pml4Index] | PTE_USER
+    pdp: _p | t.CPtr = t.CType(pml4.entries[Pml4Index] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+
+    if not (pdp.entries[PdpIndex] & PTE_PRESENT):
+        pd: _p | t.CPtr = AllocPage()
+        if not pd: return
+        pdp.entries[PdpIndex] = (t.CUInt64T(pd) & ~t.CUInt64T(0xFFF)) | PTE_PRESENT | PTE_WRITABLE | (flags & PTE_USER)
+    else:
+        if (flags & PTE_USER) and not (pdp.entries[PdpIndex] & PTE_USER):
+            pdp.entries[PdpIndex] = pdp.entries[PdpIndex] | PTE_USER
+    pd: _p | t.CPtr = t.CType(pdp.entries[PdpIndex] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+
+    if pd.entries[PdIndex] & 1:
+        if pd.entries[PdIndex] & 0x80:
+            big_phys: t.CUInt64T = pd.entries[PdIndex] & ~t.CUInt64T(0x1FFFFF)
+            inherit_flags: t.CUInt64T = pd.entries[PdIndex] & (PTE_PCD | PTE_PWT)
+            pt: _p | t.CPtr = AllocPage()
+            if not pt: return
+            split_i: t.CInt = 0
+            while split_i < 512:
+                pt.entries[split_i] = (big_phys + t.CUInt64T(split_i) * 0x1000) | PTE_PRESENT | PTE_WRITABLE | inherit_flags
+                split_i += 1
+            pd.entries[PdIndex] = (t.CUInt64T(pt) & ~t.CUInt64T(0xFFF)) | PTE_PRESENT | PTE_WRITABLE | (flags & PTE_USER)
+        else:
+            # PD entry exists as a regular PT (e.g. cloned identity mapping).
+            # Must propagate PTE_USER to the PD entry so user-mode access is
+            # allowed at all paging levels, otherwise #PF err=0x5.
+            if (flags & PTE_USER) and not (pd.entries[PdIndex] & PTE_USER):
+                pd.entries[PdIndex] = pd.entries[PdIndex] | PTE_USER
+    else:
+        pt: _p | t.CPtr = AllocPage()
+        if not pt: return
+        pd.entries[PdIndex] = (t.CUInt64T(pt) & ~t.CUInt64T(0xFFF)) | PTE_PRESENT | PTE_WRITABLE | (flags & PTE_USER)
+    pt: _p | t.CPtr = t.CType(pd.entries[PdIndex] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+
+    pt.entries[PtIndex] = PhysAddr | flags | PTE_PRESENT
+    c.Asm(f"invlpg [{c.AsmInp(VirtAddr, t.ASM_DESCR.REG_ANY)}]")
+
+def MapLargePage(VirtAddr: t.CUInt64T, PhysAddr: t.CUInt64T, flags: t.CUInt64T) -> t.CVoid:
+    global pml4, pdp, pd, pt
+    VirtAddr = VirtAddr & ~t.CUInt64T(0x1FFFFF)
+    PhysAddr = PhysAddr & ~t.CUInt64T(0x1FFFFF)
+    Pml4Index: t.CUInt64T = (VirtAddr >> 39) & 0x1FF
+    PdpIndex:  t.CUInt64T = (VirtAddr >> 30) & 0x1FF
+    PdIndex:   t.CUInt64T = (VirtAddr >> 21) & 0x1FF
+
+    if not pml4:
+        pml4 = AllocPage()
+        if not pml4: return
+
+    if not pml4.entries[Pml4Index] & PTE_PRESENT:
+        pdp: _p | t.CPtr = AllocPage()
+        if not pdp: return
+        pml4.entries[Pml4Index] = (t.CUInt64T(pdp) & ~t.CUInt64T(0xFFF)) | PTE_PRESENT | PTE_WRITABLE
+    pdp: _p | t.CPtr = t.CType(pml4.entries[Pml4Index] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+
+    if not (pdp.entries[PdpIndex] & PTE_PRESENT):
+        pd: _p | t.CPtr = AllocPage()
+        if not pd: return
+        pdp.entries[PdpIndex] = (t.CUInt64T(pd) & ~t.CUInt64T(0xFFF)) | PTE_PRESENT | PTE_WRITABLE
+    pd: _p | t.CPtr = t.CType(pdp.entries[PdpIndex] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+
+    pd.entries[PdIndex] = PhysAddr | flags | PTE_PRESENT | PTE_PS
+    c.Asm(f"invlpg [{c.AsmInp(VirtAddr, t.ASM_DESCR.REG_ANY)}]")
+
+def UnMapPage(VirtAddr: t.CUInt64T):
+    global pml4, pdp, pd, pt
+    if VirtAddr == 0: return
+    if not pml4: return
+    Pml4Index: t.CUInt64T = (VirtAddr >> 39) & 0x1FF
+    PdpIndex:  t.CUInt64T = (VirtAddr >> 30) & 0x1FF
+    PdIndex:   t.CUInt64T = (VirtAddr >> 21) & 0x1FF
+    PtIndex:   t.CUInt64T = (VirtAddr >> 12) & 0x1FF
+
+    if not pml4.entries[Pml4Index] & PTE_PRESENT: return
+
+    pdp: _p | t.CPtr = t.CType(pml4.entries[Pml4Index] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+    if not pdp.entries[PdpIndex] & PTE_PRESENT: return
+
+    pd: _p | t.CPtr = t.CType(pdp.entries[PdpIndex] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+
+    if not pd.entries[PdIndex] & PTE_PRESENT: return
+
+    if pd.entries[PdIndex] & PTE_PS:
+        pd.entries[PdIndex] = 0
+    else:
+        pt: _p | t.CPtr = t.CType(pd.entries[PdIndex] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+        pt.entries[PtIndex] = 0
+
+    c.Asm(f"invlpg [{c.AsmInp(VirtAddr, t.ASM_DESCR.REG_ANY)}]")
+
+def EnablePaging():
+    global pml4, pdp, pd, pt
+    c.Asm(f"mov cr3, {c.AsmInp(t.CUInt64T(pml4), t.ASM_DESCR.REG_ANY)}")
+
+def GetCurrentPml4() -> _p | t.CPtr:
+    global pml4, pdp, pd, pt
+    cr3: t.CUInt64T
+    c.Asm(f"mov {c.AsmOut(cr3, t.ASM_DESCR.OUTPUT_REG)}, cr3")
+    return (_p | t.CPtr)(cr3 & ~t.CUInt64T(0xFFF))
+
+def create_process_page_table() -> t.CUInt64T:
+    global pml4
+    if not pml4: return 0
+    new_pml4: _p | t.CPtr = AllocPage()
+    if not new_pml4: return 0
+    i: t.CUInt64T
+    for i in range(512):
+        entry: t.CUInt64T = pml4.entries[i]
+        if entry & PTE_PRESENT:
+            new_pml4.entries[i] = entry
+    return t.CUInt64T(new_pml4)
+
+def clone_for_process(isolate_vaddr: t.CUInt64T) -> t.CUInt64T:
+    global pml4
+    _dbg: t.CArray[t.CChar, 120]
+    viperlib.snprintf(c.Addr(_dbg), 120, "[clone] pml4=0x%lx pool_used=%lu iso_va=0x%lx\n", t.CUInt64T(pml4), pt_pool_used, isolate_vaddr)
+    serial.puts(_dbg)
+    if not pml4: return 0
+    new_pml4_page: _p | t.CPtr = AllocPage()
+    if not new_pml4_page:
+        serial.puts("[clone] AllocPage pml4 failed\n")
+        return 0
+    _dbg2: t.CArray[t.CChar, 120]
+    viperlib.snprintf(c.Addr(_dbg2), 120, "[clone] new_pml4=0x%lx\n", t.CUInt64T(new_pml4_page))
+    serial.puts(_dbg2)
+    i: t.CUInt64T
+    for i in range(512):
+        new_pml4_page.entries[i] = pml4.entries[i]
+    pml4_idx: t.CUInt64T = (isolate_vaddr >> 39) & 0x1FF
+    _dbg3: t.CArray[t.CChar, 120]
+    viperlib.snprintf(c.Addr(_dbg3), 120, "[clone] pml4_idx=%lu entry0=0x%lx\n", pml4_idx, pml4.entries[pml4_idx])
+    serial.puts(_dbg3)
+    if not (pml4.entries[pml4_idx] & PTE_PRESENT): return t.CUInt64T(new_pml4_page)
+    kernel_pdp: _p | t.CPtr = t.CType(pml4.entries[pml4_idx] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+    new_pdp_page: _p | t.CPtr = AllocPage()
+    if not new_pdp_page: return t.CUInt64T(new_pml4_page)
+    for i in range(512):
+        new_pdp_page.entries[i] = kernel_pdp.entries[i]
+    new_pml4_page.entries[pml4_idx] = (t.CUInt64T(new_pdp_page) & ~t.CUInt64T(0xFFF)) | (pml4.entries[pml4_idx] & t.CUInt64T(0xFFF))
+    pdp_idx: t.CUInt64T = (isolate_vaddr >> 30) & 0x1FF
+    if not (kernel_pdp.entries[pdp_idx] & PTE_PRESENT): return t.CUInt64T(new_pml4_page)
+    kernel_pd: _p | t.CPtr = t.CType(kernel_pdp.entries[pdp_idx] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+    new_pd_page: _p | t.CPtr = AllocPage()
+    if not new_pd_page: return t.CUInt64T(new_pml4_page)
+    for i in range(512):
+        new_pd_page.entries[i] = kernel_pd.entries[i]
+    new_pdp_page.entries[pdp_idx] = (t.CUInt64T(new_pd_page) & ~t.CUInt64T(0xFFF)) | (kernel_pdp.entries[pdp_idx] & t.CUInt64T(0xFFF))
+    pd_idx: t.CUInt64T = (isolate_vaddr >> 21) & 0x1FF
+    if not (kernel_pd.entries[pd_idx] & PTE_PRESENT): return t.CUInt64T(new_pml4_page)
+    if kernel_pd.entries[pd_idx] & PTE_PS: return t.CUInt64T(new_pml4_page)
+    kernel_pt: _p | t.CPtr = t.CType(kernel_pd.entries[pd_idx] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+    new_pt_page: _p | t.CPtr = AllocPage()
+    if not new_pt_page: return t.CUInt64T(new_pml4_page)
+    for i in range(512):
+        new_pt_page.entries[i] = kernel_pt.entries[i]
+    new_pd_page.entries[pd_idx] = (t.CUInt64T(new_pt_page) & ~t.CUInt64T(0xFFF)) | (kernel_pd.entries[pd_idx] & t.CUInt64T(0xFFF))
+    return t.CUInt64T(new_pml4_page)
+
+def save_pt_range(vaddr_start: t.CUInt64T, vaddr_end: t.CUInt64T, save_buf: t.CUInt64T | t.CPtr, save_count: t.CUInt32T | t.CPtr) -> t.CInt:
+    global pml4
+    if not pml4: return -1
+    c.Set(save_count, t.CUInt32T(0))
+    va: t.CUInt64T = vaddr_start & ~t.CUInt64T(0xFFF)
+    while va < vaddr_end:
+        pml4_idx: t.CUInt64T = (va >> 39) & 0x1FF
+        if not (pml4.entries[pml4_idx] & PTE_PRESENT): va += 0x1000; continue
+        pdp_: _p | t.CPtr = t.CType(pml4.entries[pml4_idx] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+        pdp_idx: t.CUInt64T = (va >> 30) & 0x1FF
+        if not (pdp_.entries[pdp_idx] & PTE_PRESENT): va += 0x1000; continue
+        pd_: _p | t.CPtr = t.CType(pdp_.entries[pdp_idx] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+        pd_idx: t.CUInt64T = (va >> 21) & 0x1FF
+        if not (pd_.entries[pd_idx] & PTE_PRESENT): va += 0x1000; continue
+        if pd_.entries[pd_idx] & PTE_PS: va += 0x200000; continue
+        pt_: _p | t.CPtr = t.CType(pd_.entries[pd_idx] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+        pt_idx: t.CUInt64T = (va >> 12) & 0x1FF
+        saved: t.CUInt32T = c.DerefAs(save_count) # 此处操作意义存疑？
+        entry_ptr: t.CUInt64T | t.CPtr = save_buf + t.CUInt64T(saved) * 16
+        c.DerefAs(entry_ptr, va)
+        c.DerefAs(entry_ptr + 8, pt_.entries[pt_idx])
+        c.Set(save_count, t.CUInt32T(saved + 1))
+        va += 0x1000
+    return 0
+
+def restore_pt_range(save_buf: t.CUInt64T | t.CPtr, save_count: t.CUInt32T):
+    global pml4
+    if not pml4: return
+    i: t.CUInt32T = 0
+    while i < save_count:
+        entry_ptr: t.CUInt64T | t.CPtr = save_buf + t.CUInt64T(i) * 16
+        va: t.CUInt64T = c.DerefAs(entry_ptr)
+        orig_pte: t.CUInt64T = c.DerefAs(entry_ptr + 8)
+        pml4_idx: t.CUInt64T = (va >> 39) & 0x1FF
+        if not (pml4.entries[pml4_idx] & PTE_PRESENT): i += 1; continue
+        pdp_: _p | t.CPtr = t.CType(pml4.entries[pml4_idx] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+        pdp_idx: t.CUInt64T = (va >> 30) & 0x1FF
+        if not (pdp_.entries[pdp_idx] & PTE_PRESENT): i += 1; continue
+        pd_: _p | t.CPtr = t.CType(pdp_.entries[pdp_idx] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+        pd_idx: t.CUInt64T = (va >> 21) & 0x1FF
+        if not (pd_.entries[pd_idx] & PTE_PRESENT): i += 1; continue
+        if pd_.entries[pd_idx] & PTE_PS: i += 1; continue
+        pt_: _p | t.CPtr = t.CType(pd_.entries[pd_idx] & ~t.CUInt64T(0xFFF), _p, t.CPtr)
+        pt_idx: t.CUInt64T = (va >> 12) & 0x1FF
+        pt_.entries[pt_idx] = orig_pte
+        c.Asm(f"invlpg [{c.AsmInp(va, t.ASM_DESCR.REG_ANY)}]", op=[t.ASM_DESCR.CLOBBER_MEMORY])
+        i += 1
+
+def set_active_pml4(cr3_val: t.CUInt64T):
+    global pml4
+    pml4 = t.CType(cr3_val & ~t.CUInt64T(0xFFF), _p, t.CPtr)

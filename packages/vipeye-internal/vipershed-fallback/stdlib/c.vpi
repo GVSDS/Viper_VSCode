@@ -1,0 +1,81 @@
+# Viper C 互操作模块 c 的存根。
+# 所有函数返回值类型姑息映射为 Python 类型。
+
+from typing import Any, TypeVar
+
+T = TypeVar('T')
+
+
+def Addr(x: T) -> int:
+    """取地址 &x，返回指针（int）。"""
+    return 0
+
+def Deref(ptr: int) -> T:
+    """解引用 *ptr。"""
+    ...
+
+def Load(dst: int, src: int) -> None:
+    """内存拷贝 *dst = *src。"""
+    ...
+
+def DerefAs(ptr: int, value: T) -> None:
+    """解引用赋值 *ptr = value。"""
+    ...
+
+def Set(target: Any, value: T) -> None:
+    """target = value。"""
+    ...
+
+def Asm(asm: str, *args: Any, op: Any = None) -> Any:
+    """内联汇编。op 为破坏描述符列表。"""
+    ...
+
+def LLVMIR(ir: str, *args: Any, op: Any = None) -> Any:
+    """LLVM IR 内联。op 为破坏描述符列表。"""
+    ...
+
+def LInp(expr: Any, constraint: Any = None) -> Any:
+    """LLVM IR 输入操作数标记。"""
+    ...
+
+def LOut(expr: Any, constraint: Any = None) -> Any:
+    """LLVM IR 输出操作数标记。"""
+    ...
+
+def AsmInp(expr: Any, constraint: Any = None) -> Any:
+    """asm 输入操作数标记。constraint 为寄存器约束（如 t.ASM_DESCR.REG_ANY）。"""
+    ...
+
+def AsmOut(expr: Any, constraint: Any = None) -> Any:
+    """asm 输出操作数标记。constraint 为寄存器约束（如 t.ASM_DESCR.OUTPUT_REG）。"""
+    ...
+
+# 预处理指令
+def CDefine(name: str, value: Any) -> None: ...
+def CIfdef(name: str) -> bool: ...
+def CIfndef(name: str) -> bool: ...
+def CIf(cond: bool) -> bool:
+    """编译期 if。"""
+    ...
+def CElif(cond: bool) -> bool: ...
+def CElse() -> None: ...
+def CEndif() -> None: ...
+def Undef(name: str) -> None: ...
+def CError(msg: str) -> None: ...
+
+# 装饰器
+def Attribute(*args: Any) -> Any:
+    """GCC __attribute__ 装饰器。"""
+    ...
+
+def CReturn(*types: Any) -> Any:
+    """多返回值装饰器。"""
+    ...
+
+def NoBreak() -> None:
+    """match case fallthrough 标记。"""
+    ...
+
+def Break() -> None:
+    """match case 提前 break 标记。"""
+    ...

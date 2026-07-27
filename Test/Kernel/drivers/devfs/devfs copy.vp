@@ -1,0 +1,385 @@
+import drivers.serial.uart.serial as serial
+import viperstring as string
+import t, c
+
+
+MAX_FILE_DESCRIPTORS: t.CDefine = 64
+MAX_DEVICE_FILES:     t.CDefine = 32
+MAX_DIRECTORIES:      t.CDefine = 16
+PATH_BUFFER_SIZE:     t.CDefine = 256
+
+directories:     list[devfs_directory, MAX_DIRECTORIES] = [0]
+directory_count: t.CStatic | t.CInt = 0
+
+files:       list[devfs_file, MAX_DEVICE_FILES] = [0]
+file_count:  t.CStatic | t.CInt = 0
+
+
+class _fd_table:
+    file: devfs_file | t.CPtr
+    flags: t.CInt
+
+fd_table: list[_fd_table, MAX_FILE_DESCRIPTORS] = [0]
+
+@t.Object
+class devfs_directory:
+    name:   list[t.CChar, 64]
+    parent: 'devfs_directory' | t.CPtr
+
+    @staticmethod
+    def find(path: t.CConst | str,
+             root_directory: devfs_directory | t.CPtr) -> devfs_directory | t.CPtr:
+        if not path or string.strchr(path, '/') != path: return None
+        if not root_directory: return None
+
+        current_dir: devfs_directory | t.CPtr = root_directory
+        result: list[str, PATH_BUFFER_SIZE]
+        token = string.split(path, "/", result)
+
+        for i in result:
+            found: bool = False
+            for d in range(directory_count):
+                dirp: devfs_directory = c.Addr(directories[d])
+                if dirp.parent == current_dir and string.samestr(dirp.name, i):
+                    current_dir = dirp
+                    found = True
+                    break
+            if not found: return None
+
+        return current_dir
+
+    @staticmethod
+    def find_child(name: t.CConst | str,
+                   parent: devfs_directory | t.CPtr) -> devfs_directory | t.CPtr:
+        for d in range(directory_count):
+            dirp: devfs_directory = c.Addr(directories[d])
+            if dirp.parent == parent and string.samestr(dirp.name, name):
+                return dirp
+        return None
+
+    @staticmethod
+    def list_subdirs(dir_ptr: devfs_directory | t.CPtr,
+                     buffer: str,
+                     size: t.CUInt32T,
+                     pos: t.CInt) -> t.CInt:
+        for d in range(directory_count):
+            dirp: devfs_directory = c.Addr(directories[d])
+            if dirp.parent == dir_ptr:
+                name_len: t.CInt = string.strlen(dirp.name)
+                if pos + name_len + 1 > size:
+                    break
+                string.strcpy(buffer + pos, dirp.name)
+                pos += name_len
+                buffer[pos] = '\n'
+                pos += 1
+        return pos
+
+@t.Object
+@t.CVTable
+class devfs_file:
+    name:         list[t.CChar, 64]
+    private_data: t.CVoid | t.CPtr
+    parent_dir:   'devfs_directory' | t.CPtr
+
+    @staticmethod
+    def find_in_dir(file_name: t.CConst | str,
+                    dir_ptr: devfs_directory | t.CPtr) -> devfs_file | t.CPtr:
+        for f in range(file_count):
+            fp: devfs_file | t.CPtr = c.Addr(files[f])
+            if fp.parent_dir == dir_ptr and string.samestr(fp.name, file_name):
+                return fp
+        return None
+
+    @staticmethod
+    def list_in_dir(dir_ptr: devfs_directory | t.CPtr,
+                    buffer: str,
+                    size: t.CUInt32T,
+                    pos: t.CInt) -> t.CInt:
+        for f in range(file_count):
+            filep: devfs_file | t.CPtr = c.Addr(files[f])
+            if filep.parent_dir == dir_ptr:
+                name_len: t.CInt = string.strlen(filep.name)
+                if pos + name_len + 1 > size:
+                    break
+                string.strcpy(buffer + pos, filep.name)
+                pos += name_len
+                buffer[pos] = '\n'
+                pos += 1
+        return pos
+
+    def open(self, path: t.CConst | str, flags: t.CInt) -> t.CInt:
+        return 0
+
+    def close(self, fd: t.CInt) -> t.CInt:
+        return 0
+
+    def read(self, fd: t.CInt, buffer: t.CVoid | t.CPtr, size: t.CUInt32T) -> t.CInt:
+        return 0
+
+    def write(self, fd: t.CInt, buffer: t.CConst | t.CVoid | t.CPtr, size: t.CUInt32T) -> t.CInt:
+        return 0
+
+    def ioctl(self, fd: t.CInt, request: t.CInt, arg: t.CVoid | t.CPtr) -> t.CInt:
+        return 0
+
+@t.Object
+class _DevFSObject:
+    root_directory: devfs_directory | t.CPtr
+
+    def __init__(self):
+        global directory_count, file_count
+        self.root_directory = None
+        directory_count = 0
+        file_count = 0
+        string.memset(c.Addr(directories), 0, devfs_directory.__sizeof__() * MAX_DIRECTORIES)
+        string.memset(c.Addr(files), 0, devfs_file.__sizeof__() * MAX_DEVICE_FILES)
+        string.memset(c.Addr(fd_table), 0, _fd_table.__sizeof__() * MAX_FILE_DESCRIPTORS)
+
+    def create_single_dir(self, parent: devfs_directory | t.CPtr,
+                          dir_name: t.CConst | str) -> devfs_directory | t.CPtr:
+        global directory_count
+        if not parent or not dir_name: return None
+        if directory_count >= MAX_DIRECTORIES: return None
+        if string.strlen(dir_name) >= 64: return None
+
+        new_dir: devfs_directory | t.CPtr = c.Addr(directories[directory_count])
+        directory_count += 1
+
+        string.strcpy(new_dir.name, dir_name)
+        new_dir.parent = parent
+
+        return new_dir
+
+    def find_or_create_directory(self, path: t.CConst | str) -> devfs_directory | t.CPtr:
+        global directory_count
+        if not path or string.samestr(path, "/"): return None
+
+        if not self.root_directory:
+            self.root_directory = c.Addr(directories[directory_count])
+            directory_count += 1
+            string.strcpy(self.root_directory.name, "")
+            self.root_directory.parent = None
+
+        current: devfs_directory | t.CPtr = self.root_directory
+        buf: list[t.CChar, PATH_BUFFER_SIZE]
+        string.memset(c.Addr(buf), 0, PATH_BUFFER_SIZE)
+        buf_idx: t.CInt = 0
+        p: t.CInt = 0
+        if path[p] == '/':
+            p += 1
+        while path[p] != '\0':
+            if path[p] == '/':
+                if buf_idx > 0:
+                    found_child: devfs_directory | t.CPtr = devfs_directory.find_child(buf, current)
+                    if not found_child:
+                        found_child = self.create_single_dir(current, buf)
+                        if not found_child: return None
+                    current = found_child
+                    string.memset(c.Addr(buf), 0, PATH_BUFFER_SIZE)
+                    buf_idx = 0
+                p += 1
+            else:
+                buf[buf_idx] = path[p]
+                buf_idx += 1
+                p += 1
+        if buf_idx > 0:
+            found_child: devfs_directory | t.CPtr = devfs_directory.find_child(buf, current)
+            if not found_child:
+                found_child = self.create_single_dir(current, buf)
+                if not found_child: return None
+            current = found_child
+
+        return current
+
+    def init(self) -> t.CInt:
+        self.create_directory("/dev")
+        self.create_directory("/dev/input")
+        return 0
+
+    def create_directory(self, path: t.CConst | str) -> t.CInt:
+        dir_ptr: devfs_directory | t.CPtr = self.find_or_create_directory(path)
+        return 0 if dir_ptr else -1
+
+    def create_file(self, path: t.CConst | str,
+                    private_data: t.CVoid | t.CPtr) -> t.CInt:
+        global file_count
+        path_copy: list[t.CChar, PATH_BUFFER_SIZE]
+        string.memset(c.Addr(path_copy), 0, PATH_BUFFER_SIZE)
+        string.strcpy(path_copy, path)
+
+        last_slash: str | t.CPtr = string.strrchr(path_copy, '/')
+
+        if not last_slash: return -1
+
+        last_slash[0] = '\0'
+        dir_path = path_copy
+        file_name: str | t.CPtr = last_slash + 1
+
+        dir_ptr: devfs_directory | t.CPtr = self.find_or_create_directory(dir_path)
+        if not dir_ptr: return -1
+
+        if devfs_file.find_in_dir(file_name, dir_ptr):
+            return -1
+
+        if file_count >= MAX_DEVICE_FILES: return -1
+
+        new_file: devfs_file | t.CPtr = c.Addr(files[file_count])
+        file_count += 1
+
+        string.strcpy(new_file.name, file_name)
+        new_file.private_data = private_data
+        new_file.parent_dir = dir_ptr
+
+        return 0
+
+    def open(self, path: t.CConst | str, flags: t.CInt) -> t.CInt:
+        path_copy: list[t.CChar, PATH_BUFFER_SIZE]
+        string.memset(c.Addr(path_copy), 0, PATH_BUFFER_SIZE)
+        string.strcpy(path_copy, path)
+
+        last_slash: str | t.CPtr = string.strrchr(path_copy, '/')
+
+        if not last_slash: return -1
+
+        last_slash[0] = '\0'
+        dir_path = path_copy
+        file_name: str | t.CPtr = last_slash + 1
+
+        dir_ptr: devfs_directory | t.CPtr = devfs_directory.find(dir_path, self.root_directory)
+        if not dir_ptr: return -1
+
+        file_ptr: devfs_file | t.CPtr = devfs_file.find_in_dir(file_name, dir_ptr)
+        if not file_ptr: return -1
+
+        if not file_ptr.open:
+            return -1
+
+        fd: t.CInt = -1
+        for i in range(MAX_FILE_DESCRIPTORS):
+            if not fd_table[i].file:
+                fd = i
+                break
+
+        if fd == -1: return -1
+
+        ret: t.CInt = file_ptr.open(path, flags)
+        if ret != 0: return ret
+
+        fd_table[fd].file = file_ptr
+        fd_table[fd].flags = flags
+        return fd
+
+    def close(self, fd: t.CInt) -> t.CInt:
+        if fd < 0 or fd >= MAX_FILE_DESCRIPTORS or not fd_table[fd].file:
+            return -1
+        file_ptr: devfs_file | t.CPtr = fd_table[fd].file
+        if file_ptr and file_ptr.close:
+            file_ptr.close(fd)
+        fd_table[fd].file = None
+        fd_table[fd].flags = 0
+        return 0
+
+    def read(self, fd: t.CInt, buffer: t.CVoid | t.CPtr, size: t.CUInt32T) -> t.CInt:
+        if fd < 0 or fd >= MAX_FILE_DESCRIPTORS or not fd_table[fd].file:
+            return -1
+        file_ptr: devfs_file | t.CPtr = fd_table[fd].file
+        if file_ptr and file_ptr.read:
+            return file_ptr.read(fd, buffer, size)
+        return 0
+
+    def write(self, fd: t.CInt, buffer: t.CConst | t.CVoid | t.CPtr, size: t.CUInt32T) -> t.CInt:
+        if fd < 0 or fd >= MAX_FILE_DESCRIPTORS or not fd_table[fd].file:
+            return -1
+        file_ptr: devfs_file | t.CPtr = fd_table[fd].file
+        if file_ptr and file_ptr.write:
+            return file_ptr.write(fd, buffer, size)
+        return 0
+
+    def ioctl(self, fd: t.CInt, cmd: t.CUInt32T, arg: t.CVoid | t.CPtr) -> t.CInt:
+        if fd < 0 or fd >= MAX_FILE_DESCRIPTORS or not fd_table[fd].file:
+            return -1
+        file_ptr: devfs_file | t.CPtr = fd_table[fd].file
+        if file_ptr and file_ptr.ioctl:
+            return file_ptr.ioctl(fd, cmd, arg)
+        return 0
+
+    def list_directory(self, path: t.CConst | str,
+                       buffer: str,
+                       size: t.CUInt32T) -> t.CInt:
+        dir_ptr: devfs_directory | t.CPtr = devfs_directory.find(path, self.root_directory)
+        if not dir_ptr or not buffer or size == 0: return -1
+
+        pos: t.CInt = devfs_directory.list_subdirs(dir_ptr, buffer, size, 0)
+        pos = devfs_file.list_in_dir(dir_ptr, buffer, size, pos)
+
+        return pos
+
+DevFSObject: _DevFSObject | t.CPtr
+_DevFSObject_instance: _DevFSObject
+
+
+def devfs_init() -> t.CInt:
+    global DevFSObject, _DevFSObject_instance
+    DevFSObject = c.Addr(_DevFSObject_instance)
+    _DevFSObject_instance.__init__()
+    DevFSObject.init()
+    return 0
+
+def devfs_create_directory(path: t.CConst | str) -> t.CInt:
+    return DevFSObject.create_directory(path)
+
+def devfs_create_file(path: t.CConst | str,
+                      private_data: t.CVoid | t.CPtr) -> t.CInt:
+    return DevFSObject.create_file(path, private_data)
+
+def devfs_open(path: t.CConst | str, flags: t.CInt) -> t.CInt:
+    return DevFSObject.open(path, flags)
+
+def devfs_close(fd: t.CInt) -> t.CInt:
+    return DevFSObject.close(fd)
+
+def devfs_read(fd: t.CInt, buffer: t.CVoid | t.CPtr, size: t.CUInt32T) -> t.CInt:
+    return DevFSObject.read(fd, buffer, size)
+
+def devfs_write(fd: t.CInt, buffer: t.CConst | t.CVoid | t.CPtr, size: t.CUInt32T) -> t.CInt:
+    return DevFSObject.write(fd, buffer, size)
+
+def devfs_ioctl(fd: t.CInt, cmd: t.CUInt32T, arg: t.CVoid | t.CPtr) -> t.CInt:
+    return DevFSObject.ioctl(fd, cmd, arg)
+
+def devfs_list_directory(path: t.CConst | str,
+                         buffer: str,
+                         size: t.CUInt32T) -> t.CInt:
+    return DevFSObject.list_directory(path, buffer, size)
+
+serial0_file: devfs_file
+
+def serial0_open(self: t.CVoid | t.CPtr, path: t.CConst | str, flags: t.CInt) -> t.CInt:
+    serial.puts("[serial0] open: ")
+    serial.puts(path)
+    serial.puts("\n")
+    return 0
+
+def serial0_close(self: t.CVoid | t.CPtr, fd: t.CInt) -> t.CInt:
+    serial.puts("[serial0] close\n")
+    return 0
+
+def serial0_read(self: t.CVoid | t.CPtr, fd: t.CInt, buffer: t.CVoid | t.CPtr, size: t.CUInt32T) -> t.CInt:
+    serial.puts("[serial0] read\n")
+    return 0
+
+def serial0_write(self: t.CVoid | t.CPtr, fd: t.CInt, buffer: t.CConst | t.CVoid | t.CPtr, size: t.CUInt32T) -> t.CInt:
+    serial.puts("[serial0] write\n")
+    serial.puts(str(buffer))
+    serial.puts("\n")
+    return size
+
+def devfs_register_serial0() -> t.CInt:
+    global serial0_file
+    serial0_file = devfs_file()
+    serial0_file.open = serial0_open
+    serial0_file.close = serial0_close
+    serial0_file.read = serial0_read
+    serial0_file.write = serial0_write
+    serial0_file.ioctl = None
+    return devfs_create_file("/dev/serial0", serial0_file)

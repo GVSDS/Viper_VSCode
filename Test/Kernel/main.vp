@@ -1,0 +1,346 @@
+from stdint import *
+import bootinfo
+import intr
+import platform.pch as pch
+import platform.pch.timer as timer
+import platform.pch.rtc as rtc
+import drivers.serial.uart.su8250 as su8250
+import drivers.serial.uart.serial as serial
+import drivers.devfs.devfs as devfs
+import paging.paging as paging
+import drivers.video.vesafb.vga as vga
+import drivers.video.vesafb.gfx as gfx
+import drivers.storage.ide.ide as ide
+import drivers.fs.fat32.fat32 as fat32
+import drivers.fs.fat32.fat32_types as fat32_types
+import mm.mm as mm
+import string
+import sched.sched as sched
+import sched.process as proc
+import drivers.input.keyboard.keyboard as keyboard
+import drivers.input.mouse.mouse as mouse
+import drivers.usb.usb as usb
+import drivers.core.cpu.cpu as cpu
+import drivers.core.cpu.apic as apic
+import viperlib
+import services.keyboard as kbd_svc
+import services.mouse as mse_svc
+import services.desktop as desktop
+import intr.syscall as syscall
+import execrunner.elf as elf
+import t, c
+import asm
+
+kbd_tid: t.CInt = -1
+mse_tid: t.CInt = -1
+
+BootInfo: bootinfo.bootinfo | t.CPtr
+
+@t.Object
+# @t.CVTable
+class ViperKernel:
+    BootInfo: bootinfo.bootinfo | t.CPtr
+    VGA: vga._VGAScreenDriver | t.CPtr
+    VGA_drv: vga._VGAScreenDriver
+
+    def __init__(self):
+        global BootInfo
+        self.BootInfo = BootInfo
+        BootInfo: bootinfo.bootinfo | t.CPtr = self.BootInfo
+        serial.init()
+        serial.puts("===== ViperOS VKernel Test\n =====")
+        serial.puts("V2.3.8\n")
+
+        intr.gdt.init()
+        # Set IA32_KERNEL_GS_BASE = &_per_cpu so swapgs in ISR/syscall works.
+        # _CPUObject is never instantiated, so __init_tss__ never runs;
+        # without this, GS base stays 0 and gs:[0] writes hit null -> triple fault.
+        cpu.msr_write(cpu.IA32_KERNEL_GS_BASE, t.CUInt64T(c.Addr(cpu._per_cpu)))
+        serial.puts("[main] gdt init done\n")
+        intr.idt.init()
+        syscall.init()
+        serial.puts("[main] syscall init done\n")
+
+        # 必须在 sti() 之前初始化调度器，否则中断触发时 _sched_ptr 为 NULL 会导致三重故障
+        sched.Scheduler()
+        serial.puts("[main] sched init done\n")
+
+        timer.timer_init()
+        serial.puts("[main] timer init done\n")
+
+        #mouse.init()
+        #serial.puts("[main] mouse init done\n")
+
+        #apic.early_init()
+        #serial.puts("[main] apic init done\n")
+
+        asm.sti()
+        serial.puts("[main] sti done\n")
+
+        timer.timer_msleep(100)
+        serial.puts("[main] msleep done\n")
+        rtc.rtc_init()
+        serial.puts("[main] rtc init done\n")
+        ncpu: t.CUInt32T = apic.get_cpu_count()
+        ncpu_cr: t.CArray[t.CChar, 32]
+        viperlib.snprintf(c.Addr(ncpu_cr), 32, "[main] cpu_count=%u\n", ncpu)
+        serial.puts(ncpu_cr)
+        if ncpu > 1:
+            apic.start_aps()
+        serial.puts("[main] kernel init done\n")
+
+        fb: t.CVoid | t.CPtr = BootInfo.framebuffer_addr
+        width: t.CUInt64T = BootInfo.framebuffer_width
+        height: t.CUInt64T = BootInfo.framebuffer_height
+        pitch: t.CUInt64T = BootInfo.framebuffer_pitch
+        fb_format: t.CUInt64T = BootInfo.framebuffer_format
+        fb_size: t.CUInt64T = BootInfo.framebuffer_size
+        if BootInfo is not None:
+            paging.init(BootInfo.MemmapAddr, BootInfo.MemmapSize)
+            fb_pages: t.CUInt64T = (fb_size + t.CUInt64T(0xFFF)) >> t.CUInt64T(12)
+            fpi: t.CUInt64T = 0
+            while fpi < fb_pages:
+                fva: t.CUInt64T = t.CUInt64T(fb) + fpi * t.CUInt64T(0x1000)
+                paging.MapPage(fva, fva, paging.PTE_WRITABLE | paging.PTE_PCD)
+                fpi += 1
+            mm.init(BootInfo.MemmapAddr, BootInfo.MemmapSize, BootInfo.MemmapDescSize, BootInfo.framebuffer_addr, fb_size)
+            pt_pool_buf: t.CVoid | t.CPtr = mm.malloc(t.CUInt64T(513) * t.CUInt64T(4096))
+            paging.init_pool(pt_pool_buf, t.CUInt64T(513) * t.CUInt64T(4096))
+        else:
+            paging.init(0, 0)
+            mm.init(0, 0, 0, 0, 0)
+            pt_pool_buf2: t.CVoid | t.CPtr = mm.malloc(t.CUInt64T(513) * t.CUInt64T(4096))
+            paging.init_pool(pt_pool_buf2, t.CUInt64T(513) * t.CUInt64T(4096))
+        serial.puts("[main] paging and mm init done\n")
+
+        proc.ProcessManager()
+        serial.puts("[main] process manager init done\n")
+
+        ide.init()
+        serial.puts("[main] ide init done\n")
+
+        serial.puts("[main] initializing FAT32 filesystem\n")
+        scan_res: t.CInt = fat32.scan_drives()
+        ndrives: t.CInt = fat32.get_drive_count()
+        ndrives_cr: t.CArray[t.CChar, 64]
+        viperlib.snprintf(c.Addr(ndrives_cr), 64, "[fat32] scan_res=%d found %d drives\n", scan_res, ndrives)
+        serial.puts(ndrives_cr)
+
+        if ndrives > 0:
+            mount_res: t.CInt = fat32.mount()
+            if mount_res == 0:
+                dp: fat32_types.dirobj
+                res: t.CInt = fat32.opendir("/", c.Addr(dp))
+                if res == 0:
+                    serial.puts("[fat32] listing 0:/\n")
+                    count: t.CInt = 0
+                    while count < 20:
+                        info: fat32_types.fileinfo
+                        res2: t.CInt = fat32.readdir(c.Addr(dp), c.Addr(info))
+                        if res2 != 0: break
+                        if info.fname[0] == 0: break
+                        is_dir: t.CInt = 1 if (info.attr & fat32_types.AM_DIR) else 0
+                        entry_cr: t.CArray[t.CChar, 300]
+                        viperlib.snprintf(c.Addr(entry_cr), 300, "  %s  size=%lu  dir=%d\n", c.Addr(info.fname[0]), info.file_size, is_dir)
+                        serial.puts(entry_cr)
+                        count = count + 1
+                    fat32.closedir(c.Addr(dp))
+                    serial.puts("[fat32] directory listing done\n")
+                else:
+                    serial.puts("[fat32] failed to open root directory\n")
+
+                # Load ELF apps BEFORE running destructive FAT32 tests
+                serial.puts("[main] loading ELF apps...\n")
+                dp_apps: fat32_types.dirobj
+                apps_res: t.CInt = fat32.opendir("/APPS", c.Addr(dp_apps))
+                if apps_res == 0:
+                    serial.puts("[main] APPS dir listing:\n")
+                    ac: t.CInt = 0
+                    while ac < 20:
+                        ai: fat32_types.fileinfo
+                        ar: t.CInt = fat32.readdir(c.Addr(dp_apps), c.Addr(ai))
+                        if ar != 0: break
+                        if ai.fname[0] == 0: break
+                        ae: t.CArray[t.CChar, 300]
+                        viperlib.snprintf(c.Addr(ae), 300, "  %s  size=%lu\n", c.Addr(ai.fname[0]), ai.file_size)
+                        serial.puts(ae)
+                        ac = ac + 1
+                    fat32.closedir(c.Addr(dp_apps))
+                else:
+                    serial.puts("[main] APPS dir not found\n")
+
+                sched.Scheduler.disable()
+                hello_pid: t.CInt = elf.spawn_elf("/APPS/hello.elf")
+                if hello_pid < 0:
+                    serial.puts("[main] Hello spawn failed\n")
+                else:
+                    slog: t.CArray[t.CChar, 64]
+                    viperlib.snprintf(c.Addr(slog), 64, "[main] Hello spawned as pid=%d\n", hello_pid)
+                    serial.puts(slog)
+                term_pid: t.CInt = elf.spawn_elf("/APPS/terminal.elf")
+                if term_pid < 0:
+                    serial.puts("[main] Terminal spawn failed\n")
+                else:
+                    tlog: t.CArray[t.CChar, 64]
+                    viperlib.snprintf(c.Addr(tlog), 64, "[main] Terminal spawned as pid=%d\n", term_pid)
+                    serial.puts(tlog)
+
+                garg_pid: t.CInt = elf.spawn_elf("/APPS/gargantua.elf")
+                if garg_pid < 0:
+                    serial.puts("[main] Gargantua spawn failed\n")
+                else:
+                    glog: t.CArray[t.CChar, 64]
+                    viperlib.snprintf(c.Addr(glog), 64, "[main] Gargantua spawned as pid=%d\n", garg_pid)
+                    serial.puts(glog)
+
+                s3d_pid: t.CInt = elf.spawn_elf("/APPS/scene3d.elf")
+                if s3d_pid < 0:
+                    serial.puts("[main] Scene3D spawn failed\n")
+                else:
+                    s3d_log: t.CArray[t.CChar, 64]
+                    viperlib.snprintf(c.Addr(s3d_log), 64, "[main] Scene3D spawned as pid=%d\n", s3d_pid)
+                    serial.puts(s3d_log)
+
+                so_base: t.CVoid | t.CPtr = elf.load_so("/LIBS/SLOG.SO")
+                if so_base is not None:
+                    serial.puts("[main] slog.so loaded, calling log_info...\n")
+                    log_info_fn: t.CVoid | t.CPtr = elf.get_so_symbol(so_base, "log_info", "/LIBS/SLOG.SO")
+                    if log_info_fn is not None:
+                        msg: t.CConst | t.CChar | t.CPtr = "Hello from shared library!"
+                        c.Asm(f"""mov rdi, {c.AsmInp(msg, t.ASM_DESCR.REG_ANY)}
+                                call {c.AsmInp(log_info_fn, t.ASM_DESCR.REG_ANY)}""",
+                              op=[t.ASM_DESCR.CLOBBER_MEMORY, t.ASM_DESCR.CLOBBER_RAX,
+                                  t.ASM_DESCR.CLOBBER_RCX, t.ASM_DESCR.CLOBBER_RDX,
+                                  t.ASM_DESCR.CLOBBER_RDI, t.ASM_DESCR.CLOBBER_RSI,
+                                  t.ASM_DESCR.CLOBBER_R8, t.ASM_DESCR.CLOBBER_R9,
+                                  t.ASM_DESCR.CLOBBER_R10, t.ASM_DESCR.CLOBBER_R11])
+                    else:
+                        serial.puts("[main] log_info symbol not found\n")
+                else:
+                    serial.puts("[main] failed to load slog.so\n")
+                sched.Scheduler.enable()
+
+                # FAT32 destructive tests removed to prevent disk.img corruption
+                # (write/rename/delete/mkdir/rmdir permanently modify the disk image)
+
+                fat32.unmount()
+                serial.puts("[fat32] unmounted\n")
+            else:
+                serial.puts("[fat32] mount failed\n")
+        else:
+            serial.puts("[fat32] no drives found\n")
+
+        devfs.devfs_init()
+        devfs.devfs_register_serial0()
+        devfs.devfs_register_serial1()
+        devfs.devfs_register_keyboard()
+        devfs.devfs_register_mouse()
+
+        serial.puts("[main] sched started\n")
+
+        fd: t.CInt = devfs.devfs_open("/dev/serial0", 0)
+        buf: t.CArray[t.CChar, 64]
+        string.memset(c.Addr(buf), 0, 64)
+        devfs.devfs_write(fd, "hello from devfs!", 17)
+        devfs.devfs_read(fd, c.Addr(buf), 64)
+        devfs.devfs_close(fd)
+
+        cr: t.CArray[t.CChar, 30]
+        string.memset(c.Addr(cr), 0, 30)
+        viperlib.snprintf(c.Addr(cr), 30, "hello %d %.2f", 42, float(0.24))
+        serial.puts(cr)
+        serial.puts("\n")
+
+        bootinfo_cr: t.CArray[t.CChar, 256]
+        string.memset(c.Addr(bootinfo_cr), 0, 256)
+        viperlib.snprintf(c.Addr(bootinfo_cr), 256, "Bootinfo 0x%016lx %lu %lu %lu %lu %lu map 0x%lx+%lu descsize=%lu",
+                          BootInfo.framebuffer_addr,
+                          BootInfo.framebuffer_format,
+                          BootInfo.framebuffer_width,
+                          BootInfo.framebuffer_height,
+                          BootInfo.framebuffer_pitch,
+                          BootInfo.framebuffer_size,
+                          BootInfo.MemmapAddr,
+                          BootInfo.MemmapSize,
+                          BootInfo.MemmapDescSize)
+        serial.puts(bootinfo_cr)
+        serial.puts("\n")
+
+        a: t.CConst | str = "Hello"
+        serial.putchar(a[4]) # o
+        serial.puts("\n")
+        d: t.CConst | int = 42
+        b: t.CConst | int | t.CPtr = c.Addr(d)
+        string.memset(c.Addr(cr), 0, 4)
+        viperlib.snprintf(c.Addr(cr), 30, "%d", b[0]) # 42
+        serial.puts(cr)
+        serial.puts("\n")
+
+        # paging and mm already initialized before FAT32
+
+        usb.init()
+
+        serial.puts("[main] starting keyboard service\n")
+        kbd_svc.start()
+        serial.puts("[main] starting mouse service\n")
+        mse_svc.start()
+        serial.puts("[main] services started\n")
+
+        self.VGA_drv = vga._VGAScreenDriver(fb, width, height, pitch, fb_format)
+        self.VGA = c.Addr(self.VGA_drv)
+        self.VGA.Print(100, 100, "ViperOS VKernel Test")
+        serial.puts("你好\n")
+
+        serial.puts("[main] starting desktop\n")
+        desktop.start(fb, width, height, pitch)
+        serial.puts("[main] desktop started\n")
+
+        # ELF apps already loaded before FAT32 tests
+
+        serial.puts("[main] entering main loop\n")
+        # sched.sched_dump()
+        last_sec: t.CUInt32T = 0
+        loop_cnt: t.CUInt32T = 0
+        while True:
+            cur_sec: t.CUInt32T = timer.timer_get_seconds()
+            if cur_sec != last_sec:
+                last_sec = cur_sec
+                #if cur_sec % 5 == 0:
+                #    sched.sched_dump()
+            loop_cnt += 1
+            sched.Scheduler._yield()
+        #while True:
+        #    cube.RenderScene(back_fb, cube.SCREEN_W, cube.SCREEN_H, time)
+        #    string.memcpy(fb, back_fb, width * height * 4)
+        #    serial.puts("time")
+        #    time += float(0.1)
+        
+        # circle(width / 2, height / 2, 180, fb)
+        # circle(640, 400, 180, 0xFFFFFFFF)
+
+        # X 字符串遍历
+        # c.Cast 更换
+        # 时钟
+        # PCI
+        # SHA1 它者文件更新
+        # assets
+        # X attributes语法和谐
+        # 合成式类型转换
+
+
+VKP: ViperKernel | t.CPtr
+@c.Attribute(t.attr.section(".text.startup"), t.attr.aligned(16))
+def _start() -> t.CInt:
+    global VKP, BootInfo
+    saved_rdi: t.CUnsignedLong
+    c.Asm(f"mov {c.AsmOut(saved_rdi, t.ASM_DESCR.OUTPUT_REG)}, rdi",
+        op = [t.ASM_DESCR.CLOBBER_MEMORY, t.ASM_DESCR.CLOBBER_RDI])
+    asm.BSSClean()
+    BootInfo = saved_rdi # 隐式转为 bootinfo*
+    VKP = c.Addr(ViperKernel())
+    while True:
+        asm.sti()
+        asm.hlt()
+        sched.Scheduler._yield()
+    return 0
+

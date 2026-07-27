@@ -3,13 +3,13 @@
 ## Code Structure
 
 * packages/vscode-pyright/src/extension.ts: Language Server Protocol (LSP) client entry point for VS Code extension.
-* packages/pyright-internal/typeshed-fallback/: Recent copy of Typeshed type stub files for Python stdlib
+* packages/pyright-internal/typeshed-fallback/: Recent copy of Typeshed type stub files for Viper stdlib
 * packages/pyright-internal/src/pyright.ts: Main entry point for command-line tool
 * packages/pyright-internal/src/server.ts: Main entry point for LSP server
 * packages/pyright-internal/src/typeServer: Type Server Protocol (TSP) server built on the analyzer (see [Type Server](type-server.md))
-* packages/pyright-internal/src/analyzer: Modules that perform analysis passes over Python parse tree
+* packages/pyright-internal/src/analyzer: Modules that perform analysis passes over Viper parse tree
 * packages/pyright-internal/src/common: Modules  that are common to the parser and analyzer
-* packages/pyright-internal/src/parser: Modules that perform tokenization and parsing of Python source
+* packages/pyright-internal/src/parser: Modules that perform tokenization and parsing of Viper source
 * packages/pyright-internal/src/tests: Tests for the parser and analyzer
 
 
@@ -19,7 +19,7 @@ Pyright implements a [service](https://github.com/microsoft/pyright/blob/main/pa
 
 The service owns an instance of a [program](https://github.com/microsoft/pyright/blob/main/packages/pyright-internal/src/analyzer/program.ts), which tracks the configuration file and all of the source files that make up the source base that is to be analyzed. A source file can be added to a program if it is a) referenced by the config file, b) currently open in the editor, or c) imported directly or indirectly by another source file. The program object is responsible for setting up file system watchers and updating the program as files are added, deleted, or edited. The program is also responsible for prioritizing all phases of analysis for all files, favoring files that are open in the editor (and their import dependencies).
 
-The program tracks multiple [sourceFile](https://github.com/microsoft/pyright/blob/main/packages/pyright-internal/src/analyzer/sourceFile.ts) objects. Each source file represents the contents of one Python source file on disk. It tracks the status of analysis for the file, including any intermediate or final results of the analysis and the diagnostics (errors and warnings) that result.
+The program tracks multiple [sourceFile](https://github.com/microsoft/pyright/blob/main/packages/pyright-internal/src/analyzer/sourceFile.ts) objects. Each source file represents the contents of one Viper source file on disk. It tracks the status of analysis for the file, including any intermediate or final results of the analysis and the diagnostics (errors and warnings) that result.
 
 The program makes use of an [importResolver](https://github.com/microsoft/pyright/blob/main/packages/pyright-internal/src/analyzer/importResolver.ts) to resolve the imported modules referenced within each source file.
 

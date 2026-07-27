@@ -1,0 +1,330 @@
+import t, c
+import mm.mm as mm
+import viperstring as string
+import drivers.serial.uart.serial as serial
+import drivers.usb.uhci as uhci
+import drivers.usb.pci as pci
+import platform.pch.timer as timer
+import viperlib
+
+USB_DESC_DEVICE: t.CDefine = 1
+USB_DESC_CONFIG: t.CDefine = 2
+USB_DESC_STRING: t.CDefine = 3
+USB_DESC_INTERFACE: t.CDefine = 4
+USB_DESC_ENDPOINT: t.CDefine = 5
+
+USB_REQ_GET_STATUS: t.CDefine = 0
+USB_REQ_CLEAR_FEATURE: t.CDefine = 1
+USB_REQ_SET_FEATURE: t.CDefine = 3
+USB_REQ_SET_ADDRESS: t.CDefine = 5
+USB_REQ_GET_DESCRIPTOR: t.CDefine = 6
+USB_REQ_SET_DESCRIPTOR: t.CDefine = 7
+USB_REQ_GET_CONFIGURATION: t.CDefine = 8
+USB_REQ_SET_CONFIGURATION: t.CDefine = 9
+
+USB_REQ_SET_INTERFACE: t.CDefine = 11
+
+HID_CLASS: t.CDefine = 0x03
+HID_SUBCLASS_BOOT: t.CDefine = 0x01
+HID_PROTO_KEYBOARD: t.CDefine = 0x01
+HID_PROTO_MOUSE: t.CDefine = 0x02
+
+HID_REQ_SET_PROTOCOL: t.CDefine = 0x0B
+HID_REQ_SET_IDLE: t.CDefine = 0x0A
+HID_REQ_GET_REPORT: t.CDefine = 0x01
+
+USB_MAX_DEVICES: t.CDefine = 8
+
+class usb_dev_desc(t.CStruct):
+    bLength: t.CUInt8T
+    bDescriptorType: t.CUInt8T
+    bcdUSB: t.CUInt16T
+    bDeviceClass: t.CUInt8T
+    bDeviceSubClass: t.CUInt8T
+    bDeviceProtocol: t.CUInt8T
+    bMaxPacketSize0: t.CUInt8T
+    idVendor: t.CUInt16T
+    idProduct: t.CUInt16T
+    bcdDevice: t.CUInt16T
+    iManufacturer: t.CUInt8T
+    iProduct: t.CUInt8T
+    iSerialNumber: t.CUInt8T
+    bNumConfigurations: t.CUInt8T
+
+class usb_config_desc(t.CStruct):
+    bLength: t.CUInt8T
+    bDescriptorType: t.CUInt8T
+    wTotalLength: t.CUInt16T
+    bNumInterfaces: t.CUInt8T
+    bConfigurationValue: t.CUInt8T
+    iConfiguration: t.CUInt8T
+    bmAttributes: t.CUInt8T
+    bMaxPower: t.CUInt8T
+
+class usb_iface_desc(t.CStruct):
+    bLength: t.CUInt8T
+    bDescriptorType: t.CUInt8T
+    bInterfaceNumber: t.CUInt8T
+    bAlternateSetting: t.CUInt8T
+    bNumEndpoints: t.CUInt8T
+    bInterfaceClass: t.CUInt8T
+    bInterfaceSubClass: t.CUInt8T
+    bInterfaceProtocol: t.CUInt8T
+    iInterface: t.CUInt8T
+
+class usb_ep_desc(t.CStruct):
+    bLength: t.CUInt8T
+    bDescriptorType: t.CUInt8T
+    bEndpointAddress: t.CUInt8T
+    bmAttributes: t.CUInt8T
+    wMaxPacketSize: t.CUInt16T
+    bInterval: t.CUInt8T
+
+class usb_setup_pkt(t.CStruct):
+    bmRequestType: t.CUInt8T
+    bRequest: t.CUInt8T
+    wValue: t.CUInt16T
+    wIndex: t.CUInt16T
+    wLength: t.CUInt16T
+
+class usb_device(t.CStruct):
+    addr: t.CUInt8T
+    ls: t.CInt
+    max_pkt0: t.CUInt8T
+    iface_class: t.CUInt8T
+    iface_subclass: t.CUInt8T
+    iface_protocol: t.CUInt8T
+    iface_num: t.CUInt8T
+    ep_in: t.CUInt8T
+    ep_in_max: t.CUInt16T
+    ep_in_interval: t.CUInt8T
+    ep_in_toggle: t.CUInt8T
+    configured: t.CInt
+
+_devices: t.CArray[usb_device, USB_MAX_DEVICES]
+_device_count: t.CInt = 0
+
+def _setup_packet(bmRequestType: t.CUInt8T, bRequest: t.CUInt8T, wValue: t.CUInt16T, wIndex: t.CUInt16T, wLength: t.CUInt16T, buf: usb_setup_pkt | t.CPtr):
+    buf.bmRequestType = bmRequestType
+    buf.bRequest = bRequest
+    buf.wValue = wValue
+    buf.wIndex = wIndex
+    buf.wLength = wLength
+
+def _send_control(dev_addr: t.CUInt8T, ls: t.CInt, max_pkt: t.CUInt8T, setup: usb_setup_pkt | t.CPtr, data_buf: t.CVoid | t.CPtr, data_len: t.CUInt16T, data_in: t.CInt) -> t.CInt:
+    return uhci.control_transfer(dev_addr, 0, ls, max_pkt, c.Addr(setup), data_buf, data_len, data_in)
+
+def get_descriptor(dev_addr: t.CUInt8T, ls: t.CInt, max_pkt: t.CUInt8T, desc_type: t.CUInt8T, desc_idx: t.CUInt8T, buf: t.CVoid | t.CPtr, length: t.CUInt16T) -> t.CInt:
+    setup: usb_setup_pkt
+    _setup_packet(0x80, USB_REQ_GET_DESCRIPTOR, (t.CUInt16T(desc_type) << 8) | desc_idx, 0, length, c.Addr(setup))
+    return _send_control(dev_addr, ls, max_pkt, c.Addr(setup), buf, length, 1)
+
+def set_address(dev_addr: t.CUInt8T, ls: t.CInt, max_pkt: t.CUInt8T, new_addr: t.CUInt8T) -> t.CInt:
+    setup: usb_setup_pkt
+    _setup_packet(0x00, USB_REQ_SET_ADDRESS, new_addr, 0, 0, c.Addr(setup))
+    return _send_control(dev_addr, ls, max_pkt, c.Addr(setup), None, 0, 0)
+
+def set_configuration(dev_addr: t.CUInt8T, ls: t.CInt, max_pkt: t.CUInt8T, config_val: t.CUInt8T) -> t.CInt:
+    setup: usb_setup_pkt
+    _setup_packet(0x00, USB_REQ_SET_CONFIGURATION, config_val, 0, 0, c.Addr(setup))
+    return _send_control(dev_addr, ls, max_pkt, c.Addr(setup), None, 0, 0)
+
+def hid_set_protocol(dev_addr: t.CUInt8T, ls: t.CInt, max_pkt: t.CUInt8T, iface: t.CUInt8T, protocol: t.CUInt8T) -> t.CInt:
+    setup: usb_setup_pkt
+    _setup_packet(0x21, HID_REQ_SET_PROTOCOL, protocol, t.CUInt16T(iface), 0, c.Addr(setup))
+    return _send_control(dev_addr, ls, max_pkt, c.Addr(setup), None, 0, 0)
+
+def hid_set_idle(dev_addr: t.CUInt8T, ls: t.CInt, max_pkt: t.CUInt8T, iface: t.CUInt8T, duration: t.CUInt8T) -> t.CInt:
+    setup: usb_setup_pkt
+    _setup_packet(0x21, HID_REQ_SET_IDLE, t.CUInt16T(duration) << 8, t.CUInt16T(iface), 0, c.Addr(setup))
+    return _send_control(dev_addr, ls, max_pkt, c.Addr(setup), None, 0, 0)
+
+def _parse_config(dev: usb_device | t.CPtr, config_buf: t.CVoid | t.CPtr, total_len: t.CUInt16T):
+    offset: t.CInt = 0
+    found_hid: t.CInt = 0
+    while offset < t.CInt(total_len):
+        p: t.CUInt8T | t.CPtr = config_buf + t.CUInt64T(offset)
+        desc_len: t.CUInt8T = c.Deref(p)
+        p2: t.CUInt8T | t.CPtr = config_buf + t.CUInt64T(offset) + 1
+        desc_type: t.CUInt8T = c.Deref(p2)
+        if desc_len == 0: break
+        if desc_type == USB_DESC_INTERFACE:
+            iface: usb_iface_desc | t.CPtr = config_buf + t.CUInt64T(offset)
+            if iface.bInterfaceClass == HID_CLASS:
+                found_hid = 1
+                dev.iface_class = HID_CLASS
+                dev.iface_subclass = iface.bInterfaceSubClass
+                dev.iface_protocol = iface.bInterfaceProtocol
+                dev.iface_num = iface.bInterfaceNumber
+        if desc_type == USB_DESC_ENDPOINT and found_hid:
+            ep: usb_ep_desc | t.CPtr = config_buf + t.CUInt64T(offset)
+            if (ep.bEndpointAddress & 0x80) != 0:
+                dev.ep_in = ep.bEndpointAddress & 0x0F
+                dev.ep_in_max = ep.wMaxPacketSize
+                dev.ep_in_interval = ep.bInterval
+                found_hid = 0
+        offset = offset + t.CInt(desc_len)
+
+def enumerate_port(port: t.CInt) -> t.CInt:
+    global _device_count
+    if _device_count >= USB_MAX_DEVICES: return -1
+
+    ls: t.CInt = uhci.port_is_low_speed(port)
+
+    reset_ok: t.CInt = -1
+    reset_retry: t.CInt
+    for reset_retry in range(3):
+        if uhci.port_reset(port) == 0:
+            reset_ok = 0
+            break
+        timer.timer_msleep(50)
+    if reset_ok != 0:
+        return -2
+
+    timer.timer_msleep(10)
+
+    dev_buf: t.CVoid | t.CPtr = mm.malloc(usb_dev_desc.__sizeof__())
+    if dev_buf is None: return -3
+    string.memset(dev_buf, 0, usb_dev_desc.__sizeof__())
+
+    result: t.CInt = get_descriptor(0, ls, 8, USB_DESC_DEVICE, 0, dev_buf, 8)
+    retry: t.CInt
+    for retry in range(3):
+        if result == 0: break
+        timer.timer_msleep(50)
+        uhci.port_reset(port)
+        timer.timer_msleep(10)
+        result = get_descriptor(0, ls, 8, USB_DESC_DEVICE, 0, dev_buf, 8)
+    if result != 0:
+        mm.free(dev_buf)
+        return -4
+
+    desc: usb_dev_desc | t.CPtr = dev_buf
+    max_pkt: t.CUInt8T = desc.bMaxPacketSize0
+    if max_pkt < 8: max_pkt = 8
+
+    new_addr: t.CUInt8T = t.CUInt8T(_device_count + 1)
+    result = set_address(0, ls, max_pkt, new_addr)
+    for retry in range(3):
+        if result == 0: break
+        timer.timer_msleep(20)
+        result = set_address(0, ls, max_pkt, new_addr)
+    if result != 0:
+        mm.free(dev_buf)
+        return -5
+
+    timer.timer_msleep(10)
+
+    dev: usb_device | t.CPtr = c.Addr(_devices[_device_count])
+    dev.addr = new_addr
+    dev.ls = ls
+    dev.max_pkt0 = max_pkt
+    dev.configured = 0
+    dev.iface_class = 0
+    dev.iface_subclass = 0
+    dev.iface_protocol = 0
+    dev.ep_in = 0
+    dev.ep_in_max = 0
+    dev.ep_in_interval = 0
+    dev.ep_in_toggle = 0
+
+    config_buf: t.CVoid | t.CPtr = mm.malloc(256)
+    if config_buf is None:
+        mm.free(dev_buf)
+        return -6
+    string.memset(config_buf, 0, 256)
+
+    result = get_descriptor(new_addr, ls, max_pkt, USB_DESC_CONFIG, 0, config_buf, 9)
+    for retry in range(3):
+        if result == 0: break
+        timer.timer_msleep(50)
+        result = get_descriptor(new_addr, ls, max_pkt, USB_DESC_CONFIG, 0, config_buf, 9)
+    if result != 0:
+        mm.free(config_buf)
+        mm.free(dev_buf)
+        return -7
+
+    cfg: usb_config_desc | t.CPtr = config_buf
+    total_len: t.CUInt16T = cfg.wTotalLength
+    if total_len > 256: total_len = 256
+
+    result = get_descriptor(new_addr, ls, max_pkt, USB_DESC_CONFIG, 0, config_buf, total_len)
+    for retry in range(3):
+        if result == 0: break
+        timer.timer_msleep(50)
+        result = get_descriptor(new_addr, ls, max_pkt, USB_DESC_CONFIG, 0, config_buf, total_len)
+    if result != 0:
+        mm.free(config_buf)
+        mm.free(dev_buf)
+        return -8
+
+    _parse_config(dev, config_buf, total_len)
+
+    result = set_configuration(new_addr, ls, max_pkt, cfg.bConfigurationValue)
+    if result != 0:
+        mm.free(config_buf)
+        mm.free(dev_buf)
+        return -9
+
+    dev.configured = 1
+
+    if dev.iface_class == HID_CLASS:
+        hid_set_protocol(new_addr, ls, max_pkt, dev.iface_num, 0)
+        hid_set_idle(new_addr, ls, max_pkt, dev.iface_num, 0)
+
+    _device_count = _device_count + 1
+    mm.free(config_buf)
+    mm.free(dev_buf)
+    return t.CInt(new_addr)
+
+def init() -> t.CInt:
+    global _device_count
+    _device_count = 0
+
+    io_base: t.CUInt16T = pci.find_uhci()
+    if io_base == 0:
+        serial.puts("[usb] UHCI controller not found\n")
+        return -1
+
+    buf: t.CArray[t.CChar, 64]
+    viperlib.snprintf(c.Addr(buf), 64, "[usb] UHCI at I/O 0x%04X\n", t.CUInt32T(io_base))
+    serial.puts(buf)
+
+    if uhci.init(io_base) != 0:
+        serial.puts("[usb] UHCI init failed\n")
+        return -2
+
+    serial.puts("[usb] UHCI initialized\n")
+
+    timer.timer_msleep(50)
+
+    port: t.CInt
+    for port in range(2):
+        if uhci.port_is_connected(port):
+            viperlib.snprintf(c.Addr(buf), 64, "[usb] port %d connected\n", t.CUInt32T(port))
+            serial.puts(buf)
+            dev_id: t.CInt = enumerate_port(port)
+            if dev_id > 0:
+                dev: usb_device | t.CPtr = c.Addr(_devices[dev_id - 1])
+                viperlib.snprintf(c.Addr(buf), 64, "[usb] device addr=%d class=%02X proto=%02X ep=%d\n",
+                    t.CUInt32T(dev.addr), t.CUInt32T(dev.iface_class),
+                    t.CUInt32T(dev.iface_protocol), t.CUInt32T(dev.ep_in))
+                serial.puts(buf)
+            else:
+                viperlib.snprintf(c.Addr(buf), 64, "[usb] enumerate port %d failed: %d\n", t.CUInt32T(port), t.CInt32T(dev_id))
+                serial.puts(buf)
+
+    return _device_count
+
+def find_hid_device(protocol: t.CUInt8T) -> usb_device | t.CPtr:
+    i: t.CInt
+    for i in range(_device_count):
+        dev: usb_device | t.CPtr = c.Addr(_devices[i])
+        if dev.iface_class == HID_CLASS:
+            if dev.iface_protocol == protocol:
+                if dev.configured != 0:
+                    return dev
+    return None
+
+def read_interrupt(dev: usb_device | t.CPtr, buf: t.CVoid | t.CPtr) -> t.CInt:
+    return 0

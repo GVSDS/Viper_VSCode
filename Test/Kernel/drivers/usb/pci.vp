@@ -1,0 +1,93 @@
+import t, c
+import asm
+
+PCI_CONFIG_ADDR: t.CDefine = 0xCF8
+PCI_CONFIG_DATA: t.CDefine = 0xCFC
+
+PCI_CLASS_SERIAL_USB: t.CDefine = 0x0C03
+PCI_CLASS_SERIAL_UHCI: t.CDefine = 0x0C0300
+PCI_CLASS_SERIAL_OHCI: t.CDefine = 0x0C0310
+PCI_CLASS_SERIAL_EHCI: t.CDefine = 0x0C0320
+PCI_CLASS_SERIAL_XHCI: t.CDefine = 0x0C0330
+
+PCI_CMD_IO_SPACE: t.CDefine = 0x0001
+PCI_CMD_BUS_MASTER: t.CDefine = 0x0004
+
+class pci_device(t.CStruct):
+    bus: t.CUInt8T
+    dev: t.CUInt8T
+    func: t.CUInt8T
+    vendor_id: t.CUInt16T
+    device_id: t.CUInt16T
+    class_code: t.CUInt32T
+    irq: t.CUInt8T
+    bar: t.CArray[t.CUInt32T, 6]
+
+def pci_read32(bus: t.CUInt8T, dev: t.CUInt8T, func: t.CUInt8T, offset: t.CUInt8T) -> t.CUInt32T:
+    addr: t.CUInt32T = 0x80000000 | (t.CUInt32T(bus) << 16) | (t.CUInt32T(dev) << 11) | (t.CUInt32T(func) << 8) | (t.CUInt32T(offset) & 0xFC)
+    asm.outl(PCI_CONFIG_ADDR, addr)
+    return asm.inl(PCI_CONFIG_DATA)
+
+def pci_write32(bus: t.CUInt8T, dev: t.CUInt8T, func: t.CUInt8T, offset: t.CUInt8T, value: t.CUInt32T):
+    addr: t.CUInt32T = 0x80000000 | (t.CUInt32T(bus) << 16) | (t.CUInt32T(dev) << 11) | (t.CUInt32T(func) << 8) | (t.CUInt32T(offset) & 0xFC)
+    asm.outl(PCI_CONFIG_ADDR, addr)
+    asm.outl(PCI_CONFIG_DATA, value)
+
+def pci_read16(bus: t.CUInt8T, dev: t.CUInt8T, func: t.CUInt8T, offset: t.CUInt8T) -> t.CUInt16T:
+    val: t.CUInt32T = pci_read32(bus, dev, func, offset)
+    shift: t.CUInt32T = (t.CUInt32T(offset) & 0x02) * 8
+    return t.CUInt16T((val >> shift) & 0xFFFF)
+
+def pci_read8(bus: t.CUInt8T, dev: t.CUInt8T, func: t.CUInt8T, offset: t.CUInt8T) -> t.CUInt8T:
+    val: t.CUInt32T = pci_read32(bus, dev, func, offset)
+    shift: t.CUInt32T = (t.CUInt32T(offset) & 0x03) * 8
+    return t.CUInt8T((val >> shift) & 0xFF)
+
+def pci_get_class(bus: t.CUInt8T, dev: t.CUInt8T, func: t.CUInt8T) -> t.CUInt32T:
+    cls: t.CUInt8T = pci_read8(bus, dev, func, 0x0B)
+    sub: t.CUInt8T = pci_read8(bus, dev, func, 0x0A)
+    proto: t.CUInt8T = pci_read8(bus, dev, func, 0x09)
+    return (t.CUInt32T(cls) << 16) | (t.CUInt32T(sub) << 8) | t.CUInt32T(proto)
+
+def pci_get_bar(bus: t.CUInt8T, dev: t.CUInt8T, func: t.CUInt8T, bar_idx: t.CUInt8T) -> t.CUInt32T:
+    return pci_read32(bus, dev, func, 0x10 + bar_idx * 4)
+
+def pci_enable_device(dev: pci_device | t.CPtr):
+    cmd: t.CUInt16T = pci_read16(dev.bus, dev.dev, dev.func, 0x04)
+    cmd = cmd | PCI_CMD_IO_SPACE | PCI_CMD_BUS_MASTER
+    pci_write32(dev.bus, dev.dev, dev.func, 0x04, t.CUInt32T(cmd))
+
+def pci_fill_device(bus: t.CUInt8T, dev_n: t.CUInt8T, func: t.CUInt8T, out: pci_device | t.CPtr):
+    out.bus = bus
+    out.dev = dev_n
+    out.func = func
+    out.vendor_id = pci_read16(bus, dev_n, func, 0x00)
+    out.device_id = pci_read16(bus, dev_n, func, 0x02)
+    out.class_code = pci_get_class(bus, dev_n, func)
+    out.irq = pci_read8(bus, dev_n, func, 0x3C)
+    i: t.CInt
+    for i in range(6):
+        out.bar[i] = pci_get_bar(bus, dev_n, func, t.CUInt8T(i))
+
+_uhci_dev: pci_device
+_uhci_found: t.CInt = 0
+
+def find_uhci() -> t.CUInt16T:
+    global _uhci_dev, _uhci_found
+    bus: t.CUInt8T
+    dev_n: t.CUInt8T
+    func: t.CUInt8T
+    for bus in range(1):
+        for dev_n in range(32):
+            for func in range(8):
+                vendor: t.CUInt16T = pci_read16(bus, dev_n, func, 0x00)
+                if vendor == 0xFFFF: continue
+                cls: t.CUInt32T = pci_get_class(bus, dev_n, func)
+                if cls == PCI_CLASS_SERIAL_UHCI:
+                    pci_fill_device(bus, dev_n, func, c.Addr(_uhci_dev))
+                    pci_enable_device(c.Addr(_uhci_dev))
+                    _uhci_found = 1
+                    bar: t.CUInt32T = _uhci_dev.bar[4]
+                    io_base: t.CUInt16T = t.CUInt16T(bar & 0xFFFE)
+                    return io_base
+    return 0

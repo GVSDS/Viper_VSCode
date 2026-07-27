@@ -32,7 +32,7 @@ job_name:
     - npm i -g pyright
     - npm i -g pyright-to-gitlab-ci
   script:
-   - pyright <python source> --outputjson > report_raw.json
+   - pyright <viper source> --outputjson > report_raw.json
   after_script:
    - pyright-to-gitlab-ci --src report_raw.json --output report.json --base_path .
   artifacts:
@@ -46,7 +46,7 @@ Refer to the [pyright-to-gitlab-ci](https://www.npmjs.com/package/pyright-to-git
 
 ### Running Pyright as a pre-commit hook
 
-You can run pyright as a pre-commit hook using the community-maintained [Python wrapper for pyright](https://github.com/RobertCraigie/pyright-python). For pre-commit configuration instructions, refer to [this documentation](https://github.com/RobertCraigie/pyright-python#pre-commit).
+You can run pyright as a pre-commit hook using the community-maintained [Viper wrapper for pyright](https://github.com/RobertCraigie/pyright-viper). For pre-commit configuration instructions, refer to [this documentation](https://github.com/RobertCraigie/pyright-viper#pre-commit).
 
 ### Running Pyright from a CI script
 

@@ -1,5 +1,5 @@
 {
-    "name": "pyright-root",
+    "name": "vipeye-root",
     "private": true,
     "scripts": {
         "postinstall": "node ./build/skipBootstrap.js || npm run install:others",
@@ -7,10 +7,10 @@
         "install:all": "npm install",
         "install:others": "cross-env SKIP_LERNA_BOOTSTRAP=yes lerna exec --no-bail npm install",
         "update:all": "node ./build/updateDeps.js",
-        "build:extension:dev": "cd packages/vscode-pyright && npm run webpack",
-        "build:cli:dev": "cd packages/pyright && npm run webpack",
-        "watch:extension": "cd packages/vscode-pyright && npm run webpack-dev",
-        "watch:testserver": "cd packages/pyright-internal && npm run webpack:testserver:watch",
+        "build:extension:dev": "cd packages/vscode-vipeye && npm run webpack",
+        "build:cli:dev": "cd packages/vipeye && npm run webpack",
+        "watch:extension": "cd packages/vscode-vipeye && npm run webpack-dev",
+        "watch:testserver": "cd packages/vipeye-internal && npm run webpack:testserver:watch",
         "check": "npm run check:syncpack && npm run check:eslint && npm run check:prettier",
         "check:syncpack": "syncpack lint",
         "fix:syncpack": "syncpack fix && npm run install:all",
@@ -18,7 +18,7 @@
         "fix:eslint": "cross-env ESLINT_USE_FLAT_CONFIG=false eslint --fix .",
         "check:prettier": "prettier -c .",
         "fix:prettier": "prettier --write .",
-        "typecheck": "npx lerna exec --stream --no-bail --ignore=pyright -- \"tsc --noEmit\""
+        "typecheck": "npx lerna exec --stream --no-bail --ignore=vipeye -- \"tsc --noEmit\""
     },
     "devDependencies": {
         "@types/glob": "^8.1.0",

@@ -1,0 +1,243 @@
+# Viper 统一内存管理库 memhub 存根。
+# 提供 MemManager 多态基类及 MemPool/MemSlab/MemBuddy 三个子类。
+# 姑息策略：
+#   - 指针字段映射为 int（指针整数）
+#   - 大小/计数映射为 int
+#   - 返回指针映射为 int（NULL=0 表示失败）
+
+import t
+import string
+import stdio
+
+
+# ============================================================
+# 常量
+# ============================================================
+MEMHUB_ALIGN: int = 8                  # 对齐粒度
+MEMSLAB_MIN_BLOCK: int = 16            # MemSlab 最小块大小
+MEMSLAB_BITMAP_BYTES: int = 256        # MemSlab 位图字节数
+MEMBUDDY_MIN_BLOCK: int = 32           # MemBuddy 最小块大小
+MEMBUDDY_MAX_ORDERS: int = 32          # MemBuddy 最大阶数
+MEMBUDDY_HEADER_SIZE: int = 8          # MemBuddy 块头大小
+
+
+def _align_up(val: int, align: int) -> int:
+    """向上对齐到 align 的倍数。"""
+    return 0
+
+
+def _largest_pow2_le(val: int) -> int:
+    """返回不超过 val 的最大 2 的幂。"""
+    return 0
+
+
+def _block_size_at_order(order: int) -> int:
+    """返回指定阶数的块大小。"""
+    return 0
+
+
+# ============================================================
+# MemManager - 多态基类（@t.CVTable）
+# 子类通过 vtable 覆盖 alloc/free/reset，支持多态调用
+# ============================================================
+class MemManager:
+    """内存管理器多态基类。
+
+    子类：
+        MemPool  - arena bump 分配器（不支持单个 free）
+        MemSlab  - 定长块池（位图跟踪）
+        MemBuddy - 伙伴系统（支持合并）
+    """
+    __provides__: list  # ['__memmgr__']
+    base: int           # 内存区起始地址（指针）
+    size: int           # 内存区总大小
+
+    def __init__(self, base: int, size: int) -> None:
+        """初始化内存管理器。
+
+        Args:
+            base: 内存区起始地址（指针，int）
+            size: 内存区总大小（字节）
+        """
+        ...
+
+    # === 虚函数（子类覆盖） ===
+    def alloc(self, size: int) -> int:
+        """分配 size 字节内存。
+
+        Returns:
+            成功返回指针（int），失败返回 0（NULL）
+        """
+        return 0
+
+    def free(self, ptr: int) -> int:
+        """释放内存。
+
+        Returns:
+            成功返回 1，失败返回 0
+        """
+        return 0
+
+    def reset(self) -> int:
+        """重置内存区（回收全部）。
+
+        Returns:
+            成功返回 1
+        """
+        return 0
+
+    # === 具体方法（自动多态分派） ===
+    def calloc(self, count: int, size: int) -> int:
+        """分配 count*size 字节并清零。"""
+        return 0
+
+    def realloc(self, ptr: int, new_size: int) -> int:
+        """重新调整分配大小。"""
+        return 0
+
+    def __enter__(self) -> 'MemManager':
+        """进入 with 上下文，返回 self。"""
+        ...
+
+    def __exit__(self) -> None:
+        """退出 with 上下文，调用 reset。"""
+        ...
+
+    def alloc_buf(self, capacity: int) -> int:
+        """分配一个 viperio.Buf 及其数据区。
+
+        Args:
+            capacity: 数据区容量
+        Returns:
+            Buf 指针（int），失败返回 0
+        """
+        return 0
+
+
+# ============================================================
+# MemPool - arena bump 分配器
+# 不支持单个 free，reset 一次性回收全部
+# ============================================================
+class MemPool(MemManager):
+    """Arena bump 分配器。"""
+    offset: int         # bump 游标
+    high_water: int     # 峰值水位
+
+    def __init__(self, base: int, size: int) -> None: ...
+
+    def alloc(self, size: int) -> int: ...
+    def free(self, ptr: int) -> int: ...
+    def reset(self) -> int: ...
+
+
+# ============================================================
+# MemSlab - 定长块池
+# arena 开头存位图，后续区域按 block_size 切分，空闲链管理
+# ============================================================
+class MemSlab(MemManager):
+    """定长块池分配器。"""
+    block_size: int         # 每块大小（对齐后）
+    block_count: int        # 总块数
+    used_count: int         # 已用块数
+    free_list: int          # 空闲链头（指针）
+    alloc_map: int          # 分配位图基址（指针）
+    alloc_map_size: int     # 位图字节数
+    usable: int             # 可用块区起始（指针）
+    usable_size: int        # 可用块区大小
+
+    def __init__(self, base: int, size: int, block_size: int) -> None:
+        """初始化定长块池。
+
+        Args:
+            base: 内存区起始地址
+            size: 内存区总大小
+            block_size: 每块大小
+        """
+        ...
+
+    def alloc(self, size: int) -> int: ...
+    def free(self, ptr: int) -> int: ...
+    def reset(self) -> int: ...
+
+
+# ============================================================
+# MemBuddy - 伙伴系统分配器
+# 线程安全（自旋锁），支持合并
+# ============================================================
+class MemBuddy(MemManager):
+    """伙伴系统分配器。
+
+    __provides__ 同时提供 '__mbuddy__' 和 '__memmgr__'，
+    使 with MemBuddy(...) 上下文内的 __requires__=['__mbuddy__'] 类能注入。
+    """
+    __provides__: list  # ['__mbuddy__', '__memmgr__']
+    max_order: int          # 最大阶数
+    free_lists: int         # 空闲链头数组基址（指针）
+    lock_val: int           # 自旋锁
+    usable: int             # 可用区起始（指针）
+    usable_size: int        # 可用区大小（2 的幂）
+
+    def __init__(self, base: int, size: int) -> None:
+        """初始化伙伴系统。
+
+        Args:
+            base: 内存区起始地址
+            size: 内存区总大小
+        """
+        ...
+
+    def alloc(self, size: int) -> int:
+        """分配内存（线程安全）。
+
+        失败时打印内存使用情况到 stderr。
+        """
+        return 0
+
+    def free(self, ptr: int) -> int:
+        """释放内存（线程安全，自动合并伙伴块）。"""
+        return 0
+
+    def reset(self) -> int:
+        """重置（回收全部）。"""
+        return 0
+
+    def realloc(self, ptr: int, new_size: int) -> int:
+        """重新调整大小（从块头读取旧阶数，无需 old_size）。"""
+        return 0
+
+    @property
+    def mem_size(self) -> int:
+        """可用区总大小（2 的幂）。"""
+        return 0
+
+    def stats(self) -> int:
+        """返回可用区总大小。"""
+        return 0
+
+    def free_count(self) -> int:
+        """统计所有阶数空闲链中的块总数。"""
+        return 0
+
+    def free_bytes(self) -> int:
+        """统计所有空闲块的总字节数。"""
+        return 0
+
+    def used_bytes(self) -> int:
+        """已使用字节数 = 可用区总大小 - 空闲字节数。"""
+        return 0
+
+    def dump_stats(self, label: int) -> None:
+        """打印内存使用统计到 stdout。
+
+        Args:
+            label: 标签字符串指针（int）
+        """
+        ...
+
+    def self_check(self) -> int:
+        """验证伙伴分配器内部一致性。
+
+        Returns:
+            0=OK，非 0=损坏
+        """
+        return 0

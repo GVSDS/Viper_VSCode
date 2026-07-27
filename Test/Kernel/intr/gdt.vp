@@ -1,0 +1,142 @@
+import t, c
+
+
+@c.Attribute(t.attr.packed)
+class gdt_entry:
+    limit_low:   t.CUInt16T
+    base_low:    t.CUInt16T
+    base_middle: t.CUInt8T
+    access:      t.CUInt8T
+    granularity: t.CUInt8T
+    base_high:   t.CUInt8T
+
+@c.Attribute(t.attr.packed)
+class gdt_entry64:
+    limit_low:   t.CUInt16T
+    base_low:    t.CUInt16T
+    base_middle: t.CUInt8T
+    access:      t.CUInt8T
+    granularity: t.CUInt8T
+    base_high:   t.CUInt8T
+    base_upper:  t.CUInt32T
+    reserved:    t.CUInt32T
+
+@c.Attribute(t.attr.packed)
+class gdt_ptr:
+    limit: t.CUInt16T
+    base:  t.CUInt64T
+
+gdt: t.CArray[gdt_entry, 7] = []
+gp:  t.CArray[t.CUInt8T, 10]
+# TSS buffer: 104 bytes, raw byte array to avoid packed struct issues
+# x86_64 TSS layout: reserved0(4) rsp0(8) rsp1(8) rsp2(8) reserved1(8) ist1-ist7(56) reserved2(8) reserved3(2) iomap_base(2)
+tss_buf: t.CArray[t.CUInt8T, 104]
+
+CODE_SEG: t.CDefine | t.CUInt16T = 0x08
+DATA_SEG: t.CDefine | t.CUInt16T = 0x10
+USER_CODE_SEG: t.CDefine | t.CUInt16T = 0x18
+USER_DATA_SEG: t.CDefine | t.CUInt16T = 0x20
+TSS_SEG: t.CDefine | t.CUInt16T = 0x28
+
+
+def init():
+    global gp, gdt, tss_buf
+    gdt[0].limit_low = 0
+    gdt[0].base_low = 0
+    gdt[0].base_middle = 0
+    gdt[0].access = 0
+    gdt[0].granularity = 0
+    gdt[0].base_high = 0
+    gdt[1].limit_low = 0
+    gdt[1].base_low = 0
+    gdt[1].base_middle = 0
+    gdt[1].access = 0x9A
+    gdt[1].granularity = 0x20
+    gdt[1].base_high = 0
+    gdt[2].limit_low = 0
+    gdt[2].base_low = 0
+    gdt[2].base_middle = 0
+    gdt[2].access = 0x92
+    gdt[2].granularity = 0xCF
+    gdt[2].base_high = 0
+    gdt[3].limit_low = 0
+    gdt[3].base_low = 0
+    gdt[3].base_middle = 0
+    gdt[3].access = 0xFA
+    gdt[3].granularity = 0x20
+    gdt[3].base_high = 0
+    gdt[4].limit_low = 0
+    gdt[4].base_low = 0
+    gdt[4].base_middle = 0
+    gdt[4].access = 0xF2
+    gdt[4].granularity = 0xCF
+    gdt[4].base_high = 0
+    # Set up TSS descriptor in GDT entries 5-6 (selector 0x28)
+    setTSS64(5, t.CUInt64T(c.Addr(tss_buf)), 103)
+    c.Asm("""lea rax, [rip + gdt]
+            lea rcx, [rip + gp]
+            mov word ptr [rcx], 0x37
+            mov qword ptr [rcx+2], rax""",
+          op=[t.ASM_DESCR.CLOBBER_MEMORY, t.ASM_DESCR.CLOBBER_RAX, t.ASM_DESCR.CLOBBER_RCX])
+    c.Asm("sfence; mfence", op=[t.ASM_DESCR.CLOBBER_MEMORY])
+    flush()
+    # Initialize TSS: set iomap_base = 104 (0x68) at offset 102
+    tss_buf[102] = 0x68
+    tss_buf[103] = 0x00
+    # Load Task Register with TSS selector 0x28
+    c.Asm("""mov ax, 0x28
+            ltr ax""",
+          op=[t.ASM_DESCR.CLOBBER_RAX])
+
+@c.Attribute(t.attr.naked)
+def flush():
+    c.Asm("""lea rax, [rip + gp]
+            lgdt [rax]
+            push 0x08
+            lea rax, [rip+2f]
+            push rax
+            .byte 0x48, 0xcb
+            2:
+            mov eax, 0x10
+            mov ds, eax
+            mov es, eax
+            mov fs, eax
+            mov gs, eax
+            mov ss, eax
+            ret""", op=[t.ASM_DESCR.CLOBBER_MEMORY, t.ASM_DESCR.CLOBBER_RAX])
+
+def set_tss_rsp0(rsp0: t.CUInt64T):
+    global tss_buf
+    # TSS RSP0 is at offset 4 (8 bytes) in x86_64 TSS layout
+    tss_buf[4]  = t.CUInt8T(rsp0 & 0xFF)
+    tss_buf[5]  = t.CUInt8T((rsp0 >> 8) & 0xFF)
+    tss_buf[6]  = t.CUInt8T((rsp0 >> 16) & 0xFF)
+    tss_buf[7]  = t.CUInt8T((rsp0 >> 24) & 0xFF)
+    tss_buf[8]  = t.CUInt8T((rsp0 >> 32) & 0xFF)
+    tss_buf[9]  = t.CUInt8T((rsp0 >> 40) & 0xFF)
+    tss_buf[10] = t.CUInt8T((rsp0 >> 48) & 0xFF)
+    tss_buf[11] = t.CUInt8T((rsp0 >> 56) & 0xFF)
+
+def setGate(num: int, base: t.CUInt64T, limit: t.CUInt32T, access: t.CUInt8T, gran: t.CUInt8T):
+    global gdt
+    gdt[num].limit_low   = (limit & 0xFFFF)
+    gdt[num].base_low    = (base & 0xFFFF)
+    gdt[num].base_middle = (base >> 16) & 0xFF
+    gdt[num].base_high   = (base >> 24) & 0xFF
+    gdt[num].granularity = ((limit >> 16) & 0x0F) | (gran & 0xF0)
+    gdt[num].access      = access
+
+def setTSS64(num: int, base: t.CUInt64T, limit: t.CUInt32T):
+    global gdt
+    gdt[num].limit_low   = limit & 0xFFFF
+    gdt[num].base_low    = base & 0xFFFF
+    gdt[num].base_middle = (base >> 16) & 0xFF
+    gdt[num].access      = 0x89
+    gdt[num].granularity = 0x00
+    gdt[num].base_high   = (base >> 24) & 0xFF
+    gdt[num + 1].limit_low = (base >> 32) & 0xFFFF
+    gdt[num + 1].base_low  = (base >> 48) & 0xFFFF
+    gdt[num + 1].base_middle = 0
+    gdt[num + 1].access = 0
+    gdt[num + 1].granularity = 0
+    gdt[num + 1].base_high = 0

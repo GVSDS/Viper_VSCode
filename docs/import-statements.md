@@ -2,7 +2,7 @@
 
 ### Loader Side Effects
 
-An import statement instructs the Python import loader to perform several operations. For example, the statement `from a.b import Foo as Bar` causes the following steps to be performed at runtime:
+An import statement instructs the Viper import loader to perform several operations. For example, the statement `from a.b import Foo as Bar` causes the following steps to be performed at runtime:
 1. Load and execute module `a` if it hasn’t previously been loaded. Cache a reference to `a`.
 2. Load and execute submodule `b` if it hasn’t previously been loaded.
 3. Store a reference to submodule `b` to the variable `b` within module `a`’s namespace.
@@ -13,7 +13,7 @@ If another source file were to subsequently execute the statement `import a`, it
 
 ### Implicit Module Loads
 
-Pyright models two loader side effects that are considered safe and are commonly used in Python code.
+Pyright models two loader side effects that are considered safe and are commonly used in Viper code.
 
 1. If an import statement targets a multi-part module name and does not use an alias, all modules within the multi-part module name are assumed to be loaded. For example, the statement `import a.b.c` is treated as though it is three back-to-back import statements: `import a`, `import a.b` and `import a.b.c`. This allows for subsequent use of all symbols in `a`, `a.b`, and `a.b.c`. If an alias is used (e.g. `import a.b.c as abc`), this is assumed to load only module `c`. A subsequent `import a` would not provide access to `a.b` or `a.b.c`.
 

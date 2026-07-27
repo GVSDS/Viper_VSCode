@@ -1,0 +1,50 @@
+import t, c
+import drivers.input.keyboard.keyboard as keyboard
+import drivers.usb.hid.usb_kbd as usb_kbd
+import drivers.serial.uart.serial as serial
+import sched.sched as sched
+import viperlib
+
+SERVICE_KEYBOARD: t.CDefine = 1
+
+@t.Object
+class KeyboardService:
+    th: sched.Thread | t.CPtr
+    running: t.CInt
+    usb_kbd_th: sched.Thread | t.CPtr
+
+    def __init__(self):
+        self.th = None
+        self.running = 0
+        self.usb_kbd_th = None
+
+kbd_svc: KeyboardService
+
+
+def kbd_thread(arg: t.CVoid | t.CPtr) -> t.CInt:
+    serial.puts("[kbd_svc] started\n")
+    while True:
+        if keyboard.has_data():
+            sc: t.CUInt8T = keyboard.read_scancode()
+        else:
+            sched.Scheduler._yield()
+    return 0
+
+def usb_kbd_thread(arg: t.CVoid | t.CPtr) -> t.CInt:
+    serial.puts("[usb_kbd_svc] started\n")
+    evt: usb_kbd.usb_kbd_event
+    while True:
+        if usb_kbd.has_data():
+            usb_kbd.read_event(c.Addr(evt))
+        else:
+            sched.Scheduler._yield()
+    return 0
+
+def start() -> t.CInt:
+    global kbd_svc
+    kbd_svc = KeyboardService()
+    keyboard.init()
+    serial.puts("[kbd_svc] PS/2 keyboard initialized, IRQ1 installed\n")
+    usb_kbd.init()
+    kbd_svc.running = 1
+    return 0

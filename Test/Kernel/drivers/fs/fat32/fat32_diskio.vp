@@ -1,0 +1,76 @@
+import drivers.storage.ide.ide as ide
+import fat32_types as types
+import spinlock
+import string
+import t, c
+
+
+MAX_DRIVES: t.CDefine = 4
+
+drive_initialized: t.CArray[t.CInt, MAX_DRIVES]
+drive_lock:        spinlock._spinlock = spinlock._spinlock()
+
+def status(pdrv: t.CUInt8T) -> types.DRESULT:
+	if pdrv >= MAX_DRIVES: return types.DRESULT.RES_PARERR
+	if not drive_initialized[pdrv]: return types.DRESULT.RES_NOTRDY
+	return types.DRESULT.RES_OK
+
+def init(pdrv: t.CUInt8T) -> types.DRESULT:
+	if pdrv >= MAX_DRIVES: return types.DRESULT.RES_PARERR
+	drive_lock.lock()
+	err: t.CInt = ide.init()
+	if err != 0:
+		drive_lock.unlock()
+		return types.DRESULT.RES_NOTRDY
+	drive_initialized[pdrv] = 1
+	drive_lock.unlock()
+	return types.DRESULT.RES_OK
+
+def read(pdrv: t.CUInt8T, buff: t.CUInt8T | t.CPtr, sector: t.CUInt32T, count: t.CUInt32T) -> types.DRESULT:
+	if pdrv >= MAX_DRIVES:            return types.DRESULT.RES_PARERR
+	if not drive_initialized[pdrv]:   return types.DRESULT.RES_NOTRDY
+	drive_lock.lock()
+	i: t.CUInt32T
+	for i in range(count):
+		rd_res: t.CInt = ide.readSector(sector + i, buff + (i * 512))
+		if rd_res != 0:
+			drive_lock.unlock()
+			return types.DRESULT.RES_ERROR
+	drive_lock.unlock()
+	return types.DRESULT.RES_OK
+
+def write(pdrv: t.CUInt8T, buff: t.CConst | t.CUInt8T | t.CPtr, sector: t.CUInt32T, count: t.CUInt32T) -> types.DRESULT:
+	if pdrv >= MAX_DRIVES:            return types.DRESULT.RES_PARERR
+	if not drive_initialized[pdrv]:   return types.DRESULT.RES_NOTRDY
+	drive_lock.lock()
+	i: t.CUInt32T
+	for i in range(count):
+		if ide.writeSector(sector + i, buff + (i * 512)) != 0:
+			drive_lock.unlock()
+			return types.DRESULT.RES_ERROR
+	drive_lock.unlock()
+	return types.DRESULT.RES_OK
+
+def ioctl(pdrv: t.CUInt8T, cmd: t.CUInt8T, buff: t.CVoid | t.CPtr) -> types.DRESULT:
+	if pdrv >= MAX_DRIVES:            return types.DRESULT.RES_PARERR
+	if not drive_initialized[pdrv]:   return types.DRESULT.RES_NOTRDY
+	match cmd:
+		case types.GET_SECTOR_COUNT:
+			disk_size: t.CUInt64T = ide.getDiskSize()
+			if disk_size == 0:
+				c.Set(t.CUInt32T(buff, t.CPtr), 131072)
+			elif disk_size > 0xFFFFFFFF:
+				c.Set(t.CUInt32T(buff, t.CPtr), 0xFFFFFFFF)
+			else:
+				c.Set(t.CUInt32T(buff, t.CPtr), t.CUInt32T(disk_size))
+			return types.DRESULT.RES_OK
+		case types.GET_SECTOR_SIZE:
+			c.Set(t.CUInt16T(buff, t.CPtr), 512)
+			return types.DRESULT.RES_OK
+		case types.GET_BLOCK_SIZE:
+			c.Set(t.CUInt32T(buff, t.CPtr), 1)
+			return types.DRESULT.RES_OK
+		case types.CTRL_SYNC:
+			return types.DRESULT.RES_OK
+		case _:
+			return types.DRESULT.RES_PARERR

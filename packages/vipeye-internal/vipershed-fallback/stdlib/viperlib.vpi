@@ -1,0 +1,93 @@
+# Viper 标准库扩展 viperlib 存根。
+# 提供 snprintf/sprintf/vsnprintf 等 C 风格格式化函数的纯 Viper 实现。
+# 姑息策略：
+#   - 缓冲区指针映射为 int（指针整数）
+#   - 格式字符串映射为 str
+#   - va_list 参数列表映射为 int（指针整数）
+#   - 返回 t.CInt 映射为 int
+
+from typing import Any
+
+
+# 临时缓冲区大小（vsnprintf 内部数字转换用）
+TEMP_BUF_SIZE: int = 68
+
+
+def get_digit_count(num: int, base: int) -> int:
+    """计算 num 在指定进制下的位数。
+
+    Args:
+        num: 无符号整数
+        base: 进制（2/8/10/16）
+    Returns:
+        位数
+    """
+    return 0
+
+
+def sprintf(buf: int, rule: str, *args: Any) -> None:
+    """格式化写入到缓冲区（不检查边界）。
+
+    内部调用 vsnprintf，size 设为 INT_MAX。
+
+    Args:
+        buf: 目标缓冲区指针（int）
+        rule: 格式字符串
+        *args: 格式参数
+    """
+    ...
+
+
+def vsprintf(buf: int, rule: str, *args: Any) -> int:
+    """可变参数版本的 sprintf。
+
+    Args:
+        buf: 目标缓冲区指针（int）
+        rule: 格式字符串
+        *args: 格式参数
+    Returns:
+        写入字符数
+    """
+    return 0
+
+
+def snprintf(buf: int, size: int, fmt: str, *args: Any) -> int:
+    """格式化写入到缓冲区（带大小限制）。
+
+    Args:
+        buf: 目标缓冲区指针（int）
+        size: 缓冲区最大容量
+        fmt: 格式字符串
+        *args: 格式参数
+    Returns:
+        本应写入的字符数
+    """
+    return 0
+
+
+def vsnprintf(buf: int, size: int, fmt: str, ap: int) -> int:
+    """可变参数版本的 snprintf。
+
+    支持的格式说明符：%c %s %d %i %u %x %X %o %b %p %f %F %e %E %g %G %a %A %n %%
+    支持的修饰符：- 0 + 空格 # 宽度 .精度 h hh l ll z j t
+
+    Args:
+        buf: 目标缓冲区指针（int）
+        size: 缓冲区最大容量
+        fmt: 格式字符串
+        ap: va_list 参数列表指针（int）
+    Returns:
+        写入字符数
+    """
+    return 0
+
+
+def _check_special_float(fv: float) -> int:
+    """检测浮点特殊值（IEEE 754）。
+
+    Args:
+        fv: 待检测的 double 值
+    Returns:
+        0=normal, 1=+inf, 2=-inf, 3=nan
+    """
+    return 0

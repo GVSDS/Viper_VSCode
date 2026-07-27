@@ -1,0 +1,97 @@
+from stdint import *
+import t, c
+import asm
+
+
+RTC_CMOS_ADDR: t.CUInt16T = 0x70
+RTC_CMOS_DATA: t.CUInt16T = 0x71
+
+RTC_REG_SECONDS: t.CDefine = 0x00
+RTC_REG_MINUTES: t.CDefine = 0x02
+RTC_REG_HOURS: t.CDefine = 0x04
+RTC_REG_DAY: t.CDefine = 0x07
+RTC_REG_MONTH: t.CDefine = 0x08
+RTC_REG_YEAR: t.CDefine = 0x09
+RTC_REG_STATUS_A: t.CDefine = 0x0A
+RTC_REG_STATUS_B: t.CDefine = 0x0B
+
+RTC_TZ_OFFSET: t.CDefine = 8
+
+rtc_seconds: t.CStatic | t.CVolatile | t.CUInt8T = 0
+rtc_minutes: t.CStatic | t.CVolatile | t.CUInt8T = 0
+rtc_hours: t.CStatic | t.CVolatile | t.CUInt8T = 0
+rtc_day: t.CStatic | t.CVolatile | t.CUInt8T = 0
+rtc_month: t.CStatic | t.CVolatile | t.CUInt8T = 0
+rtc_year: t.CStatic | t.CVolatile | t.CUInt16T = 0
+
+def cmos_read(reg: t.CUInt8T) -> t.CUInt8T:
+    asm.outb(RTC_CMOS_ADDR, reg)
+    return asm.inb(RTC_CMOS_DATA)
+
+def bcd_to_bin(bcd: t.CUInt8T) -> t.CUInt8T:
+    return (bcd >> 4) * 10 + (bcd & 0x0F)
+
+def rtc_read_time():
+    while cmos_read(RTC_REG_STATUS_A) & 0x80: pass
+    sec: t.CUInt8T = cmos_read(RTC_REG_SECONDS)
+    min_: t.CUInt8T = cmos_read(RTC_REG_MINUTES)
+    hour: t.CUInt8T = cmos_read(RTC_REG_HOURS)
+    day: t.CUInt8T = cmos_read(RTC_REG_DAY)
+    mon: t.CUInt8T = cmos_read(RTC_REG_MONTH)
+    year: t.CUInt8T = cmos_read(RTC_REG_YEAR)
+    reg_b: t.CUInt8T = cmos_read(RTC_REG_STATUS_B)
+    if not (reg_b & 0x04):
+        sec = bcd_to_bin(sec)
+        min_ = bcd_to_bin(min_)
+        hour = bcd_to_bin(hour)
+        day = bcd_to_bin(day)
+        mon = bcd_to_bin(mon)
+        year = bcd_to_bin(year)
+    if not (reg_b & 0x02) and (hour & 0x80):
+        hour = ((hour & 0x7F) + 12) % 24
+    hour = hour + RTC_TZ_OFFSET
+    if hour >= 24:
+        hour = hour - 24
+        day = day + 1
+        max_day: t.CUInt8T = 31
+        if mon == 4 or mon == 6 or mon == 9 or mon == 11:
+            max_day = 30
+        elif mon == 2:
+            max_day = 28
+            y4: t.CUInt16T = t.CUInt16T(year) + 2000
+            if (y4 % 4 == 0 and y4 % 100 != 0) or (y4 % 400 == 0):
+                max_day = 29
+        if day > max_day:
+            day = 1
+            mon = mon + 1
+            if mon > 12:
+                mon = 1
+                year = year + 1
+    global rtc_seconds, rtc_minutes, rtc_hours, rtc_day, rtc_month, rtc_year
+    rtc_seconds = sec
+    rtc_minutes = min_
+    rtc_hours = hour
+    rtc_day = day
+    rtc_month = mon
+    rtc_year = t.CUInt16T(year) + 2000
+
+def rtc_init():
+    rtc_read_time()
+
+def rtc_get_hours() -> t.CUInt8T:
+    return rtc_hours
+
+def rtc_get_minutes() -> t.CUInt8T:
+    return rtc_minutes
+
+def rtc_get_seconds() -> t.CUInt8T:
+    return rtc_seconds
+
+def rtc_get_day() -> t.CUInt8T:
+    return rtc_day
+
+def rtc_get_month() -> t.CUInt8T:
+    return rtc_month
+
+def rtc_get_year() -> t.CUInt16T:
+    return rtc_year

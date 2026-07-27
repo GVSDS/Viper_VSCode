@@ -13,7 +13,7 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 To check whether a change affects type-checking performance, use `build/perfCompare.py`. It builds the production CLI bundle at each of two or more commits and times repeated runs over a fixed corpus, reporting robust paired deltas. Example:
 
 ```
-python build/perfCompare.py --metric cpu --num-runs 50 --corpus <path-to-python-project> main HEAD
+python build/perfCompare.py --metric cpu --num-runs 50 --corpus <path-to-viper-project> main HEAD
 ```
 
 See the script's `--help` and module docstring for options and methodology.

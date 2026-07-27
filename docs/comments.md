@@ -5,25 +5,25 @@ Some behaviors of pyright can be controlled through the use of comments within t
 ### File-level Type Controls
 Strict type checking, where most supported type-checking switches generate errors, can be enabled for a file through the use of a special comment. Typically this comment is placed at or near the top of a code file on its own line.
 
-```python
+```viper
 # pyright: strict
 ```
 
 Likewise, basic type checking can be enabled for a file. If you use `# pyright: basic`, the settings for the file use the default “basic” settings, not any override settings specified in the configuration file or language server settings. You can override the basic default settings within the file by specifying them individually (see below).
 
-```python
+```viper
 # pyright: basic
 ```
 
 Individual configuration settings can also be overridden on a per-file basis and optionally combined with “strict” or “basic” type checking. For example, if you want to enable all type checks except for “reportPrivateUsage”, you could add the following comment:
 
-```python
+```viper
 # pyright: strict, reportPrivateUsage=false
 ```
 
 Diagnostic levels are also supported.
 
-```python
+```viper
 # pyright: reportPrivateUsage=warning, reportOptionalCall=error
 ```
 

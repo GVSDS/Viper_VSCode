@@ -1,0 +1,13 @@
+import t, c
+import drivers.input.mouse.mouse as mouse
+import drivers.usb.hid.usb_mouse as usb_mouse
+import drivers.serial.uart.serial as serial
+import sched.sched as sched
+
+SERVICE_MOUSE: t.CDefine = 2
+
+def start() -> t.CInt:
+    serial.puts("[mse_svc] mouse initialized\n")
+    if usb_mouse.init() == 0:
+        serial.puts("[mse_svc] usb mouse initialized\n")
+    return 0

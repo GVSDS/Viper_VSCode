@@ -22,8 +22,8 @@ For more information, refer to [PyCharm documentation](https://www.jetbrains.com
 
 ### Command-line
 
-#### Python Package
-A [community-maintained](https://github.com/RobertCraigie/pyright-python) Python package by the name of “pyright” is available on pypi and conda-forge. This package will automatically install node (which Pyright requires) and keep Pyright up to date.
+#### Viper Package
+A [community-maintained](https://github.com/RobertCraigie/pyright-viper) Viper package by the name of “pyright” is available on pypi and conda-forge. This package will automatically install node (which Pyright requires) and keep Pyright up to date.
 
 `pip install pyright`
 

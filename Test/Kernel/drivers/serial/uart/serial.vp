@@ -1,0 +1,46 @@
+import platform.pch.pic as pic
+import su8250
+import t, c
+
+
+# 串口初始化
+def init():
+    # 初始化COM1端口
+    su8250.init(su8250.COM1_PORT)
+    # 启用COM1中断（IRQ4）
+    pic.clearMask(4)
+
+# 发送一个字符到COM1
+def putc(cr: t.CChar):
+    su8250.putchar(su8250.COM1_PORT, cr)
+
+def putchar(cr: t.CChar):
+    su8250.putchar(su8250.COM1_PORT, cr)
+
+# 从COM1读取一个字符
+def getchar() -> t.CChar:
+    return su8250.getchar(su8250.COM1_PORT)
+
+# 发送一个字符串到COM1
+def puts(s: str):
+    # 逐个字符发送，直接复用putchar的逻辑
+    for i in s:
+        putchar(i)
+
+# 检查COM1是否有数据可读
+def isDataAvailable() -> t.CInt:
+    return su8250.isDataAvailable(su8250.COM1_PORT)
+
+# 检查COM1发送缓冲区是否为空
+def isTransmitEmpty() -> t.CInt:
+    return su8250.isTransmitEmpty(su8250.COM1_PORT)
+
+# 发送32位十六进制值到COM1
+def put_hex32(value: t.CUInt32T):
+    hex_digits: t.CArray[t.CChar, None] = ["0123456789ABCDEF"]
+    buffer: t.CArray[t.CChar, 9]
+    for i in range(7, -1, -1):
+        buffer[i] = hex_digits[value & 0xF]
+        value >>= 4
+    buffer[8] = '\0'
+    puts(buffer)

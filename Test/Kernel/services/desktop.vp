@@ -1,0 +1,2714 @@
+from stdint import *
+import asm
+import drivers.video.vesafb.gfx as gfx
+import drivers.video.vesafb.vga as vga
+import drivers.input.mouse.mouse as mouse
+import drivers.input.keyboard.keyboard as keyboard
+import drivers.usb.hid.usb_mouse as usb_mouse
+import drivers.usb.hid.usb_kbd as usb_kbd
+import drivers.serial.uart.serial as serial
+import platform.pch.pic as pic
+import platform.pch.timer as timer
+import platform.pch.rtc as rtc
+import sched.sched as sched
+import sched.process as process
+import mm.mm as mm
+import string
+import viperlib
+import t, c
+
+
+TASKBAR_HEIGHT: t.CDefine = 50
+CURSOR_SIZE: t.CDefine = 16
+CURSOR_W: t.CDefine = 16
+CURSOR_H: t.CDefine = 16
+CURSOR_SAVE_SIZE: t.CDefine = 256
+TITLE_HEIGHT_CLASSIC: t.CDefine = 24
+TITLE_HEIGHT_WIN: t.CDefine = 32
+MAX_APP_WINDOWS: t.CDefine = 16
+CLOSE_BTN_SIZE: t.CDefine = 16
+CLOSE_BTN_W_WIN: t.CDefine = 46
+CLOSE_BTN_W7_W: t.CDefine = 28
+CLOSE_BTN_W7_H: t.CDefine = 20
+CLOSE_BTN_W7_R: t.CDefine = 3
+CLOSE_BTN_XP_SZ: t.CDefine = 21
+TITLE_BTN_W_WIN: t.CDefine = 46
+TITLE_BTN_W7: t.CDefine = 28
+TITLE_BTN_XP: t.CDefine = 21
+TASKBAR_ICON_SZ: t.CDefine = 36
+TASKBAR_ICON_PAD: t.CDefine = 6
+TASKBAR_LOGO_SZ: t.CDefine = 32
+WIN_RADIUS: t.CDefine = 8
+SHADOW_ENABLED: t.CDefine = False
+SHADOW_LEFT: t.CDefine = 8
+SHADOW_RIGHT: t.CDefine = 12
+SHADOW_TOP:          t.CDefine = 4
+SHADOW_BOTTOM:       t.CDefine = 14
+SHADOW_ALPHA:        t.CDefine = 100
+CURSOR_SHADOW_ALPHA: t.CDefine = 50
+
+STYLE_CLASSIC: t.CDefine = 0
+STYLE_WIN10:   t.CDefine = 1
+STYLE_WIN11:   t.CDefine = 2
+STYLE_WIN7:    t.CDefine = 3
+STYLE_WINXP:   t.CDefine = 4
+
+_fb: UINT32PTR
+_screen_w: t.CInt = 0
+_screen_h: t.CInt = 0
+_fb_pitch: t.CInt = 0
+_cursor_x: t.CInt = 512
+_cursor_y: t.CInt = 300
+_cursor_buttons: t.CUInt8T = 0
+_back_fb: UINT32PTR
+_last_time_sec: t.CUInt32T = 0
+_row_buf: UINT32PTR
+_bg_row_buf: UINT32PTR
+@t.Object
+class AppWindow:
+    active:    t.CInt
+    x:         t.CInt
+    y:         t.CInt
+    w:         t.CInt
+    h:         t.CInt
+    title:     t.CArray[t.CChar, 32]
+    orig_title: t.CArray[t.CChar, 32]
+    content_h: t.CInt
+    fb:        UINT32PTR
+    fb_w:      t.CInt
+    fb_h:      t.CInt
+    z_order:   t.CInt
+    style:     t.CInt
+    close_hover: t.CInt
+    min_hover:   t.CInt
+    max_hover:   t.CInt
+    is_maximized: t.CInt
+    orig_x:      t.CInt
+    orig_y:      t.CInt
+    orig_w:      t.CInt
+    orig_h:      t.CInt
+    pid:       t.CInt
+    cursor_type: t.CInt
+    app_cursor_type: t.CInt
+    ping_pending: t.CInt
+    no_resp:     t.CInt
+    no_resp_sec: t.CUInt32T
+    minimized:   t.CInt
+    resizable_w: t.CInt
+    resizable_h: t.CInt
+    resize_w:    t.CInt
+    resize_h:    t.CInt
+    old_fb:    UINT32PTR
+
+_wins: t.CArray[AppWindow, MAX_APP_WINDOWS]
+_win_count: t.CInt = 0
+_next_z: t.CInt = 1
+_current_app_pid: t.CInt = 0
+HB_INTERVAL_SEC: t.CUInt32T = 5
+HB_NO_RESP_SEC: t.CUInt32T = 30
+_hb_last_sec: t.CUInt32T = 0
+_dirty_rows: t.CUInt8T | t.CPtr = t.CUInt8T(0, t.CPtr)
+_dirty_count: t.CInt = 0
+_dirty_y_min: t.CInt = 0
+_dirty_y_max: t.CInt = -1
+_vblank_ok: t.CInt = -1
+_prev_cursor_x: t.CInt = 512
+_prev_cursor_y: t.CInt = 300
+_cursor_save_buf: t.CArray[t.CUInt32T, 256]
+_cursor_saved: t.CInt = 0
+
+_CURSOR_ARROW: t.CArray[t.CUInt8T, 256] = [
+    1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,2,2,2,1,0,0,0,0,0,0,0,0,0,0,0,
+    1,2,2,2,2,1,0,0,0,0,0,0,0,0,0,0,
+    1,2,2,2,2,2,1,0,0,0,0,0,0,0,0,0,
+    1,2,2,2,2,2,2,1,0,0,0,0,0,0,0,0,
+    1,2,2,2,2,2,2,2,1,0,0,0,0,0,0,0,
+    1,2,2,2,2,2,2,2,2,1,0,0,0,0,0,0,
+    1,2,2,2,1,1,1,1,1,1,0,0,0,0,0,0,
+    1,2,2,1,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,2,1,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+]
+
+_CURSOR_IBEAM: t.CArray[t.CUInt8T, 256] = [
+    0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,
+    0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,
+    0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,
+]
+
+_CURSOR_RESIZE_EW: t.CArray[t.CUInt8T, 256] = [
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,1,1,1,0,0,0,0,0,
+    0,0,0,1,2,2,1,1,1,2,2,1,0,0,0,0,
+    0,0,1,2,2,2,2,2,2,2,2,2,1,0,0,0,
+    0,1,2,2,2,2,2,2,2,2,2,2,2,1,0,0,
+    0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,
+    0,1,2,2,2,2,2,2,2,2,2,2,2,1,0,0,
+    0,0,1,2,2,2,2,2,2,2,2,2,1,0,0,0,
+    0,0,0,1,2,2,1,1,1,2,2,1,0,0,0,0,
+    0,0,0,0,1,1,1,0,1,1,1,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+]
+
+_CURSOR_RESIZE_NS: t.CArray[t.CUInt8T, 256] = [
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,1,2,2,1,0,0,0,0,0,0,0,0,0,
+    0,0,1,2,2,2,2,1,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,1,2,2,2,2,1,0,0,0,0,0,0,0,0,
+    0,0,0,1,2,2,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+]
+
+_CURSOR_RESIZE_NWSE: t.CArray[t.CUInt8T, 256] = [
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,1,2,1,1,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,1,2,2,1,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,1,2,2,1,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,1,2,2,1,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,1,2,2,1,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,1,2,2,1,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,1,2,2,1,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,1,2,2,1,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,1,2,2,1,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+]
+_last_clock_sec: t.CUInt32T = 0
+_prev_btn: t.CUInt8T = 0
+
+EVENT_QUEUE_SIZE: t.CDefine = 32
+EVENT_TYPE_NONE: t.CDefine = 0
+EVENT_TYPE_CLICK: t.CDefine = 1
+EVENT_TYPE_HOVER: t.CDefine = 2
+EVENT_TYPE_RELEASE: t.CDefine = 3
+EVENT_TYPE_HOVER_LEAVE: t.CDefine = 4
+EVENT_TYPE_KEY: t.CDefine = 5
+EVENT_TYPE_KEY_RELEASE: t.CDefine = 6
+EVENT_TYPE_PING: t.CDefine = 7
+EVENT_TYPE_RESIZE: t.CDefine = 8
+
+RESIZE_EDGE_NONE: t.CDefine = 0
+RESIZE_EDGE_RIGHT: t.CDefine = 1
+RESIZE_EDGE_BOTTOM: t.CDefine = 2
+RESIZE_EDGE_CORNER: t.CDefine = 3
+RESIZE_BORDER: t.CDefine = 6
+RESIZE_MIN_W: t.CDefine = 100
+RESIZE_MIN_H: t.CDefine = 60
+
+CURSOR_DEFAULT: t.CDefine = 0
+CURSOR_IBEAM: t.CDefine = 1
+CURSOR_RESIZE_EW: t.CDefine = 2
+CURSOR_RESIZE_NS: t.CDefine = 3
+CURSOR_RESIZE_NWSE: t.CDefine = 4
+
+KEY_STATE_PRESS: t.CDefine = 1
+KEY_STATE_RELEASE: t.CDefine = 2
+KEY_STATE_REPEAT: t.CDefine = 3
+
+TYPEMATIC_DELAY: t.CDefine = 500
+TYPEMATIC_RATE: t.CDefine = 40
+
+HELD_KEY_MAX: t.CDefine = 8
+
+class held_key_info(t.CStruct):
+    keycode: t.CUInt8T
+    is_usb: t.CUInt8T
+    press_time: t.CUInt64T
+    last_repeat: t.CUInt64T
+
+_held_keys: t.CArray[held_key_info, HELD_KEY_MAX]
+_held_key_count: t.CInt = 0
+
+@c.Attribute(t.attr.packed)
+class InputEvent:
+    type: t.CUInt32T
+    win_id: t.CInt
+    x: t.CInt
+    y: t.CInt
+    button: t.CUInt8T
+    _pad0: t.CUInt8T
+    _pad1: t.CUInt8T
+    _pad2: t.CUInt8T
+
+INPUT_EVENT_SIZE: t.CDefine = 20
+
+_event_queue: t.CArray[InputEvent, EVENT_QUEUE_SIZE]
+_event_head: t.CInt = 0
+_event_tail: t.CInt = 0
+_last_hover_win: t.CInt = -1
+_focused_win: t.CInt = -1
+
+KBD_DEV_PS2: t.CDefine = 0
+KBD_DEV_USB: t.CDefine = 1
+
+_ps2_shift_l: t.CUInt8T = 0
+_ps2_shift_r: t.CUInt8T = 0
+_ps2_caps: t.CUInt8T = 0
+_ps2_e0_pending: t.CUInt8T = 0
+_kbd_irq_masked: t.CInt = 0
+
+VK_LEFT:  t.CDefine = -1
+VK_RIGHT: t.CDefine = -2
+VK_UP:    t.CDefine = -3
+VK_DOWN:  t.CDefine = -4
+VK_HOME:  t.CDefine = -5
+VK_END:   t.CDefine = -6
+VK_DELETE: t.CDefine = -7
+
+_ps2_set1: t.CArray[t.CChar, 128] = [
+    '\0', '\x1b', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
+    '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
+    '\0', 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'", '`', '\0',
+    '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', '\0', '\0', '\0', ' ',
+    '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '-', '\0', '\0', '\0', '\0',
+    '\0', '+', '\0', '\0', '\0', '0', '.', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
+    '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
+    '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
+    '\0'
+]
+
+_ps2_set1_shift: t.CArray[t.CChar, 128] = [
+    '\0', '\x1b', '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
+    '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
+    '\0', 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', '\0',
+    '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', '\0', '\0', '\0', ' ',
+    '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '-', '\0', '\0', '\0', '\0',
+    '\0', '+', '\0', '\0', '\0', '0', '.', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
+    '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
+    '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0',
+    '\0'
+]
+
+def _ps2_scancode_to_ascii(scancode: t.CUInt8T) -> t.CInt:
+    code: t.CUInt8T = scancode & t.CUInt8T(0x7F)
+    if code >= 128: return 0
+    shifted: t.CInt = 0
+    if (_ps2_shift_l or _ps2_shift_r) != 0:
+        shifted = 1
+    if _ps2_caps != 0:
+        if code >= 0x10 and code <= 0x32:
+            shifted = shifted ^ 1
+    if shifted:
+        return t.CInt(_ps2_set1_shift[code])
+    return t.CInt(_ps2_set1[code])
+
+
+def _push_event(evt: InputEvent):
+    global _event_head, _event_tail
+    if evt.type == EVENT_TYPE_RESIZE:
+        i: t.CInt = _event_head
+        while i != _event_tail:
+            if _event_queue[i].type == EVENT_TYPE_RESIZE and _event_queue[i].win_id == evt.win_id:
+                _event_queue[i].type = EVENT_TYPE_NONE
+            i = (i + 1) % EVENT_QUEUE_SIZE
+    next_tail: t.CInt = (_event_tail + 1) % EVENT_QUEUE_SIZE
+    if next_tail == _event_head:
+        _event_head = (_event_head + 1) % EVENT_QUEUE_SIZE
+    string.memcpy(c.Addr(_event_queue[_event_tail]), c.Addr(evt), INPUT_EVENT_SIZE)
+    _event_tail = next_tail
+
+def poll_event(buf_ptr: t.CVoid | t.CPtr, caller_pid: t.CInt) -> t.CInt:
+    global _event_head, _event_tail
+    while _event_head != _event_tail:
+        if _event_queue[_event_head].type == EVENT_TYPE_NONE:
+            _event_head = (_event_head + 1) % EVENT_QUEUE_SIZE
+            continue
+        evt_win: t.CInt = _event_queue[_event_head].win_id
+        evt_pid: t.CInt = 0
+        win_ok: t.CInt = 0
+        if evt_win >= 0 and evt_win < _win_count:
+            evt_pid = _wins[evt_win].pid
+            win_ok = 1
+        if evt_pid == caller_pid:
+            string.memcpy(buf_ptr, c.Addr(_event_queue[_event_head]), INPUT_EVENT_SIZE)
+            _event_head = (_event_head + 1) % EVENT_QUEUE_SIZE
+            return 1
+        if win_ok and not _wins[evt_win].active:
+            _event_head = (_event_head + 1) % EVENT_QUEUE_SIZE
+            continue
+        scan: t.CInt = (_event_head + 1) % EVENT_QUEUE_SIZE
+        while scan != _event_tail:
+            if _event_queue[scan].type == EVENT_TYPE_NONE:
+                scan = (scan + 1) % EVENT_QUEUE_SIZE
+                continue
+            evt_win2: t.CInt = _event_queue[scan].win_id
+            evt_pid2: t.CInt = 0
+            if evt_win2 >= 0 and evt_win2 < _win_count:
+                evt_pid2 = _wins[evt_win2].pid
+            if evt_pid2 == caller_pid:
+                string.memcpy(buf_ptr, c.Addr(_event_queue[scan]), INPUT_EVENT_SIZE)
+                i: t.CInt = scan
+                while i != _event_tail:
+                    next_i: t.CInt = (i + 1) % EVENT_QUEUE_SIZE
+                    if next_i != _event_head:
+                        string.memcpy(c.Addr(_event_queue[i]), c.Addr(_event_queue[next_i]), INPUT_EVENT_SIZE)
+                    i = next_i
+                if _event_tail == 0:
+                    _event_tail = EVENT_QUEUE_SIZE - 1
+                else:
+                    _event_tail = _event_tail - 1
+                return 1
+            scan = (scan + 1) % EVENT_QUEUE_SIZE
+        break
+    return 0
+
+def _get_title_height(style: t.CInt) -> t.CInt:
+    if style == STYLE_CLASSIC:
+        return TITLE_HEIGHT_CLASSIC
+    return TITLE_HEIGHT_WIN
+
+def _mark_rows_dirty(start_y: t.CInt, count: t.CInt):
+    global _dirty_count, _dirty_y_min, _dirty_y_max
+    for i in range(start_y, start_y + count):
+        if i >= 0 and i < _screen_h:
+            if not _dirty_rows[i]:
+                _dirty_rows[i] = 1
+                _dirty_count += 1
+                if i < _dirty_y_min or _dirty_count == 1:
+                    _dirty_y_min = i
+                if i > _dirty_y_max or _dirty_count == 1:
+                    _dirty_y_max = i
+
+def _mark_all_dirty():
+    global _dirty_count, _dirty_y_min, _dirty_y_max
+    string.memset(_dirty_rows, 1, _screen_h)
+    _dirty_count = _screen_h
+    _dirty_y_min = 0
+    _dirty_y_max = _screen_h - 1
+
+def _has_dirty_rows() -> t.CInt:
+    return _dirty_count
+
+def _clear_dirty_flags():
+    global _dirty_count, _dirty_y_min, _dirty_y_max
+    string.memset(_dirty_rows, 0, _screen_h)
+    _dirty_count = 0
+    _dirty_y_min = _screen_h
+    _dirty_y_max = -1
+
+def _wait_vblank():
+    global _vblank_ok
+    if _vblank_ok == 0:
+        return
+    timeout: t.CInt = 50000
+    while (asm.inb(0x3DA) & 0x08) != 0:
+        timeout -= 1
+        if timeout <= 0:
+            _vblank_ok = 0
+            return
+    while (asm.inb(0x3DA) & 0x08) == 0:
+        timeout -= 1
+        if timeout <= 0:
+            _vblank_ok = 0
+            return
+    _vblank_ok = 1
+
+def _fill_rect(buf: UINT32PTR, bw: t.CInt, bh: t.CInt, rx: t.CInt, ry: t.CInt, rw: t.CInt, rh: t.CInt, color: t.CUInt32T):
+    if rx < 0: rw += rx; rx = 0
+    if ry < 0: rh += ry; ry = 0
+    if rx + rw > bw: rw = bw - rx
+    if ry + rh > bh: rh = bh - ry
+    if rw <= 0 or rh <= 0: return
+    if _row_buf:
+        for i in range(rw):
+            _row_buf[i] = color
+        row_bytes: t.CInt = rw * 4
+        for py in range(ry, ry + rh):
+            string.memcpy(t.CVoid(t.CUInt64T(buf) + (py * bw + rx) * 4, t.CPtr), _row_buf, row_bytes)
+
+def _alpha_blend(bg: t.CUInt32T, fg: t.CUInt32T, alpha: t.CInt) -> t.CUInt32T:
+    a: t.CInt = alpha
+    ia: t.CInt = 255 - a
+    bg_r: t.CInt = t.CInt(bg & 0xFF)
+    bg_g: t.CInt = t.CInt((bg >> 8) & 0xFF)
+    bg_b: t.CInt = t.CInt((bg >> 16) & 0xFF)
+    fg_r: t.CInt = t.CInt(fg & 0xFF)
+    fg_g: t.CInt = t.CInt((fg >> 8) & 0xFF)
+    fg_b: t.CInt = t.CInt((fg >> 16) & 0xFF)
+    r: t.CInt = (fg_r * a + bg_r * ia) >> 8
+    g: t.CInt = (fg_g * a + bg_g * ia) >> 8
+    b: t.CInt = (fg_b * a + bg_b * ia) >> 8
+    return t.CUInt32T(r | (g << 8) | (b << 16) | 0xFF000000)
+
+def _is_in_corner(px: t.CInt, py: t.CInt, cx: t.CInt, cy: t.CInt, r: t.CInt) -> t.CInt:
+    dx: t.CInt = px - cx
+    dy: t.CInt = py - cy
+    if dx < 0: dx = -dx
+    if dy < 0: dy = -dy
+    if dx <= r and dy <= r:
+        dist2: t.CInt = dx * dx + dy * dy
+        r2: t.CInt = r * r
+        if dist2 > r2:
+            return 0
+    return 1
+
+def _is_on_border(rx: t.CInt, ry: t.CInt, ww: t.CInt, wh: t.CInt, r: t.CInt) -> t.CInt:
+    if rx == 0 or rx == ww - 1 or ry == 0 or ry == wh - 1:
+        return 1
+    if ry < r:
+        if rx < r:
+            dx: t.CInt = rx - r
+            dy: t.CInt = ry - r
+            dist2: t.CInt = dx * dx + dy * dy
+            if dist2 >= (r - 1) * (r - 1): return 1
+        elif rx >= ww - r:
+            dx = rx - (ww - r - 1)
+            dy = ry - r
+            dist2 = dx * dx + dy * dy
+            if dist2 >= (r - 1) * (r - 1): return 1
+    elif ry >= wh - r:
+        if rx < r:
+            dx = rx - r
+            dy = ry - (wh - r - 1)
+            dist2 = dx * dx + dy * dy
+            if dist2 >= (r - 1) * (r - 1): return 1
+        elif rx >= ww - r:
+            dx = rx - (ww - r - 1)
+            dy = ry - (wh - r - 1)
+            dist2 = dx * dx + dy * dy
+            if dist2 >= (r - 1) * (r - 1): return 1
+    return 0
+
+def _corner_alpha(px: t.CInt, py: t.CInt, cx: t.CInt, cy: t.CInt, r: t.CInt) -> t.CInt:
+    dx: t.CInt = px - cx
+    dy: t.CInt = py - cy
+    if dx < 0: dx = -dx
+    if dy < 0: dy = -dy
+    if dx <= r and dy <= r:
+        dist2: t.CInt = dx * dx + dy * dy
+        r2: t.CInt = r * r
+        if dist2 > r2:
+            return 0
+        outer: t.CInt = (r + 1) * (r + 1)
+        if dist2 >= outer:
+            return 160
+        return 255
+    return 255
+
+def _draw_char(buf: UINT32PTR, bw: t.CInt, bh: t.CInt, x: t.CInt, y: t.CInt, ch: t.CChar, color: t.CUInt32T):
+    cval: t.CUInt8T = t.CUInt8T(ch)
+    if cval >= 128: cval = 0
+    for fy in range(16):
+        if y + fy < 0 or y + fy >= bh: continue
+        row: t.CUInt8T = vga.font[cval][fy]
+        if row == 0: continue
+        for fx in range(8):
+            if row & (0x80 >> fx):
+                px: t.CInt = x + fx
+                if px >= 0 and px < bw:
+                    buf[(y + fy) * bw + px] = color
+
+def _draw_text(buf: UINT32PTR, bw: t.CInt, bh: t.CInt, x: t.CInt, y: t.CInt, s: t.CConst | str, color: t.CUInt32T):
+    cx: t.CInt = x
+    cy: t.CInt = y
+    for ch in s:
+        if ch == 10:
+            cy += 16
+            cx = x
+        else:
+            _draw_char(buf, bw, bh, cx, cy, ch, color)
+            cx += 8
+
+_drag_idx: t.CInt = -1
+
+def _eff_w(aw2: AppWindow | t.CPtr) -> t.CInt:
+    if aw2.resize_w != 0: return aw2.resize_w
+    return aw2.w
+
+def _eff_h(aw2: AppWindow | t.CPtr) -> t.CInt:
+    if aw2.resize_h != 0: return aw2.resize_h
+    return aw2.content_h
+_drag_off_x: t.CInt = 0
+_drag_off_y: t.CInt = 0
+_rsz_drag_idx: t.CInt = -1
+_rsz_edge: t.CInt = 0
+_rsz_start_x: t.CInt = 0
+_rsz_start_y: t.CInt = 0
+_rsz_start_w: t.CInt = 0
+_rsz_start_h: t.CInt = 0
+_rsz_last_w: t.CInt = 0
+_rsz_last_h: t.CInt = 0
+_rsz_last_tick: t.CUInt64T = 0
+_mouse_moved: t.CInt = 0
+
+def _bring_to_front(idx: t.CInt):
+    global _next_z
+    if idx < 0 or idx >= _win_count: return
+    aw: AppWindow | t.CPtr = c.Addr(_wins[idx])
+    if not aw.active or aw.minimized: return
+    _next_z += 1
+    aw.z_order = _next_z
+
+def _hit_test_window(mx: t.CInt, my: t.CInt) -> t.CInt:
+    best: t.CInt = -1
+    best_z: t.CInt = -1
+    for ai in range(_win_count):
+        if _wins[ai].active and not _wins[ai].minimized:
+            ax: t.CInt = _wins[ai].x
+            ay: t.CInt = _wins[ai].y
+            aw: t.CInt = _eff_w(c.Addr(_wins[ai]))
+            ah: t.CInt = _wins[ai].h
+            if mx >= ax and mx < ax + aw and my >= ay and my < ay + ah:
+                z: t.CInt = _wins[ai].z_order
+                if z > best_z:
+                    best_z = z
+                    best = ai
+    return best
+
+def _hit_test_resize(mx: t.CInt, my: t.CInt, idx: t.CInt) -> t.CInt:
+    if idx < 0 or idx >= _win_count: return RESIZE_EDGE_NONE
+    aw: AppWindow | t.CPtr = c.Addr(_wins[idx])
+    if not aw.active or aw.minimized: return RESIZE_EDGE_NONE
+    if not aw.resizable_w and not aw.resizable_h: return RESIZE_EDGE_NONE
+    on_right: t.CInt = 0
+    on_bottom: t.CInt = 0
+    if aw.resizable_w:
+        if mx >= aw.x + _eff_w(aw) - RESIZE_BORDER and mx < aw.x + _eff_w(aw):
+            on_right = 1
+    if aw.resizable_h:
+        if my >= aw.y + aw.h - RESIZE_BORDER and my < aw.y + aw.h:
+            on_bottom = 1
+    if on_right and on_bottom: return RESIZE_EDGE_CORNER
+    if on_right: return RESIZE_EDGE_RIGHT
+    if on_bottom: return RESIZE_EDGE_BOTTOM
+    return RESIZE_EDGE_NONE
+
+def _hid_to_ascii(keycode: t.CUInt8T, modifier: t.CUInt8T) -> t.CInt:
+    global _ps2_caps
+    shift: t.CInt = 0
+    if (modifier & 0x22) != 0:
+        shift = 1
+    kc: t.CInt = t.CInt(keycode)
+    if kc >= 4 and kc <= 29:
+        if _ps2_caps != 0:
+            shift = shift ^ 1
+        if shift:
+            return kc - 4 + 65
+        return kc - 4 + 97
+    if kc >= 30 and kc <= 38:
+        if shift:
+            shifts9: t.CArray[t.CInt, 9]
+            shifts9[0] = 33; shifts9[1] = 64; shifts9[2] = 35
+            shifts9[3] = 36; shifts9[4] = 37; shifts9[5] = 94
+            shifts9[6] = 38; shifts9[7] = 42; shifts9[8] = 40
+            return shifts9[kc - 30]
+        return kc - 30 + 49
+    if kc == 39:
+        if shift: return 41
+        return 48
+    if kc == 44: return 32
+    if kc == 40: return 13
+    if kc == 42: return 8
+    if kc == 43: return 9
+    if kc == 41: return 27
+    if kc == 45:
+        if shift: return 95
+        return 45
+    if kc == 46:
+        if shift: return 43
+        return 61
+    if kc == 47:
+        if shift: return 123
+        return 91
+    if kc == 48:
+        if shift: return 125
+        return 93
+    if kc == 49:
+        if shift: return 124
+        return 92
+    if kc == 51:
+        if shift: return 58
+        return 59
+    if kc == 52:
+        if shift: return 34
+        return 39
+    if kc == 53:
+        if shift: return 126
+        return 96
+    if kc == 54:
+        if shift: return 60
+        return 44
+    if kc == 55:
+        if shift: return 62
+        return 46
+    if kc == 56:
+        if shift: return 63
+        return 47
+    return 0
+
+def _held_key_add(keycode: t.CUInt8T, is_usb: t.CUInt8T):
+    global _held_key_count
+    if _held_key_count >= HELD_KEY_MAX: return
+    for i in range(_held_key_count):
+        if _held_keys[i].keycode == keycode and _held_keys[i].is_usb == is_usb:
+            return
+    now: t.CUInt64T = timer.timer_get_ticks()
+    _held_keys[_held_key_count].keycode = keycode
+    _held_keys[_held_key_count].is_usb = is_usb
+    _held_keys[_held_key_count].press_time = now
+    _held_keys[_held_key_count].last_repeat = now
+    _held_key_count += 1
+
+def _held_key_remove(keycode: t.CUInt8T, is_usb: t.CUInt8T):
+    global _held_key_count
+    for i in range(_held_key_count):
+        if _held_keys[i].keycode == keycode and _held_keys[i].is_usb == is_usb:
+            for j in range(i, _held_key_count - 1):
+                _held_keys[j].keycode = _held_keys[j + 1].keycode
+                _held_keys[j].is_usb = _held_keys[j + 1].is_usb
+                _held_keys[j].press_time = _held_keys[j + 1].press_time
+                _held_keys[j].last_repeat = _held_keys[j + 1].last_repeat
+            _held_key_count -= 1
+            return
+
+def _check_key_repeat():
+    global _held_key_count
+    if _focused_win < 0 or _focused_win >= _win_count: return
+    if not _wins[_focused_win].active: return
+    now: t.CUInt64T = timer.timer_get_ticks()
+    for i in range(_held_key_count):
+        hk: held_key_info | t.CPtr = c.Addr(_held_keys[i])
+        elapsed: t.CUInt64T = now - hk.press_time
+        if elapsed < t.CUInt64T(TYPEMATIC_DELAY):
+            continue
+        since_last: t.CUInt64T = now - hk.last_repeat
+        if since_last >= t.CUInt64T(TYPEMATIC_RATE):
+            hk.last_repeat = now
+            ascii_ch: t.CInt = 0
+            if hk.is_usb:
+                mod: t.CUInt8T = 0
+                if _ps2_shift_l or _ps2_shift_r:
+                    mod = mod | 0x22
+                if _ps2_caps:
+                    mod = mod | 0x01
+                ascii_ch = _hid_to_ascii(hk.keycode, mod)
+            else:
+                ascii_ch = _ps2_scancode_to_ascii(hk.keycode)
+            if ascii_ch != 0:
+                rep_evt: InputEvent
+                rep_evt.type = EVENT_TYPE_KEY
+                rep_evt.win_id = _focused_win
+                rep_evt.x = ascii_ch
+                rep_evt.y = t.CInt(hk.keycode)
+                rep_evt.button = KEY_STATE_REPEAT
+                rep_evt._pad0 = 0
+                rep_evt._pad1 = 0
+                rep_evt._pad2 = 0
+                _push_event(rep_evt)
+
+def _update_keyboard():
+    global _focused_win, _kbd_irq_masked
+    global _ps2_shift_l, _ps2_shift_r, _ps2_caps
+    global _ps2_e0_pending
+    # Quick check: skip if no PS/2 data and no USB data
+    ps2_status: t.CUInt8T = asm.inb(0x64)
+    if (ps2_status & 0x01) == 0 and not usb_kbd.has_data():
+        _check_key_repeat()
+        return
+    if _kbd_irq_masked == 0:
+        pic.clearMask(1)
+        _kbd_irq_masked = 1
+    kbd_cnt: t.CInt = 0
+    while usb_kbd.has_data() and kbd_cnt < 32:
+        kbd_cnt += 1
+        kevt: usb_kbd.usb_kbd_event
+        usb_kbd.read_event(c.Addr(kevt))
+        if kevt.keycode == 0x39 and kevt.event_type == usb_kbd.KBD_EVT_PRESS:
+            _ps2_caps = _ps2_caps ^ t.CUInt8T(1)
+        if kevt.event_type == usb_kbd.KBD_EVT_PRESS:
+            _held_key_add(kevt.keycode, 1)
+            usb_ascii: t.CInt = _hid_to_ascii(kevt.keycode, kevt.modifier)
+            if usb_ascii == 0:
+                kc2: t.CInt = t.CInt(kevt.keycode)
+                if kc2 == 0x50: usb_ascii = VK_LEFT
+                elif kc2 == 0x4F: usb_ascii = VK_RIGHT
+                elif kc2 == 0x52: usb_ascii = VK_UP
+                elif kc2 == 0x51: usb_ascii = VK_DOWN
+                elif kc2 == 0x4A: usb_ascii = VK_HOME
+                elif kc2 == 0x4D: usb_ascii = VK_END
+                elif kc2 == 0x4C: usb_ascii = VK_DELETE
+            if usb_ascii != 0 and _focused_win >= 0 and _focused_win < _win_count and _wins[_focused_win].active:
+                usb_evt: InputEvent
+                usb_evt.type = EVENT_TYPE_KEY
+                usb_evt.win_id = _focused_win
+                usb_evt.x = usb_ascii
+                usb_evt.y = t.CInt(kevt.keycode)
+                usb_evt.button = KEY_STATE_PRESS
+                usb_evt._pad0 = 0
+                usb_evt._pad1 = 0
+                usb_evt._pad2 = 0
+                _push_event(usb_evt)
+        elif kevt.event_type == usb_kbd.KBD_EVT_RELEASE:
+            _held_key_remove(kevt.keycode, 1)
+            if _focused_win >= 0 and _focused_win < _win_count and _wins[_focused_win].active:
+                rel_evt: InputEvent
+                rel_evt.type = EVENT_TYPE_KEY_RELEASE
+                rel_evt.win_id = _focused_win
+                rel_evt.x = 0
+                rel_evt.y = t.CInt(kevt.keycode)
+                rel_evt.button = KEY_STATE_RELEASE
+                rel_evt._pad0 = 0
+                rel_evt._pad1 = 0
+                rel_evt._pad2 = 0
+                _push_event(rel_evt)
+    ps2_poll_count: t.CInt = 0
+    while ps2_poll_count < 16:
+        ps2_status: t.CUInt8T = asm.inb(0x64)
+        if (ps2_status & 0x01) == 0:
+            break
+        if (ps2_status & 0x20) != 0:
+            asm.inb(0x60)
+            ps2_poll_count += 1
+            continue
+        sc: t.CUInt8T = asm.inb(0x60)
+        ps2_poll_count += 1
+        if sc == 0x00 or sc == 0xFA or sc == 0xFE or sc == 0xFF:
+            _ps2_e0_pending = 0
+            continue
+        if sc == 0xE0:
+            _ps2_e0_pending = 1
+            continue
+        if sc == 0xE1:
+            _ps2_e0_pending = 0
+            continue
+        if _ps2_e0_pending != 0:
+            _ps2_e0_pending = 0
+            e0_code: t.CUInt8T = sc & t.CUInt8T(0x7F)
+            if (sc & 0x80) != 0:
+                _held_key_remove(e0_code | 0x80, 0)
+                if _focused_win >= 0 and _focused_win < _win_count and _wins[_focused_win].active:
+                    ps2_rel2: InputEvent
+                    ps2_rel2.type = EVENT_TYPE_KEY_RELEASE
+                    ps2_rel2.win_id = _focused_win
+                    ps2_rel2.x = 0
+                    ps2_rel2.y = t.CInt(e0_code | 0x80)
+                    ps2_rel2.button = KEY_STATE_RELEASE
+                    ps2_rel2._pad0 = 0
+                    ps2_rel2._pad1 = 0
+                    ps2_rel2._pad2 = 0
+                    _push_event(ps2_rel2)
+                continue
+            vk: t.CInt = 0
+            if e0_code == 0x4B: vk = VK_LEFT
+            elif e0_code == 0x4D: vk = VK_RIGHT
+            elif e0_code == 0x48: vk = VK_UP
+            elif e0_code == 0x50: vk = VK_DOWN
+            elif e0_code == 0x47: vk = VK_HOME
+            elif e0_code == 0x4F: vk = VK_END
+            elif e0_code == 0x53: vk = VK_DELETE
+            if vk != 0:
+                _held_key_add(e0_code | 0x80, 0)
+                if _focused_win >= 0 and _focused_win < _win_count and _wins[_focused_win].active:
+                    e0_evt: InputEvent
+                    e0_evt.type = EVENT_TYPE_KEY
+                    e0_evt.win_id = _focused_win
+                    e0_evt.x = vk
+                    e0_evt.y = t.CInt(e0_code | 0x80)
+                    e0_evt.button = KEY_STATE_PRESS
+                    e0_evt._pad0 = 0
+                    e0_evt._pad1 = 0
+                    e0_evt._pad2 = 0
+                    _push_event(e0_evt)
+            continue
+        if sc == 0x2A:
+            _ps2_shift_l = 1
+            continue
+        if sc == 0xAA:
+            _ps2_shift_l = 0
+            continue
+        if sc == 0x36:
+            _ps2_shift_r = 1
+            continue
+        if sc == 0xB6:
+            _ps2_shift_r = 0
+            continue
+        if sc == 0x3A:
+            _ps2_caps = _ps2_caps ^ t.CUInt8T(1)
+            continue
+        if (sc & 0x80) != 0:
+            release_sc: t.CUInt8T = sc & t.CUInt8T(0x7F)
+            _held_key_remove(release_sc, 0)
+            if _focused_win >= 0 and _focused_win < _win_count and _wins[_focused_win].active:
+                ps2_rel: InputEvent
+                ps2_rel.type = EVENT_TYPE_KEY_RELEASE
+                ps2_rel.win_id = _focused_win
+                ps2_rel.x = 0
+                ps2_rel.y = t.CInt(release_sc)
+                ps2_rel.button = KEY_STATE_RELEASE
+                ps2_rel._pad0 = 0
+                ps2_rel._pad1 = 0
+                ps2_rel._pad2 = 0
+                _push_event(ps2_rel)
+            continue
+        _held_key_add(sc, 0)
+        ascii_ch: t.CInt = _ps2_scancode_to_ascii(sc)
+        if ascii_ch != 0 and _focused_win >= 0 and _focused_win < _win_count and _wins[_focused_win].active:
+            push_evt: InputEvent
+            push_evt.type = EVENT_TYPE_KEY
+            push_evt.win_id = _focused_win
+            push_evt.x = ascii_ch
+            push_evt.y = t.CInt(sc)
+            push_evt.button = KEY_STATE_PRESS
+            push_evt._pad0 = 0
+            push_evt._pad1 = 0
+            push_evt._pad2 = 0
+            _push_event(push_evt)
+    _check_key_repeat()
+
+def set_cursor_type(win_id: t.CInt, cursor_t: t.CInt):
+    if win_id >= 0 and win_id < _win_count:
+        _wins[win_id].app_cursor_type = cursor_t
+        _wins[win_id].cursor_type = cursor_t
+
+def _update_mouse() -> t.CInt:
+    global _cursor_x, _cursor_y, _cursor_buttons
+    global _drag_idx, _drag_off_x, _drag_off_y
+    global _mouse_moved, _prev_btn, _last_hover_win, _focused_win
+    global _rsz_drag_idx, _rsz_edge, _rsz_start_x, _rsz_start_y
+    global _rsz_start_w, _rsz_start_h, _rsz_last_w, _rsz_last_h, _rsz_last_tick
+    moved: t.CInt = 0
+    poll_cnt: t.CInt = 0
+    while (mouse.has_data() or usb_mouse.has_data()) and poll_cnt < 32:
+        poll_cnt += 1
+        pkt_dx: t.CInt32T = 0
+        pkt_dy: t.CInt32T = 0
+        pkt_btn: t.CUInt8T = 0
+        if mouse.has_data():
+            pkt: mouse.mouse_packet
+            mouse.read_packet(c.Addr(pkt))
+            pkt_dx = t.CInt32T(pkt.dx)
+            pkt_dy = -t.CInt32T(pkt.dy)
+            pkt_btn = pkt.buttons
+        elif usb_mouse.has_data():
+            upkt: usb_mouse.usb_mouse_packet
+            usb_mouse.read_packet(c.Addr(upkt))
+            pkt_dx = t.CInt32T(upkt.dx)
+            pkt_dy = -t.CInt32T(upkt.dy)
+            pkt_btn = upkt.buttons
+        if pkt_dx != 0 or pkt_dy != 0:
+            _cursor_x = _cursor_x + pkt_dx
+            _cursor_y = _cursor_y + pkt_dy
+            if _cursor_x < 0: _cursor_x = 0
+            if _cursor_y < 0: _cursor_y = 0
+            if _cursor_x >= _screen_w: _cursor_x = _screen_w - 1
+            if _cursor_y >= _screen_h: _cursor_y = _screen_h - 1
+            moved = 1
+            _mouse_moved = 1
+        btn_down: t.CUInt8T = pkt_btn & 0x01
+        prev_down: t.CUInt8T = _prev_btn & 0x01
+        _cursor_buttons = pkt_btn
+        _prev_btn = pkt_btn
+        if btn_down and not prev_down:
+            hit_app: t.CInt = _hit_test_window(_cursor_x, _cursor_y)
+            if hit_app >= 0:
+                aw: AppWindow | t.CPtr = c.Addr(_wins[hit_app])
+                th: t.CInt = _get_title_height(aw.style)
+                btn_w: t.CInt = CLOSE_BTN_SIZE
+                btn_h: t.CInt = CLOSE_BTN_SIZE
+                ew: t.CInt = _eff_w(aw)
+                btn_x: t.CInt = aw.x + ew - btn_w - 4
+                btn_y: t.CInt = aw.y + (th - btn_h) // 2
+                if aw.style == STYLE_WIN7:
+                    btn_w = CLOSE_BTN_W7_W
+                    btn_h = CLOSE_BTN_W7_H
+                    btn_x = aw.x + ew - btn_w - 5
+                    btn_y = aw.y + (th - btn_h) // 2
+                elif aw.style == STYLE_WINXP:
+                    btn_w = CLOSE_BTN_XP_SZ
+                    btn_h = CLOSE_BTN_XP_SZ
+                    btn_x = aw.x + ew - btn_w - 5
+                    btn_y = aw.y + (th - btn_h) // 2
+                elif aw.style == STYLE_WIN10 or aw.style == STYLE_WIN11:
+                    btn_w = CLOSE_BTN_W_WIN
+                    btn_h = th - 2
+                    btn_x = aw.x + ew - btn_w
+                    btn_y = aw.y + 1
+                if _cursor_x >= btn_x and _cursor_x < btn_x + btn_w and _cursor_y >= btn_y and _cursor_y < btn_y + btn_h:
+                    aw.active = 0
+                    if _focused_win == hit_app:
+                        _focused_win = -1
+                        j: t.CInt = _win_count - 1
+                        while j >= 0:
+                            if _wins[j].active and not _wins[j].minimized:
+                                _focused_win = j
+                                break
+                            j -= 1
+                    if _last_hover_win == hit_app:
+                        _last_hover_win = -1
+                    _mark_all_dirty()
+                else:
+                    max_bx2: t.CInt = btn_x - btn_w
+                    if aw.style == STYLE_WIN7 or aw.style == STYLE_WINXP:
+                        max_bx2 = btn_x - btn_w - 1
+                    if _cursor_x >= max_bx2 and _cursor_x < max_bx2 + btn_w and _cursor_y >= btn_y and _cursor_y < btn_y + btn_h:
+                        if aw.is_maximized:
+                            aw.is_maximized = 0
+                            aw.x = aw.orig_x
+                            aw.y = aw.orig_y
+                            aw.h = aw.orig_h
+                            aw.resize_w = aw.orig_w
+                            aw.resize_h = aw.orig_h - _get_title_height(aw.style) - 2
+                        else:
+                            aw.is_maximized = 1
+                            aw.orig_x = aw.w
+                            aw.orig_y = aw.y
+                            aw.orig_w = aw.w
+                            aw.orig_h = aw.h
+                            aw.x = 0
+                            aw.y = 0
+                            tb_h_mx: t.CInt = TASKBAR_HEIGHT
+                            aw.h = _screen_h - tb_h_mx
+                            aw.resize_w = _screen_w
+                            aw.resize_h = _screen_h - tb_h_mx - _get_title_height(aw.style) - 2
+                        rs_evt3: InputEvent
+                        rs_evt3.type = EVENT_TYPE_RESIZE
+                        rs_evt3.win_id = hit_app
+                        rs_evt3.x = aw.resize_w
+                        rs_evt3.y = aw.resize_h
+                        rs_evt3.button = 0
+                        rs_evt3._pad0 = 0
+                        rs_evt3._pad1 = 0
+                        rs_evt3._pad2 = 0
+                        _push_event(rs_evt3)
+                        _mark_all_dirty()
+                    else:
+                        min_bx2: t.CInt = max_bx2 - btn_w
+                        if aw.style == STYLE_WIN7 or aw.style == STYLE_WINXP:
+                            min_bx2 = max_bx2 - btn_w - 1
+                        if _cursor_x >= min_bx2 and _cursor_x < min_bx2 + btn_w and _cursor_y >= btn_y and _cursor_y < btn_y + btn_h:
+                            aw.minimized = 1
+                            if _focused_win == hit_app:
+                                _focused_win = -1
+                                j2: t.CInt = _win_count - 1
+                                while j2 >= 0:
+                                    if _wins[j2].active and not _wins[j2].minimized:
+                                        _focused_win = j2
+                                        break
+                                    j2 -= 1
+                            _mark_all_dirty()
+                        else:
+                            re: t.CInt = _hit_test_resize(_cursor_x, _cursor_y, hit_app)
+                            if re != RESIZE_EDGE_NONE:
+                                _rsz_drag_idx = hit_app
+                                _rsz_edge = re
+                                _rsz_start_x = _cursor_x
+                                _rsz_start_y = _cursor_y
+                                _rsz_start_w = _eff_w(aw)
+                                _rsz_start_h = aw.h
+                                _rsz_last_w = _eff_w(aw)
+                                _rsz_last_h = aw.h
+                                _rsz_last_tick = timer.timer_get_ticks()
+                                _bring_to_front(hit_app)
+                                _focused_win = hit_app
+                                _mark_all_dirty()
+                            elif _cursor_y >= aw.y and _cursor_y < aw.y + th:
+                                _drag_idx = hit_app
+                                _drag_off_x = _cursor_x - aw.x
+                                _drag_off_y = _cursor_y - aw.y
+                                _bring_to_front(hit_app)
+                                _focused_win = hit_app
+                                _mark_all_dirty()
+                            else:
+                                _bring_to_front(hit_app)
+                                _focused_win = hit_app
+                                _mark_all_dirty()
+                                evt: InputEvent
+                                evt.type = EVENT_TYPE_CLICK
+                                evt.win_id = hit_app
+                                evt.x = _cursor_x - aw.x
+                                evt.y = _cursor_y - aw.y - _get_title_height(aw.style)
+                                evt.button = 1
+                                evt._pad0 = 0
+                                evt._pad1 = 0
+                                evt._pad2 = 0
+                                _push_event(evt)
+            else:
+                tb_h_cl: t.CInt = TASKBAR_HEIGHT
+                bar_y2: t.CInt = _screen_h - tb_h_cl
+                if _cursor_y >= bar_y2:
+                    logo_x2: t.CInt = 4
+                    logo_sz2: t.CInt = TASKBAR_LOGO_SZ
+                    logo_r2: t.CInt = logo_x2 + logo_sz2
+                    logo_b2: t.CInt = bar_y2 + tb_h_cl
+                    if _cursor_x >= logo_x2 and _cursor_x < logo_r2 and _cursor_y >= bar_y2 and _cursor_y < logo_b2:
+                        if _focused_win >= 0 and _focused_win < _win_count:
+                            if _wins[_focused_win].active:
+                                _wins[_focused_win].active = 0
+                        _focused_win = -1
+                        _mark_all_dirty()
+                    else:
+                        icon_sz2: t.CInt = TASKBAR_ICON_SZ
+                        icon_pad2: t.CInt = TASKBAR_ICON_PAD
+                        icon_x2: t.CInt = logo_x2 + logo_sz2 + 80
+                        icon_cnt2: t.CInt = 0
+                        for ti2 in range(_win_count):
+                            if _wins[ti2].active:
+                                ix2: t.CInt = icon_x2 + icon_cnt2 * (icon_sz2 + icon_pad2)
+                                iy2: t.CInt = bar_y2 + (tb_h_cl - icon_sz2) // 2
+                                if _cursor_x >= ix2 and _cursor_x < ix2 + icon_sz2 and _cursor_y >= iy2 and _cursor_y < iy2 + icon_sz2:
+                                    if _wins[ti2].minimized:
+                                        _wins[ti2].minimized = 0
+                                        _bring_to_front(ti2)
+                                        _focused_win = ti2
+                                    elif _focused_win == ti2:
+                                        _wins[ti2].minimized = 1
+                                        _focused_win = -1
+                                        for j3 in range(_win_count - 1, -1, -1):
+                                            if _wins[j3].active and not _wins[j3].minimized:
+                                                _focused_win = j3
+                                                break
+                                    else:
+                                        _bring_to_front(ti2)
+                                        _focused_win = ti2
+                                    _mark_all_dirty()
+                                    break
+                                icon_cnt2 += 1
+        if not btn_down:
+            if prev_down:
+                if _rsz_drag_idx >= 0:
+                    rs_aw: AppWindow | t.CPtr = c.Addr(_wins[_rsz_drag_idx])
+                    final_w: t.CInt = _rsz_last_w
+                    final_h: t.CInt = _rsz_last_h
+                    old_h_mu: t.CInt = _eff_h(rs_aw) + _get_title_height(rs_aw.style) + 2
+                    _mark_rows_dirty(rs_aw.y, old_h_mu)
+                    final_ch: t.CInt = final_h - _get_title_height(rs_aw.style) - 2
+                    rs_aw.resize_w = final_w
+                    rs_aw.resize_h = final_ch
+                    rs_aw.h = final_h
+                    _mark_rows_dirty(rs_aw.y, final_h)
+                    rs_evt: InputEvent
+                    rs_evt.type = EVENT_TYPE_RESIZE
+                    rs_evt.win_id = _rsz_drag_idx
+                    rs_evt.x = final_w
+                    rs_evt.y = final_ch
+                    rs_evt.button = 0
+                    rs_evt._pad0 = 0
+                    rs_evt._pad1 = 0
+                    rs_evt._pad2 = 0
+                    _push_event(rs_evt)
+                    _rsz_drag_idx = -1
+                    _rsz_edge = RESIZE_EDGE_NONE
+                else:
+                    rel_hit: t.CInt = _hit_test_window(_cursor_x, _cursor_y)
+                    if rel_hit >= 0:
+                        aw_rel: AppWindow | t.CPtr = c.Addr(_wins[rel_hit])
+                        rel_evt: InputEvent
+                        rel_evt.type = EVENT_TYPE_RELEASE
+                        rel_evt.win_id = rel_hit
+                        rel_evt.x = _cursor_x - aw_rel.x
+                        rel_evt.y = _cursor_y - aw_rel.y - _get_title_height(aw_rel.style)
+                        rel_evt.button = 0
+                        rel_evt._pad0 = 0
+                        rel_evt._pad1 = 0
+                        rel_evt._pad2 = 0
+                        _push_event(rel_evt)
+            if _drag_idx >= 0:
+                moved = 1
+                _mark_rows_dirty(_wins[_drag_idx].y, _wins[_drag_idx].h)
+            _drag_idx = -1
+        if moved and _drag_idx < 0:
+            hit_hov: t.CInt = _hit_test_window(_cursor_x, _cursor_y)
+            if hit_hov >= 0:
+                if _last_hover_win >= 0 and _last_hover_win != hit_hov and _last_hover_win < _win_count:
+                    if _wins[_last_hover_win].active:
+                        leave_evt3: InputEvent
+                        leave_evt3.type = EVENT_TYPE_HOVER_LEAVE
+                        leave_evt3.win_id = _last_hover_win
+                        leave_evt3.x = -1
+                        leave_evt3.y = -1
+                        leave_evt3.button = 0
+                        leave_evt3._pad0 = 0
+                        leave_evt3._pad1 = 0
+                        leave_evt3._pad2 = 0
+                        _push_event(leave_evt3)
+                aw_hov: AppWindow | t.CPtr = c.Addr(_wins[hit_hov])
+                th_hov: t.CInt = _get_title_height(aw_hov.style)
+                hov_evt: InputEvent
+                hov_evt.type = EVENT_TYPE_HOVER
+                hov_evt.win_id = hit_hov
+                hov_evt.x = _cursor_x - aw_hov.x
+                hov_evt.y = _cursor_y - aw_hov.y - th_hov
+                hov_evt.button = 0
+                hov_evt._pad0 = 0
+                hov_evt._pad1 = 0
+                hov_evt._pad2 = 0
+                _push_event(hov_evt)
+                _last_hover_win = hit_hov
+                re_hov: t.CInt = _hit_test_resize(_cursor_x, _cursor_y, hit_hov)
+                if re_hov == RESIZE_EDGE_RIGHT:
+                    aw_hov.cursor_type = CURSOR_RESIZE_EW
+                elif re_hov == RESIZE_EDGE_BOTTOM:
+                    aw_hov.cursor_type = CURSOR_RESIZE_NS
+                elif re_hov == RESIZE_EDGE_CORNER:
+                    aw_hov.cursor_type = CURSOR_RESIZE_NWSE
+                else:
+                    aw_hov.cursor_type = aw_hov.app_cursor_type
+            else:
+                if _last_hover_win >= 0 and _last_hover_win < _win_count:
+                    if _wins[_last_hover_win].active:
+                        leave_evt: InputEvent
+                        leave_evt.type = EVENT_TYPE_HOVER_LEAVE
+                        leave_evt.win_id = _last_hover_win
+                        leave_evt.x = -1
+                        leave_evt.y = -1
+                        leave_evt.button = 0
+                        leave_evt._pad0 = 0
+                        leave_evt._pad1 = 0
+                        leave_evt._pad2 = 0
+                        _push_event(leave_evt)
+                _last_hover_win = -1
+        if _drag_idx >= 0:
+            aw2: AppWindow | t.CPtr = c.Addr(_wins[_drag_idx])
+            _drag_old_y: t.CInt = aw2.y
+            _mark_rows_dirty(_drag_old_y, aw2.h)
+            aw2.x = _cursor_x - _drag_off_x
+            aw2.y = _cursor_y - _drag_off_y
+            _mark_rows_dirty(aw2.y, aw2.h)
+        if _rsz_drag_idx >= 0:
+            rs_aw2: AppWindow | t.CPtr = c.Addr(_wins[_rsz_drag_idx])
+            dx: t.CInt = _cursor_x - _rsz_start_x
+            dy: t.CInt = _cursor_y - _rsz_start_y
+            new_w: t.CInt = _rsz_start_w
+            new_h: t.CInt = _rsz_start_h
+            if _rsz_edge == RESIZE_EDGE_RIGHT or _rsz_edge == RESIZE_EDGE_CORNER:
+                new_w = _rsz_start_w + dx
+                if new_w < RESIZE_MIN_W: new_w = RESIZE_MIN_W
+            if _rsz_edge == RESIZE_EDGE_BOTTOM or _rsz_edge == RESIZE_EDGE_CORNER:
+                new_h = _rsz_start_h + dy
+                if new_h < RESIZE_MIN_H: new_h = RESIZE_MIN_H
+            if new_w != rs_aw2.w or new_h != rs_aw2.h:
+                dw: t.CInt = new_w - _rsz_last_w
+                if dw < 0: dw = -dw
+                dh: t.CInt = new_h - _rsz_last_h
+                if dh < 0: dh = -dh
+                now_tick: t.CUInt64T = timer.timer_get_ticks()
+                elapsed: t.CUInt64T = now_tick - _rsz_last_tick
+                need_update: t.CInt = 0
+                if dw >= 32 or dh >= 32:
+                    need_update = 1
+                elif elapsed >= 100 and (dw >= 4 or dh >= 4):
+                    need_update = 1
+                if need_update:
+                    _rsz_last_w = new_w
+                    _rsz_last_h = new_h
+                    _rsz_last_tick = now_tick
+                    old_h_rs: t.CInt = _eff_h(rs_aw2) + _get_title_height(rs_aw2.style) + 2
+                    _mark_rows_dirty(rs_aw2.y, old_h_rs)
+                    new_ch: t.CInt = new_h - _get_title_height(rs_aw2.style) - 2
+                    rs_aw2.resize_w = new_w
+                    rs_aw2.resize_h = new_ch
+                    rs_aw2.h = new_h
+                    _mark_rows_dirty(rs_aw2.y, new_h)
+                    rs_evt2: InputEvent
+                    rs_evt2.type = EVENT_TYPE_RESIZE
+                    rs_evt2.win_id = _rsz_drag_idx
+                    rs_evt2.x = new_w
+                    rs_evt2.y = new_ch
+                    rs_evt2.button = 0
+                    rs_evt2._pad0 = 0
+                    rs_evt2._pad1 = 0
+                    rs_evt2._pad2 = 0
+                    _push_event(rs_evt2)
+    if not moved and _last_hover_win < 0:
+        hit_hov2: t.CInt = _hit_test_window(_cursor_x, _cursor_y)
+        if hit_hov2 >= 0 and _wins[hit_hov2].active:
+            aw_hov2: AppWindow | t.CPtr = c.Addr(_wins[hit_hov2])
+            th_hov2: t.CInt = _get_title_height(aw_hov2.style)
+            hov_evt2: InputEvent
+            hov_evt2.type = EVENT_TYPE_HOVER
+            hov_evt2.win_id = hit_hov2
+            hov_evt2.x = _cursor_x - aw_hov2.x
+            hov_evt2.y = _cursor_y - aw_hov2.y - th_hov2
+            hov_evt2.button = 0
+            hov_evt2._pad0 = 0
+            hov_evt2._pad1 = 0
+            hov_evt2._pad2 = 0
+            _push_event(hov_evt2)
+            _last_hover_win = hit_hov2
+    if not moved and _last_hover_win >= 0:
+        if _last_hover_win >= _win_count or not _wins[_last_hover_win].active:
+            leave_evt2: InputEvent
+            leave_evt2.type = EVENT_TYPE_HOVER_LEAVE
+            leave_evt2.win_id = _last_hover_win
+            leave_evt2.x = -1
+            leave_evt2.y = -1
+            leave_evt2.button = 0
+            leave_evt2._pad0 = 0
+            leave_evt2._pad1 = 0
+            leave_evt2._pad2 = 0
+            _push_event(leave_evt2)
+            _last_hover_win = -1
+    return moved
+
+_render_count: t.CInt = 0
+_cached_top_win: t.CInt = -1
+_perf_t_mouse: t.CUInt64T = 0
+_perf_t_kbd: t.CUInt64T = 0
+_perf_t_render: t.CUInt64T = 0
+_perf_t_flush: t.CUInt64T = 0
+_perf_t_total: t.CUInt64T = 0
+_perf_frames: t.CUInt32T = 0
+_perf_start_ticks: t.CUInt64T = 0
+_perf_t_bg: t.CUInt64T = 0
+_perf_t_win: t.CUInt64T = 0
+_perf_t_cur: t.CUInt64T = 0
+_perf_t_fb: t.CUInt64T = 0
+
+def _render():
+    global _render_count, _cached_top_win
+    global _perf_t_bg, _perf_t_win, _perf_t_cur, _perf_t_fb
+    w: t.CInt = _screen_w
+    h: t.CInt = _screen_h
+    pitch: t.CInt = _fb_pitch
+    back: UINT32PTR = _back_fb
+
+    _cached_top_win = _get_top_window()
+
+    # No need to erase cursor - dirty row mechanism redraws background + windows from scratch
+
+    t0: t.CUInt64T = timer.timer_get_ticks()
+    row_bytes: t.CInt = w * 4
+    if _bg_row_buf and _dirty_count > 0:
+        py_bg: t.CInt = _dirty_y_min
+        while py_bg <= _dirty_y_max:
+            if _dirty_rows[py_bg]:
+                string.memcpy(t.CVoid(t.CUInt64T(back) + py_bg * row_bytes, t.CPtr), _bg_row_buf, row_bytes)
+            py_bg += 1
+    t1: t.CUInt64T = timer.timer_get_ticks()
+    _perf_t_bg += (t1 - t0)
+
+    _draw_taskbar(back)
+
+    t2: t.CUInt64T = timer.timer_get_ticks()
+    sorted: t.CArray[t.CInt, MAX_APP_WINDOWS]
+    cnt: t.CInt = 0
+    for si in range(_win_count):
+        if _wins[si].active and not _wins[si].minimized:
+            sorted[cnt] = si
+            cnt += 1
+    for si in range(cnt - 1):
+        for sj in range(si + 1, cnt):
+            zi: t.CInt = _wins[sorted[si]].z_order
+            zj: t.CInt = _wins[sorted[sj]].z_order
+            if zi > zj:
+                tmp: t.CInt = sorted[si]
+                sorted[si] = sorted[sj]
+                sorted[sj] = tmp
+    for si in range(cnt):
+        _draw_app_window(back, c.Addr(_wins[sorted[si]]))
+    t3: t.CUInt64T = timer.timer_get_ticks()
+    _perf_t_win += (t3 - t2)
+
+    # Mark cursor rows as dirty so cursor gets flushed to framebuffer
+    _mark_rows_dirty(_cursor_y, CURSOR_H)
+
+    _draw_cursor(back)
+    t4: t.CUInt64T = timer.timer_get_ticks()
+    _perf_t_cur += (t4 - t3)
+
+    _wait_vblank()
+    if _dirty_count > 0:
+        py_fb: t.CInt = _dirty_y_min
+        while py_fb <= _dirty_y_max:
+            if _dirty_rows[py_fb]:
+                run_start: t.CInt = py_fb
+                while py_fb <= _dirty_y_max and _dirty_rows[py_fb]:
+                    py_fb += 1
+                run_bytes: t.CInt = (py_fb - run_start) * row_bytes
+                string.memcpy(t.CVoid(t.CUInt64T(_fb) + run_start * pitch, t.CPtr), t.CVoid(t.CUInt64T(back) + run_start * row_bytes, t.CPtr), run_bytes)
+            else:
+                py_fb += 1
+    t5: t.CUInt64T = timer.timer_get_ticks()
+    _perf_t_fb += (t5 - t4)
+
+    _render_count += 1
+
+def _draw_taskbar(back: UINT32PTR):
+    w: t.CInt = _screen_w
+    h: t.CInt = _screen_h
+    tb_h: t.CInt = TASKBAR_HEIGHT
+    bar_y: t.CInt = h - tb_h
+    if bar_y + tb_h <= _dirty_y_min or bar_y > _dirty_y_max:
+        return
+    bar_col: t.CUInt32T = gfx.COLOR_RGB(32, 32, 32)
+    line_col: t.CUInt32T = gfx.COLOR_RGB(60, 60, 60)
+
+    _fill_rect(back, w, h, 0, bar_y, w, tb_h, bar_col)
+    _fill_rect(back, w, h, 0, bar_y, w, 1, line_col)
+
+    logo_x: t.CInt = 4
+    logo_sz: t.CInt = TASKBAR_LOGO_SZ
+    logo_y: t.CInt = bar_y + (tb_h - logo_sz) // 2
+    lc1: t.CUInt32T = gfx.COLOR_RGB(80, 120, 220)
+    lc2: t.CUInt32T = gfx.COLOR_RGB(50, 80, 180)
+    lc3: t.CUInt32T = gfx.COLOR_RGB(100, 160, 255)
+    for lx in range(logo_sz):
+        for ly in range(logo_sz):
+            px: t.CInt = logo_x + lx
+            py: t.CInt = logo_y + ly
+            if px >= 0 and px < w and py >= 0 and py < h:
+                col: t.CUInt32T = lc2
+                cx: t.CInt = logo_sz // 2
+                cy: t.CInt = logo_sz // 2
+                dx: t.CInt = lx - cx
+                dy: t.CInt = ly - cy
+                dist: t.CInt = dx * dx + dy * dy
+                r2: t.CInt = cx * cx
+                if dist <= r2:
+                    col = lc1
+                    if dist <= r2 // 2:
+                        col = lc3
+                    back[py * w + px] = col
+
+    _draw_text(back, w, h, logo_x + logo_sz + 8, bar_y + (tb_h - 16) // 2, "ViperOS", 0xFFFFFFFF)
+
+    icon_sz: t.CInt = TASKBAR_ICON_SZ
+    icon_pad: t.CInt = TASKBAR_ICON_PAD
+    icon_x: t.CInt = logo_x + logo_sz + 80
+    icon_cnt: t.CInt = 0
+    for ti in range(_win_count):
+        if _wins[ti].active:
+            ix: t.CInt = icon_x + icon_cnt * (icon_sz + icon_pad)
+            iy: t.CInt = bar_y + (tb_h - icon_sz) // 2
+            is_focused: t.CInt = 1 if ti == _focused_win else 0
+            is_minimized: t.CInt = _wins[ti].minimized
+            ic_bg: t.CUInt32T = gfx.COLOR_RGB(40, 40, 70)
+            if is_focused:
+                ic_bg = gfx.COLOR_RGB(60, 60, 120)
+            elif is_minimized:
+                ic_bg = gfx.COLOR_RGB(30, 30, 50)
+            _fill_rect(back, w, h, ix, iy, icon_sz, icon_sz, ic_bg)
+            ic_border: t.CUInt32T = gfx.COLOR_RGB(80, 80, 140)
+            if is_focused:
+                ic_border = gfx.COLOR_RGB(120, 120, 220)
+            _fill_rect(back, w, h, ix, iy, icon_sz, 1, ic_border)
+            _fill_rect(back, w, h, ix, iy + icon_sz - 1, icon_sz, 1, ic_border)
+            _fill_rect(back, w, h, ix, iy, 1, icon_sz, ic_border)
+            _fill_rect(back, w, h, ix + icon_sz - 1, iy, 1, icon_sz, ic_border)
+            if _wins[ti].title[0] != 0:
+                first_ch: t.CChar = _wins[ti].title[0]
+                ch_col: t.CUInt32T = 0xFFFFFFFF
+                if not is_focused:
+                    ch_col = gfx.COLOR_RGB(180, 180, 200)
+                ch_x: t.CInt = ix + (icon_sz - 8) // 2
+                ch_y: t.CInt = iy + (icon_sz - 16) // 2
+                _draw_char(back, w, h, ch_x, ch_y, first_ch, ch_col)
+            icon_cnt += 1
+
+    if _render_count % 30 == 0:
+        rtc.rtc_read_time()
+
+    hr: t.CUInt8T = rtc.rtc_get_hours()
+    mn: t.CUInt8T = rtc.rtc_get_minutes()
+    sc: t.CUInt8T = rtc.rtc_get_seconds()
+    day: t.CUInt8T = rtc.rtc_get_day()
+    mon: t.CUInt8T = rtc.rtc_get_month()
+    yr: t.CUInt16T = rtc.rtc_get_year()
+    time_buf: t.CArray[t.CChar, 64]
+    string.memset(c.Addr(time_buf), 0, 64)
+    viperlib.snprintf(c.Addr(time_buf), 64, "%04u-%02u-%02u %02u:%02u:%02u", t.CUnsignedInt(yr), t.CUnsignedInt(mon), t.CUnsignedInt(day), t.CUnsignedInt(hr), t.CUnsignedInt(mn), t.CUnsignedInt(sc))
+    time_str_x: t.CInt = w - 180
+    _draw_text(back, w, h, time_str_x, bar_y + (tb_h - 16) // 2, time_buf, 0xFFFFFFFF)
+
+def _draw_window_shadow(back: UINT32PTR, bw: t.CInt, bh: t.CInt, wx: t.CInt, wy: t.CInt, ww: t.CInt, wh: t.CInt, is_rounded: t.CInt, rad: t.CInt):
+    if not SHADOW_ENABLED: return
+    sl: t.CInt = SHADOW_LEFT
+    sr: t.CInt = SHADOW_RIGHT
+    st: t.CInt = SHADOW_TOP
+    sb: t.CInt = SHADOW_BOTTOM
+    sa: t.CInt = SHADOW_ALPHA
+    shadow_col: t.CUInt32T = gfx.COLOR_RGB(0, 0, 0)
+    for py in range(wy - st, wy + wh + sb):
+        if py >= 0 and py < bh:
+            if not _dirty_rows[py]:
+                continue
+            for px in range(wx - sl, wx + ww + sr):
+                if px >= 0 and px < bw:
+                    in_win: t.CInt = 0
+                    if px >= wx and px < wx + ww and py >= wy and py < wy + wh:
+                        in_win = 1
+                        if is_rounded:
+                            rx: t.CInt = px - wx
+                            ry: t.CInt = py - wy
+                            if rx < rad and ry < rad:
+                                if (rx - rad) * (rx - rad) + (ry - rad) * (ry - rad) > rad * rad:
+                                    in_win = 0
+                            elif rx >= ww - rad and ry < rad:
+                                if (rx - (ww - rad - 1)) * (rx - (ww - rad - 1)) + (ry - rad) * (ry - rad) > rad * rad:
+                                    in_win = 0
+                            elif rx < rad and ry >= wh - rad:
+                                if (rx - rad) * (rx - rad) + (ry - (wh - rad - 1)) * (ry - (wh - rad - 1)) > rad * rad:
+                                    in_win = 0
+                            elif rx >= ww - rad and ry >= wh - rad:
+                                if (rx - (ww - rad - 1)) * (rx - (ww - rad - 1)) + (ry - (wh - rad - 1)) * (ry - (wh - rad - 1)) > rad * rad:
+                                    in_win = 0
+                    if in_win:
+                        continue
+                    cpx: t.CInt = px
+                    if cpx < wx: cpx = wx
+                    elif cpx > wx + ww - 1: cpx = wx + ww - 1
+                    cpy: t.CInt = py
+                    if cpy < wy: cpy = wy
+                    elif cpy > wy + wh - 1: cpy = wy + wh - 1
+                    if is_rounded and rad > 0:
+                        if cpx < wx + rad and cpy < wy + rad:
+                            acx: t.CInt = wx + rad
+                            acy: t.CInt = wy + rad
+                            adx: t.CInt = cpx - acx
+                            ady: t.CInt = cpy - acy
+                            ad_sq: t.CInt = adx * adx + ady * ady
+                            if ad_sq > rad * rad and ad_sq > 0:
+                                aax: t.CInt = adx
+                                if aax < 0: aax = 0 - aax
+                                aay: t.CInt = ady
+                                if aay < 0: aay = 0 - aay
+                                am: t.CInt = aax
+                                if aay > am: am = aay
+                                an: t.CInt = aax
+                                if aay < an: an = aay
+                                ad: t.CInt = am + (an * 3) / 8
+                                if ad > 0:
+                                    cpx = acx + (adx * rad) / ad
+                                    cpy = acy + (ady * rad) / ad
+                        elif cpx >= wx + ww - rad and cpy < wy + rad:
+                            acx = wx + ww - rad - 1
+                            acy = wy + rad
+                            adx = cpx - acx
+                            ady = cpy - acy
+                            ad_sq = adx * adx + ady * ady
+                            if ad_sq > rad * rad and ad_sq > 0:
+                                aax = adx
+                                if aax < 0: aax = 0 - aax
+                                aay = ady
+                                if aay < 0: aay = 0 - aay
+                                am = aax
+                                if aay > am: am = aay
+                                an = aax
+                                if aay < an: an = aay
+                                ad = am + (an * 3) / 8
+                                if ad > 0:
+                                    cpx = acx + (adx * rad) / ad
+                                    cpy = acy + (ady * rad) / ad
+                        elif cpx < wx + rad and cpy >= wy + wh - rad:
+                            acx = wx + rad
+                            acy = wy + wh - rad - 1
+                            adx = cpx - acx
+                            ady = cpy - acy
+                            ad_sq = adx * adx + ady * ady
+                            if ad_sq > rad * rad and ad_sq > 0:
+                                aax = adx
+                                if aax < 0: aax = 0 - aax
+                                aay = ady
+                                if aay < 0: aay = 0 - aay
+                                am = aax
+                                if aay > am: am = aay
+                                an = aax
+                                if aay < an: an = aay
+                                ad = am + (an * 3) / 8
+                                if ad > 0:
+                                    cpx = acx + (adx * rad) / ad
+                                    cpy = acy + (ady * rad) / ad
+                        elif cpx >= wx + ww - rad and cpy >= wy + wh - rad:
+                            acx = wx + ww - rad - 1
+                            acy = wy + wh - rad - 1
+                            adx = cpx - acx
+                            ady = cpy - acy
+                            ad_sq = adx * adx + ady * ady
+                            if ad_sq > rad * rad and ad_sq > 0:
+                                aax = adx
+                                if aax < 0: aax = 0 - aax
+                                aay = ady
+                                if aay < 0: aay = 0 - aay
+                                am = aax
+                                if aay > am: am = aay
+                                an = aax
+                                if aay < an: an = aay
+                                ad = am + (an * 3) / 8
+                                if ad > 0:
+                                    cpx = acx + (adx * rad) / ad
+                                    cpy = acy + (ady * rad) / ad
+                    dx: t.CInt = px - cpx
+                    dy: t.CInt = py - cpy
+                    adx_d: t.CInt = dx
+                    if adx_d < 0: adx_d = 0 - adx_d
+                    ady_d: t.CInt = dy
+                    if ady_d < 0: ady_d = 0 - ady_d
+                    dist: t.CInt = adx_d
+                    if ady_d > dist: dist = ady_d
+                    dist = dist + ((adx_d + ady_d - dist) * 3) / 8
+                    me_x: t.CInt = sl
+                    if dx > 0: me_x = sr
+                    me_y: t.CInt = st
+                    if dy > 0: me_y = sb
+                    me: t.CInt = me_x
+                    if adx_d + ady_d > 0:
+                        me = (me_x * adx_d + me_y * ady_d) / (adx_d + ady_d)
+                    if me > 0 and dist > 0 and dist < me:
+                        t_val: t.CInt = (256 * dist) / me
+                        t_inv: t.CInt = 256 - t_val
+                        a: t.CInt = (sa * t_inv * t_inv) / 65536
+                        if a > 0:
+                            back[py * bw + px] = _alpha_blend(back[py * bw + px], shadow_col, a)
+
+def _cursor_save_bg(back: UINT32PTR, cx: t.CInt, cy: t.CInt, w: t.CInt, h: t.CInt):
+    global _cursor_saved
+    cw: t.CInt = CURSOR_W
+    ch: t.CInt = CURSOR_H
+    for dy in range(ch):
+        for dx in range(cw):
+            sx: t.CInt = cx + dx
+            sy: t.CInt = cy + dy
+            if sx >= 0 and sx < w and sy >= 0 and sy < h:
+                _cursor_save_buf[dy * cw + dx] = back[sy * w + sx]
+            else:
+                _cursor_save_buf[dy * cw + dx] = 0
+    _cursor_saved = 1
+
+def _cursor_restore_bg(back: UINT32PTR, cx: t.CInt, cy: t.CInt, w: t.CInt, h: t.CInt):
+    global _cursor_saved
+    if _cursor_saved == 0: return
+    cw: t.CInt = CURSOR_W
+    ch: t.CInt = CURSOR_H
+    for dy in range(ch):
+        for dx in range(cw):
+            sx: t.CInt = cx + dx
+            sy: t.CInt = cy + dy
+            if sx >= 0 and sx < w and sy >= 0 and sy < h:
+                back[sy * w + sx] = _cursor_save_buf[dy * cw + dx]
+    _cursor_saved = 0
+
+def _cursor_draw_bitmap(back: UINT32PTR, cx: t.CInt, cy: t.CInt, w: t.CInt, h: t.CInt, bmp: t.CArray[t.CUInt8T, 256]):
+    cw: t.CInt = CURSOR_W
+    ch: t.CInt = CURSOR_H
+    white: t.CUInt32T = gfx.COLOR_RGB(255, 255, 255)
+    black: t.CUInt32T = gfx.COLOR_RGB(0, 0, 0)
+    for dy in range(ch):
+        for dx in range(cw):
+            pixel: t.CUInt8T = bmp[dy * cw + dx]
+            if pixel != 0:
+                px: t.CInt = cx + dx
+                py: t.CInt = cy + dy
+                if px >= 0 and px < w and py >= 0 and py < h:
+                    if pixel == 1:
+                        back[py * w + px] = black
+                    elif pixel == 2:
+                        back[py * w + px] = white
+
+def _cursor_draw_xor(back: UINT32PTR, cx: t.CInt, cy: t.CInt, w: t.CInt, h: t.CInt, bmp: t.CArray[t.CUInt8T, 256]):
+    cw: t.CInt = CURSOR_W
+    ch: t.CInt = CURSOR_H
+    xor_val: t.CUInt32T = t.CUInt32T(0x00FFFFFF)
+    for dy in range(ch):
+        for dx in range(cw):
+            pixel: t.CUInt8T = bmp[dy * cw + dx]
+            if pixel != 0:
+                px: t.CInt = cx + dx
+                py: t.CInt = cy + dy
+                if px >= 0 and px < w and py >= 0 and py < h:
+                    back[py * w + px] = back[py * w + px] ^ xor_val
+
+def _draw_cursor(back: UINT32PTR):
+    cx: t.CInt = _cursor_x
+    cy: t.CInt = _cursor_y
+    w: t.CInt = _screen_w
+    h: t.CInt = _screen_h
+    cur_type: t.CInt = CURSOR_DEFAULT
+    if _last_hover_win >= 0 and _last_hover_win < _win_count:
+        cur_type = _wins[_last_hover_win].cursor_type
+    if cur_type == CURSOR_IBEAM:
+        _cursor_draw_bitmap(back, cx, cy, w, h, _CURSOR_IBEAM)
+    elif cur_type == CURSOR_RESIZE_EW:
+        _cursor_draw_bitmap(back, cx, cy, w, h, _CURSOR_RESIZE_EW)
+    elif cur_type == CURSOR_RESIZE_NS:
+        _cursor_draw_bitmap(back, cx, cy, w, h, _CURSOR_RESIZE_NS)
+    elif cur_type == CURSOR_RESIZE_NWSE:
+        _cursor_draw_bitmap(back, cx, cy, w, h, _CURSOR_RESIZE_NWSE)
+    else:
+        _cursor_draw_bitmap(back, cx, cy, w, h, _CURSOR_ARROW)
+
+def _erase_cursor(back: UINT32PTR):
+    global _cursor_saved
+    if _cursor_saved == 0: return
+    _cursor_restore_bg(back, _prev_cursor_x, _prev_cursor_y, _screen_w, _screen_h)
+
+def desktop_thread(arg: t.CVoid | t.CPtr) -> t.CInt:
+    global _last_clock_sec, _mouse_moved
+    global _prev_cursor_x, _prev_cursor_y
+    global _perf_t_mouse, _perf_t_kbd, _perf_t_render, _perf_t_flush, _perf_t_total, _perf_frames, _perf_start_ticks
+    global _perf_t_bg, _perf_t_win, _perf_t_cur, _perf_t_fb
+    serial.puts("[desktop] thread started\n")
+    _mark_all_dirty()
+    _dt_hb_sec: t.CUInt32T = 0
+    tb_h_dt: t.CInt = TASKBAR_HEIGHT
+    _perf_buf: t.CArray[t.CChar, 256]
+    _perf_start_ticks = timer.timer_get_ticks()
+    _kbd_poll_ticks: t.CUInt64T = 0
+    _mouse_poll_ticks: t.CUInt64T = 0
+    while True:
+        _loop_t0: t.CUInt64T = timer.timer_get_ticks()
+        # Poll mouse at most every 4ms to avoid excessive I/O port overhead
+        _now_ticks: t.CUInt64T = timer.timer_get_ticks()
+        if _now_ticks - _mouse_poll_ticks >= 4:
+            _mouse_poll_ticks = _now_ticks
+            _mt0: t.CUInt64T = timer.timer_get_ticks()
+            mouse_active: t.CInt = _update_mouse()
+            _mt1: t.CUInt64T = timer.timer_get_ticks()
+            _perf_t_mouse += (_mt1 - _mt0)
+        # Poll keyboard at most every 4ms to avoid excessive I/O port overhead
+        if _now_ticks - _kbd_poll_ticks >= 4:
+            _kbd_poll_ticks = _now_ticks
+            _kt0: t.CUInt64T = timer.timer_get_ticks()
+            _update_keyboard()
+            _kt1: t.CUInt64T = timer.timer_get_ticks()
+            _perf_t_kbd += (_kt1 - _kt0)
+        _heartbeat_check()
+        sched.Scheduler.try_reschedule()
+        _dt_cur_sec: t.CUInt32T = timer.timer_get_seconds()
+        if _dt_cur_sec != _dt_hb_sec:
+            _dt_hb_sec = _dt_cur_sec
+        cur_sec: t.CUInt32T = timer.timer_get_seconds()
+        if cur_sec != _last_clock_sec:
+            _last_clock_sec = cur_sec
+            _mark_rows_dirty(_screen_h - tb_h_dt, tb_h_dt)
+        if _mouse_moved:
+            _mouse_moved = 0
+            sz: t.CInt = CURSOR_H
+            _mark_rows_dirty(_prev_cursor_y, sz)
+            _mark_rows_dirty(_cursor_y, sz)
+            _prev_cursor_x = _cursor_x
+            _prev_cursor_y = _cursor_y
+        top_win: t.CInt = _hit_test_window(_cursor_x, _cursor_y)
+        for ai in range(_win_count):
+            if _wins[ai].active and not _wins[ai].minimized:
+                th: t.CInt = _get_title_height(_wins[ai].style)
+                btn_w: t.CInt = CLOSE_BTN_SIZE
+                btn_h: t.CInt = CLOSE_BTN_SIZE
+                ew_hov: t.CInt = _eff_w(c.Addr(_wins[ai]))
+                btn_x: t.CInt = _wins[ai].x + ew_hov - btn_w - 4
+                btn_y: t.CInt = _wins[ai].y + (th - btn_h) // 2
+                if _wins[ai].style == STYLE_WIN7:
+                    btn_w = CLOSE_BTN_W7_W
+                    btn_h = CLOSE_BTN_W7_H
+                    btn_x = _wins[ai].x + ew_hov - btn_w - 5
+                    btn_y = _wins[ai].y + (th - btn_h) // 2
+                elif _wins[ai].style == STYLE_WINXP:
+                    btn_w = CLOSE_BTN_XP_SZ
+                    btn_h = CLOSE_BTN_XP_SZ
+                    btn_x = _wins[ai].x + ew_hov - btn_w - 5
+                    btn_y = _wins[ai].y + (th - btn_h) // 2
+                elif _wins[ai].style == STYLE_WIN10 or _wins[ai].style == STYLE_WIN11:
+                    btn_w = CLOSE_BTN_W_WIN
+                    btn_h = th - 2
+                    btn_x = _wins[ai].x + ew_hov - btn_w
+                    btn_y = _wins[ai].y + 1
+                max_bx3: t.CInt = btn_x - btn_w
+                if _wins[ai].style == STYLE_WIN7 or _wins[ai].style == STYLE_WINXP:
+                    max_bx3 = btn_x - btn_w - 1
+                min_bx3: t.CInt = max_bx3 - btn_w
+                if _wins[ai].style == STYLE_WIN7 or _wins[ai].style == STYLE_WINXP:
+                    min_bx3 = max_bx3 - btn_w - 1
+                is_over_close: t.CInt = 0
+                is_over_max: t.CInt = 0
+                is_over_min: t.CInt = 0
+                if ai == top_win:
+                    if _cursor_x >= btn_x and _cursor_x < btn_x + btn_w and _cursor_y >= btn_y and _cursor_y < btn_y + btn_h:
+                        is_over_close = 1
+                    elif _cursor_x >= max_bx3 and _cursor_x < max_bx3 + btn_w and _cursor_y >= btn_y and _cursor_y < btn_y + btn_h:
+                        is_over_max = 1
+                    elif _cursor_x >= min_bx3 and _cursor_x < min_bx3 + btn_w and _cursor_y >= btn_y and _cursor_y < btn_y + btn_h:
+                        is_over_min = 1
+                if is_over_close and _wins[ai].close_hover < 255:
+                    _old_hov: t.CInt = _wins[ai].close_hover
+                    _wins[ai].close_hover += 60
+                    if _wins[ai].close_hover > 255:
+                        _wins[ai].close_hover = 255
+                    if _wins[ai].close_hover != _old_hov:
+                        _mark_rows_dirty(btn_y, btn_h)
+                elif not is_over_close and _wins[ai].close_hover > 0:
+                    _old_hov2: t.CInt = _wins[ai].close_hover
+                    _wins[ai].close_hover -= 45
+                    if _wins[ai].close_hover < 0:
+                        _wins[ai].close_hover = 0
+                    if _wins[ai].close_hover != _old_hov2:
+                        _mark_rows_dirty(btn_y, btn_h)
+                if is_over_max and _wins[ai].max_hover < 255:
+                    _old_mh: t.CInt = _wins[ai].max_hover
+                    _wins[ai].max_hover += 60
+                    if _wins[ai].max_hover > 255:
+                        _wins[ai].max_hover = 255
+                    if _wins[ai].max_hover != _old_mh:
+                        _mark_rows_dirty(btn_y, btn_h)
+                elif not is_over_max and _wins[ai].max_hover > 0:
+                    _old_mh2: t.CInt = _wins[ai].max_hover
+                    _wins[ai].max_hover -= 45
+                    if _wins[ai].max_hover < 0:
+                        _wins[ai].max_hover = 0
+                    if _wins[ai].max_hover != _old_mh2:
+                        _mark_rows_dirty(btn_y, btn_h)
+                if is_over_min and _wins[ai].min_hover < 255:
+                    _old_nh: t.CInt = _wins[ai].min_hover
+                    _wins[ai].min_hover += 60
+                    if _wins[ai].min_hover > 255:
+                        _wins[ai].min_hover = 255
+                    if _wins[ai].min_hover != _old_nh:
+                        _mark_rows_dirty(btn_y, btn_h)
+                elif not is_over_min and _wins[ai].min_hover > 0:
+                    _old_nh2: t.CInt = _wins[ai].min_hover
+                    _wins[ai].min_hover -= 45
+                    if _wins[ai].min_hover < 0:
+                        _wins[ai].min_hover = 0
+                    if _wins[ai].min_hover != _old_nh2:
+                        _mark_rows_dirty(btn_y, btn_h)
+        if _has_dirty_rows():
+            _rt0: t.CUInt64T = timer.timer_get_ticks()
+            _render()
+            _rt1: t.CUInt64T = timer.timer_get_ticks()
+            _perf_t_render += (_rt1 - _rt0)
+            _ft0: t.CUInt64T = timer.timer_get_ticks()
+            _clear_dirty_flags()
+            _ft1: t.CUInt64T = timer.timer_get_ticks()
+            _perf_t_flush += (_ft1 - _ft0)
+            _perf_frames += 1
+        _loop_t1: t.CUInt64T = timer.timer_get_ticks()
+        _perf_t_total += (_loop_t1 - _loop_t0)
+        _now_ticks: t.CUInt64T = timer.timer_get_ticks()
+        _elapsed_ms: t.CUInt64T = _now_ticks - _perf_start_ticks
+        if _elapsed_ms >= 1000:
+            _fps_val: t.CUInt32T = 0
+            if _elapsed_ms > 0:
+                _fps_val = t.CUInt32T(t.CUInt64T(_perf_frames) * 1000 / _elapsed_ms)
+            string.memset(c.Addr(_perf_buf), 0, 256)
+            viperlib.snprintf(c.Addr(_perf_buf), 256, "[perf] fps=%u wall=%lu work=%lu mouse=%lu kbd=%lu render=%lu(bg=%lu win=%lu cur=%lu fb=%lu) dirty=%d vsync=%d\n", _fps_val, t.CUInt64T(_elapsed_ms), t.CUInt64T(_perf_t_total), t.CUInt64T(_perf_t_mouse), t.CUInt64T(_perf_t_kbd), t.CUInt64T(_perf_t_render), t.CUInt64T(_perf_t_bg), t.CUInt64T(_perf_t_win), t.CUInt64T(_perf_t_cur), t.CUInt64T(_perf_t_fb), _dirty_count, _vblank_ok)
+            serial.puts(c.Addr(_perf_buf))
+            _perf_t_mouse = 0
+            _perf_t_kbd = 0
+            _perf_t_render = 0
+            _perf_t_flush = 0
+            _perf_t_total = 0
+            _perf_t_bg = 0
+            _perf_t_win = 0
+            _perf_t_cur = 0
+            _perf_t_fb = 0
+            _perf_frames = 0
+            _perf_start_ticks = _now_ticks
+        sched.Scheduler.try_reschedule()
+    return 0
+
+def start(fb_ptr: t.CVoid | t.CPtr, w: t.CInt, h: t.CInt, pitch: t.CInt = 0) -> sched.Thread | t.CPtr:
+    global _fb, _screen_w, _screen_h, _fb_pitch, _cursor_x, _cursor_y
+    global _back_fb, _row_buf
+    global _dirty_rows, _prev_cursor_x, _prev_cursor_y
+    _fb = fb_ptr
+    _screen_w = w
+    _screen_h = h
+    if pitch > 0:
+        _fb_pitch = pitch
+    else:
+        _fb_pitch = w * 4
+    _cursor_x = w // 2
+    _cursor_y = h // 2
+    _prev_cursor_x = _cursor_x
+    _prev_cursor_y = _cursor_y
+
+    _dirty_rows = mm.malloc(h)
+    if _dirty_rows:
+        string.memset(_dirty_rows, 0, h)
+    else:
+        serial.puts("[desktop] dirty_rows malloc FAILED\n")
+        return None
+
+    _back_fb = mm.malloc(w * h * 4)
+    if _back_fb:
+        string.memset(_back_fb, 0, w * h * 4)
+    else:
+        serial.puts("[desktop] back_fb malloc FAILED\n")
+        return None
+
+    _row_buf = mm.malloc(w * 4)
+    if _row_buf:
+        string.memset(_row_buf, 0, w * 4)
+    else:
+        serial.puts("[desktop] row_buf malloc FAILED!\n")
+
+    _bg_row_buf = mm.malloc(w * 4)
+    if _bg_row_buf:
+        desktop_init_col: t.CUInt32T = gfx.COLOR_RGB(25, 25, 35)
+        for ri in range(w):
+            _bg_row_buf[ri] = desktop_init_col
+    else:
+        serial.puts("[desktop] bg_row_buf malloc FAILED!\n")
+
+    _mark_all_dirty()
+    p: process.Process | t.CPtr = process.ProcessManager.create_process("desktop", None)
+    desktop_pid: t.CInt = 0
+    if p:
+        desktop_pid = p.pid
+    th: sched.Thread | t.CPtr = sched.Scheduler.create_thread(desktop_thread, None, desktop_pid)
+    if p and th:
+        p.addThread(th.tid)
+    return th
+
+def _get_top_window() -> t.CInt:
+    best: t.CInt = -1
+    best_z: t.CInt = -1
+    for ai in range(_win_count):
+        if _wins[ai].active and not _wins[ai].minimized:
+            z: t.CInt = _wins[ai].z_order
+            if z > best_z:
+                best_z = z
+                best = ai
+    return best
+
+def _draw_min_btn(back: UINT32PTR, bw: t.CInt, bh: t.CInt, bx: t.CInt, by: t.CInt, btn_w: t.CInt, btn_h: t.CInt, hover_alpha: t.CInt, style: t.CInt):
+    if hover_alpha > 0:
+        hover_col: t.CUInt32T = gfx.COLOR_RGB(80, 80, 80)
+        if style == STYLE_WIN7:
+            hover_col = gfx.COLOR_RGB(200, 220, 240)
+        elif style == STYLE_WINXP:
+            hover_col = gfx.COLOR_RGB(180, 210, 240)
+        for py in range(by, by + btn_h):
+            if py >= 0 and py < bh:
+                for px in range(bx, bx + btn_w):
+                    if px >= 0 and px < bw:
+                        bg_pixel: t.CUInt32T = back[py * bw + px]
+                        back[py * bw + px] = _alpha_blend(bg_pixel, hover_col, hover_alpha)
+    line_col: t.CUInt32T = gfx.COLOR_RGB(180, 180, 180)
+    if hover_alpha > 0:
+        line_col = gfx.COLOR_RGB(255, 255, 255)
+    cx: t.CInt = bx + btn_w // 2
+    cy: t.CInt = by + btn_h // 2
+    lw: t.CInt = 5
+    if btn_w >= 30:
+        lw = 8
+    ly: t.CInt = cy + 3
+    if ly >= 0 and ly < bh:
+        for lx in range(cx - lw, cx + lw + 1):
+            if lx >= 0 and lx < bw:
+                back[ly * bw + lx] = line_col
+
+def _draw_max_btn(back: UINT32PTR, bw: t.CInt, bh: t.CInt, bx: t.CInt, by: t.CInt, btn_w: t.CInt, btn_h: t.CInt, hover_alpha: t.CInt, style: t.CInt, is_maximized: t.CInt):
+    if hover_alpha > 0:
+        hover_col2: t.CUInt32T = gfx.COLOR_RGB(80, 80, 80)
+        if style == STYLE_WIN7:
+            hover_col2 = gfx.COLOR_RGB(200, 220, 240)
+        elif style == STYLE_WINXP:
+            hover_col2 = gfx.COLOR_RGB(180, 210, 240)
+        for py2 in range(by, by + btn_h):
+            if py2 >= 0 and py2 < bh:
+                for px2 in range(bx, bx + btn_w):
+                    if px2 >= 0 and px2 < bw:
+                        bg_pixel2: t.CUInt32T = back[py2 * bw + px2]
+                        back[py2 * bw + px2] = _alpha_blend(bg_pixel2, hover_col2, hover_alpha)
+    rect_col: t.CUInt32T = gfx.COLOR_RGB(180, 180, 180)
+    if hover_alpha > 0:
+        rect_col = gfx.COLOR_RGB(255, 255, 255)
+    cx2: t.CInt = bx + btn_w // 2
+    cy2: t.CInt = by + btn_h // 2
+    sz: t.CInt = 4
+    if btn_w >= 30:
+        sz = 6
+    if is_maximized:
+        off: t.CInt = 2
+        for ry1 in range(cy2 - sz + off, cy2 + sz + off + 1):
+            if ry1 >= 0 and ry1 < bh:
+                for rx1 in range(cx2 - sz + off, cx2 + sz + off + 1):
+                    if rx1 >= 0 and rx1 < bw:
+                        is_top: t.CInt = 0
+                        if ry1 == cy2 - sz + off or ry1 == cy2 - sz + off + 1:
+                            is_top = 1
+                        is_border: t.CInt = 0
+                        if ry1 == cy2 - sz + off or ry1 == cy2 + sz + off or rx1 == cx2 - sz + off or rx1 == cx2 + sz + off:
+                            is_border = 1
+                        if is_top or is_border:
+                            back[ry1 * bw + rx1] = rect_col
+        for ry2 in range(cy2 - sz, cy2 + sz + 1):
+            if ry2 >= 0 and ry2 < bh:
+                for rx2 in range(cx2 - sz, cx2 + sz + 1):
+                    if rx2 >= 0 and rx2 < bw:
+                        if ry2 == cy2 - sz or ry2 == cy2 - sz + 1 or rx2 == cx2 - sz or rx2 == cx2 + sz:
+                            back[ry2 * bw + rx2] = rect_col
+    else:
+        for ry3 in range(cy2 - sz, cy2 + sz + 1):
+            if ry3 >= 0 and ry3 < bh:
+                for rx3 in range(cx2 - sz, cx2 + sz + 1):
+                    if rx3 >= 0 and rx3 < bw:
+                        if ry3 == cy2 - sz or ry3 == cy2 + sz or rx3 == cx2 - sz or rx3 == cx2 + sz:
+                            back[ry3 * bw + rx3] = rect_col
+        top_y: t.CInt = cy2 - sz
+        if top_y >= 0 and top_y < bh:
+            for tx in range(cx2 - sz, cx2 + sz + 1):
+                if tx >= 0 and tx < bw:
+                    back[top_y * bw + tx] = rect_col
+            if top_y + 1 < bh:
+                for tx2 in range(cx2 - sz, cx2 + sz + 1):
+                    if tx2 >= 0 and tx2 < bw:
+                        back[(top_y + 1) * bw + tx2] = rect_col
+
+def _draw_close_btn(back: UINT32PTR, bw: t.CInt, bh: t.CInt, bx: t.CInt, by: t.CInt, btn_w: t.CInt, btn_h: t.CInt, hover_alpha: t.CInt, style: t.CInt, clip_wx: t.CInt, clip_wy: t.CInt, clip_ww: t.CInt, clip_r: t.CInt):
+    x_col: t.CUInt32T = gfx.COLOR_RGB(200, 200, 200)
+    if style == STYLE_CLASSIC:
+        bg: t.CUInt32T = gfx.COLOR_RGB(40, 40, 70)
+        if hover_alpha > 0:
+            red: t.CUInt32T = gfx.COLOR_RGB(200, 50, 50)
+            bg = _alpha_blend(bg, red, hover_alpha)
+        _fill_rect(back, bw, bh, bx, by, btn_w, btn_h, bg)
+        if hover_alpha > 128:
+            x_col = gfx.COLOR_RGB(255, 255, 255)
+    elif style == STYLE_WIN7:
+        br: t.CInt = CLOSE_BTN_W7_R
+        bg_r: t.CInt = 200
+        bg_g: t.CInt = 50
+        bg_b: t.CInt = 50
+        if hover_alpha > 0:
+            bg_r = 200 + ((232 - 200) * hover_alpha) / 255
+            bg_g = 50 + ((17 - 50) * hover_alpha) / 255
+            bg_b = 50 + ((35 - 50) * hover_alpha) / 255
+        bg_col7: t.CUInt32T = gfx.COLOR_RGB(bg_r, bg_g, bg_b)
+        for py2 in range(by, by + btn_h):
+            if py2 >= 0 and py2 < bh:
+                for px2 in range(bx, bx + btn_w):
+                    if px2 >= 0 and px2 < bw:
+                        lrx: t.CInt = px2 - bx
+                        lry: t.CInt = py2 - by
+                        if lry < br:
+                            if lrx < br:
+                                if (lrx - br) * (lrx - br) + (lry - br) * (lry - br) > br * br:
+                                    continue
+                            elif lrx >= btn_w - br:
+                                if (lrx - (btn_w - br - 1)) * (lrx - (btn_w - br - 1)) + (lry - br) * (lry - br) > br * br:
+                                    continue
+                        elif lry >= btn_h - br:
+                            if lrx < br:
+                                if (lrx - br) * (lrx - br) + (lry - (btn_h - br - 1)) * (lry - (btn_h - br - 1)) > br * br:
+                                    continue
+                            elif lrx >= btn_w - br:
+                                if (lrx - (btn_w - br - 1)) * (lrx - (btn_w - br - 1)) + (lry - (btn_h - br - 1)) * (lry - (btn_h - br - 1)) > br * br:
+                                    continue
+                        if clip_r > 0:
+                            crx: t.CInt = px2 - clip_wx
+                            cry: t.CInt = py2 - clip_wy
+                            if cry < clip_r and crx >= clip_ww - clip_r:
+                                cdx: t.CInt = crx - (clip_ww - clip_r - 1)
+                                cdy: t.CInt = cry - clip_r
+                                if cdx * cdx + cdy * cdy > clip_r * clip_r:
+                                    continue
+                        back[py2 * bw + px2] = bg_col7
+        x_col = gfx.COLOR_RGB(255, 255, 255)
+        if hover_alpha > 0:
+            x_col = _alpha_blend(gfx.COLOR_RGB(255, 255, 255), gfx.COLOR_RGB(255, 240, 240), hover_alpha)
+    elif style == STYLE_WINXP:
+        br_xp: t.CInt = 3
+        bg_r_xp: t.CInt = 200
+        bg_g_xp: t.CInt = 50
+        bg_b_xp: t.CInt = 50
+        if hover_alpha > 0:
+            bg_r_xp = 200 + ((232 - 200) * hover_alpha) / 255
+            bg_g_xp = 50 + ((17 - 50) * hover_alpha) / 255
+            bg_b_xp = 50 + ((35 - 50) * hover_alpha) / 255
+        bg_col_xp: t.CUInt32T = gfx.COLOR_RGB(bg_r_xp, bg_g_xp, bg_b_xp)
+        for py_xp in range(by, by + btn_h):
+            if py_xp >= 0 and py_xp < bh:
+                for px_xp in range(bx, bx + btn_w):
+                    if px_xp >= 0 and px_xp < bw:
+                        lrx_xp: t.CInt = px_xp - bx
+                        lry_xp: t.CInt = py_xp - by
+                        if lry_xp < br_xp:
+                            if lrx_xp < br_xp:
+                                if (lrx_xp - br_xp) * (lrx_xp - br_xp) + (lry_xp - br_xp) * (lry_xp - br_xp) > br_xp * br_xp:
+                                    continue
+                            elif lrx_xp >= btn_w - br_xp:
+                                if (lrx_xp - (btn_w - br_xp - 1)) * (lrx_xp - (btn_w - br_xp - 1)) + (lry_xp - br_xp) * (lry_xp - br_xp) > br_xp * br_xp:
+                                    continue
+                        elif lry_xp >= btn_h - br_xp:
+                            if lrx_xp < br_xp:
+                                if (lrx_xp - br_xp) * (lrx_xp - br_xp) + (lry_xp - (btn_h - br_xp - 1)) * (lry_xp - (btn_h - br_xp - 1)) > br_xp * br_xp:
+                                    continue
+                            elif lrx_xp >= btn_w - br_xp:
+                                if (lrx_xp - (btn_w - br_xp - 1)) * (lrx_xp - (btn_w - br_xp - 1)) + (lry_xp - (btn_h - br_xp - 1)) * (lry_xp - (btn_h - br_xp - 1)) > br_xp * br_xp:
+                                    continue
+                        back[py_xp * bw + px_xp] = bg_col_xp
+        x_col = gfx.COLOR_RGB(255, 255, 255)
+        if hover_alpha > 0:
+            x_col = _alpha_blend(gfx.COLOR_RGB(255, 255, 255), gfx.COLOR_RGB(255, 240, 240), hover_alpha)
+    else:
+        if hover_alpha > 0:
+            red = gfx.COLOR_RGB(232, 17, 35)
+            for py3 in range(by, by + btn_h):
+                if py3 >= 0 and py3 < bh:
+                    for px3 in range(bx, bx + btn_w):
+                        if px3 >= 0 and px3 < bw:
+                            if clip_r > 0:
+                                crx3: t.CInt = px3 - clip_wx
+                                cry3: t.CInt = py3 - clip_wy
+                                if cry3 < clip_r and crx3 >= clip_ww - clip_r:
+                                    cdx3: t.CInt = crx3 - (clip_ww - clip_r - 1)
+                                    cdy3: t.CInt = cry3 - clip_r
+                                    if cdx3 * cdx3 + cdy3 * cdy3 > clip_r * clip_r:
+                                        continue
+                            bg_pixel: t.CUInt32T = back[py3 * bw + px3]
+                            back[py3 * bw + px3] = _alpha_blend(bg_pixel, red, hover_alpha)
+        x_col = gfx.COLOR_RGB(150, 150, 150)
+        if hover_alpha > 0:
+            x_col = _alpha_blend(gfx.COLOR_RGB(150, 150, 150), gfx.COLOR_RGB(255, 255, 255), hover_alpha)
+    cx: t.CInt = bx + btn_w // 2
+    cy: t.CInt = by + btn_h // 2
+    d: t.CInt = 3
+    if btn_w >= 30:
+        d = 4
+    i: t.CInt = -d
+    while i <= d:
+        px1: t.CInt = cx + i
+        py1: t.CInt = cy + i
+        px2b: t.CInt = cx + i
+        py2b: t.CInt = cy - i
+        if px1 >= 0 and px1 < bw and py1 >= 0 and py1 < bh:
+            if clip_r > 0:
+                crx1: t.CInt = px1 - clip_wx
+                cry1: t.CInt = py1 - clip_wy
+                if cry1 < clip_r and crx1 >= clip_ww - clip_r:
+                    cdx1: t.CInt = crx1 - (clip_ww - clip_r - 1)
+                    cdy1: t.CInt = cry1 - clip_r
+                    if cdx1 * cdx1 + cdy1 * cdy1 > clip_r * clip_r:
+                        i += 1
+                        continue
+            back[py1 * bw + px1] = x_col
+        if px2b >= 0 and px2b < bw and py2b >= 0 and py2b < bh:
+            if clip_r > 0:
+                crx2: t.CInt = px2b - clip_wx
+                cry2: t.CInt = py2b - clip_wy
+                if cry2 < clip_r and crx2 >= clip_ww - clip_r:
+                    cdx2: t.CInt = crx2 - (clip_ww - clip_r - 1)
+                    cdy2: t.CInt = cry2 - clip_r
+                    if cdx2 * cdx2 + cdy2 * cdy2 > clip_r * clip_r:
+                        i += 1
+                        continue
+            back[py2b * bw + px2b] = x_col
+        i += 1
+
+def _draw_app_window(back: UINT32PTR, win: AppWindow | t.CPtr):
+    w: t.CInt = _screen_w
+    h: t.CInt = _screen_h
+    wx: t.CInt = win.x
+    wy: t.CInt = win.y
+    ww: t.CInt = _eff_w(win)
+    wh: t.CInt = win.h
+    ch: t.CInt = _eff_h(win)
+    style: t.CInt = win.style
+    th: t.CInt = _get_title_height(style)
+
+    if wy + wh <= _dirty_y_min or wy > _dirty_y_max:
+        return
+
+    top_idx: t.CInt = _cached_top_win
+    is_active: t.CInt = 0
+    if top_idx >= 0:
+        top_z: t.CInt = _wins[top_idx].z_order
+        if win.z_order == top_z:
+            is_active = 1
+
+    title_col:  t.CUInt32T = gfx.COLOR_RGB(50, 50, 90)
+    border_col: t.CUInt32T = gfx.COLOR_RGB(100, 100, 180)
+    content_col: t.CUInt32T = gfx.COLOR_RGB(30, 30, 50)
+    outline_col: t.CUInt32T = gfx.COLOR_RGB(100, 100, 180)
+    title_alpha: t.CInt = 255
+    has_separator: t.CInt = 1
+    if style == STYLE_WIN10:
+        has_separator = 0
+        if is_active:
+            title_col  = gfx.COLOR_RGB(0, 0, 0)
+            border_col = gfx.COLOR_RGB(0, 0, 0)
+            content_col = gfx.COLOR_RGB(32, 32, 32)
+            outline_col = gfx.COLOR_RGB(80, 80, 80)
+        else:
+            title_col  = gfx.COLOR_RGB(32, 32, 32)
+            border_col = gfx.COLOR_RGB(32, 32, 32)
+            content_col = gfx.COLOR_RGB(24, 24, 24)
+            outline_col = gfx.COLOR_RGB(60, 60, 60)
+    elif style == STYLE_WIN11:
+        has_separator = 0
+        if is_active:
+            title_col  = gfx.COLOR_RGB(32, 32, 32)
+            border_col = gfx.COLOR_RGB(32, 32, 32)
+            content_col = gfx.COLOR_RGB(32, 32, 32)
+            outline_col = gfx.COLOR_RGB(70, 70, 70)
+        else:
+            title_col  = gfx.COLOR_RGB(40, 40, 40)
+            border_col = gfx.COLOR_RGB(40, 40, 40)
+            content_col = gfx.COLOR_RGB(40, 40, 40)
+            outline_col = gfx.COLOR_RGB(60, 60, 60)
+    elif style == STYLE_WIN7:
+        has_separator = 0
+        if is_active:
+            title_col  = gfx.COLOR_RGB(156, 181, 209)
+            border_col = gfx.COLOR_RGB(156, 181, 209)
+            content_col = gfx.COLOR_RGB(240, 240, 240)
+            outline_col = gfx.COLOR_RGB(100, 130, 170)
+        else:
+            title_col  = gfx.COLOR_RGB(180, 195, 210)
+            border_col = gfx.COLOR_RGB(180, 195, 210)
+            content_col = gfx.COLOR_RGB(240, 240, 240)
+            outline_col = gfx.COLOR_RGB(140, 155, 175)
+        title_alpha = 102
+    elif style == STYLE_WINXP:
+        has_separator = 0
+        if is_active:
+            title_col  = gfx.COLOR_RGB(107, 158, 212)
+            border_col = gfx.COLOR_RGB(107, 158, 212)
+            content_col = gfx.COLOR_RGB(235, 235, 235)
+            outline_col = gfx.COLOR_RGB(43, 87, 151)
+        else:
+            title_col  = gfx.COLOR_RGB(140, 160, 195)
+            border_col = gfx.COLOR_RGB(140, 160, 195)
+            content_col = gfx.COLOR_RGB(235, 235, 235)
+            outline_col = gfx.COLOR_RGB(100, 115, 145)
+    else:
+        if is_active:
+            title_col  = gfx.COLOR_RGB(70, 70, 130)
+            border_col = gfx.COLOR_RGB(130, 130, 220)
+            outline_col = gfx.COLOR_RGB(130, 130, 220)
+
+    rounded: t.CInt = 0
+    if style == STYLE_WIN11 or style == STYLE_WIN7 or style == STYLE_WINXP:
+        rounded = 1
+    r: t.CInt = WIN_RADIUS
+
+    _draw_window_shadow(back, w, h, wx, wy, ww, wh, rounded, r)
+
+    if rounded:
+        for py in range(wy, wy + wh):
+            if py < 0 or py >= h: continue
+            if not _dirty_rows[py]: continue
+            ry: t.CInt = py - wy
+            row_col: t.CUInt32T = content_col
+            row_is_title: t.CInt = 0
+            row_is_sep: t.CInt = 0
+            if ry < th:
+                row_is_title = 1
+                if style == STYLE_WIN7:
+                    ratio: t.CInt = (ry * 100) / th
+                    if ratio > 100: ratio = 100
+                    if is_active:
+                        gr: t.CInt = 156 + ((186 - 156) * ratio) / 100
+                        gg: t.CInt = 181 + ((209 - 181) * ratio) / 100
+                        gb: t.CInt = 209 + ((233 - 209) * ratio) / 100
+                    else:
+                        gr = 180 + ((200 - 180) * ratio) / 100
+                        gg = 195 + ((210 - 195) * ratio) / 100
+                        gb = 210 + ((225 - 210) * ratio) / 100
+                    row_col = gfx.COLOR_RGB(gr, gg, gb)
+                    if ry == 0:
+                        row_col = _alpha_blend(row_col, gfx.COLOR_RGB(220, 235, 255), 50)
+                    elif ry == 1:
+                        row_col = _alpha_blend(row_col, gfx.COLOR_RGB(210, 225, 250), 20)
+                    if ry == th - 1:
+                        row_col = _alpha_blend(row_col, gfx.COLOR_RGB(130, 160, 200), 25)
+                elif style == STYLE_WINXP:
+                    ratio = (ry * 100) / th
+                    if ratio > 100: ratio = 100
+                    if is_active:
+                        gr = 107 + ((58 - 107) * ratio) / 100
+                        gg = 158 + ((124 - 158) * ratio) / 100
+                        gb = 212 + ((195 - 212) * ratio) / 100
+                    else:
+                        gr = 150 + ((115 - 150) * ratio) / 100
+                        gg = 170 + ((135 - 170) * ratio) / 100
+                        gb = 205 + ((175 - 205) * ratio) / 100
+                    row_col = gfx.COLOR_RGB(gr, gg, gb)
+                    if ry == 0:
+                        row_col = _alpha_blend(row_col, gfx.COLOR_RGB(200, 225, 255), 50)
+                    elif ry == 1:
+                        row_col = _alpha_blend(row_col, gfx.COLOR_RGB(200, 225, 255), 25)
+                    if ry == th - 1:
+                        row_col = _alpha_blend(row_col, gfx.COLOR_RGB(100, 160, 230), 40)
+                else:
+                    row_col = title_col
+            elif ry == th and has_separator:
+                row_is_sep = 1
+                row_col = outline_col
+            in_corner_zone: t.CInt = 0
+            if ry < r or ry >= wh - r:
+                in_corner_zone = 1
+            if not in_corner_zone:
+                left_border: t.CInt = wx
+                right_border: t.CInt = wx + ww - 1
+                if left_border >= 0 and left_border < w:
+                    back[py * w + left_border] = outline_col
+                if right_border >= 0 and right_border < w:
+                    back[py * w + right_border] = outline_col
+                fill_left: t.CInt = wx + 1
+                fill_right: t.CInt = wx + ww - 1
+                if fill_left < 0: fill_left = 0
+                if fill_right > w: fill_right = w
+                fill_w: t.CInt = fill_right - fill_left
+                if fill_w > 0:
+                    if row_is_title and (style == STYLE_WIN7 or style == STYLE_WINXP) and title_alpha < 255:
+                        for fx in range(fill_left, fill_right):
+                            bg_p: t.CUInt32T = back[py * w + fx]
+                            back[py * w + fx] = _alpha_blend(bg_p, row_col, title_alpha)
+                    else:
+                        _fill_rect(back, w, h, fill_left, py, fill_w, 1, row_col)
+            else:
+                for px in range(wx, wx + ww):
+                    if px < 0 or px >= w: continue
+                    rx: t.CInt = px - wx
+                    in_corner: t.CInt = 1
+                    on_border: t.CInt = 0
+                    if ry < r:
+                        if rx < r:
+                            in_corner = _is_in_corner(rx, ry, r, r, r)
+                        elif rx >= ww - r:
+                            in_corner = _is_in_corner(rx, ry, ww - r - 1, r, r)
+                    elif ry >= wh - r:
+                        if rx < r:
+                            in_corner = _is_in_corner(rx, ry, r, wh - r - 1, r)
+                        elif rx >= ww - r:
+                            in_corner = _is_in_corner(rx, ry, ww - r - 1, wh - r - 1, r)
+                    if not in_corner:
+                        on_border = _is_on_border(rx, ry, ww, wh, r)
+                        if not on_border:
+                            continue
+                    col: t.CUInt32T = row_col
+                    is_border_pixel: t.CInt = 0
+                    if on_border or _is_on_border(rx, ry, ww, wh, r):
+                        col = outline_col
+                        is_border_pixel = 1
+                    ca: t.CInt = 255
+                    if ry < r:
+                        if rx < r:
+                            ca = _corner_alpha(rx, ry, r, r, r)
+                        elif rx >= ww - r:
+                            ca = _corner_alpha(rx, ry, ww - r - 1, r, r)
+                    elif ry >= wh - r:
+                        if rx < r:
+                            ca = _corner_alpha(rx, ry, r, wh - r - 1, r)
+                        elif rx >= ww - r:
+                            ca = _corner_alpha(rx, ry, ww - r - 1, wh - r - 1, r)
+                    if is_border_pixel and ca > 0 and ca < 255:
+                        ca = 255
+                    if row_is_title and (style == STYLE_WIN7 or style == STYLE_WINXP) and ry >= 1 and rx >= 1 and rx < ww - 1 and ca == 255 and not is_border_pixel:
+                        ca = title_alpha
+                    if ca < 255:
+                        bg_pixel: t.CUInt32T = back[py * w + px]
+                        col = _alpha_blend(bg_pixel, col, ca)
+                    back[py * w + px] = col
+    else:
+        _fill_rect(back, w, h, wx, wy, ww, th, title_col)
+        _fill_rect(back, w, h, wx, wy + th + 1, ww, ch, content_col)
+        if not has_separator:
+            _fill_rect(back, w, h, wx, wy + th, ww, 1, content_col)
+        if wx >= 0 and wx < w:
+            for py in range(wy, wy + wh):
+                if py >= 0 and py < h:
+                    back[py * w + wx] = border_col
+        if wx + ww - 1 >= 0 and wx + ww - 1 < w:
+            for py in range(wy, wy + wh):
+                if py >= 0 and py < h:
+                    back[py * w + wx + ww - 1] = border_col
+        _fill_rect(back, w, h, wx, wy, ww, 1, border_col)
+        _fill_rect(back, w, h, wx, wy + wh - 1, ww, 1, border_col)
+        if has_separator:
+            _fill_rect(back, w, h, wx, wy + th, ww, 1, border_col)
+
+    win_fb: UINT32PTR = win.fb
+    if win_fb:
+        fb_stride: t.CInt = win.fb_w
+        fbh: t.CInt = win.fb_h
+        if fb_stride <= 0 or fbh <= 0:
+            win_fb = t.CVoid(0, t.CPtr)
+        if win_fb:
+            draw_rows: t.CInt = ch
+            if draw_rows > fbh: draw_rows = fbh
+            if draw_rows < 0: draw_rows = 0
+            content_y: t.CInt = wy + th + 1
+            fb_total: t.CInt = fb_stride * fbh
+            for row in range(draw_rows):
+                dst_y: t.CInt = content_y + row
+                if dst_y < 0 or dst_y >= h: continue
+                if not _dirty_rows[dst_y]: continue
+                ry: t.CInt = th + 1 + row
+                if rounded:
+                    if ry >= r and ry < wh - r:
+                        src_x: t.CInt = 1
+                        dst_x: t.CInt = wx + 1
+                        if dst_x < 0:
+                            src_x = src_x - dst_x
+                            dst_x = 0
+                        end_x: t.CInt = wx + ww - 1
+                        if end_x > w: end_x = w
+                        actual_w: t.CInt = end_x - dst_x
+                        if actual_w <= 0: continue
+                        if src_x + actual_w > fb_stride: actual_w = fb_stride - src_x
+                        if actual_w <= 0: continue
+                        src_off: t.CInt = row * fb_stride + src_x
+                        if src_off + actual_w > fb_total: continue
+                        string.memcpy(t.CVoid(t.CUInt64T(back) + (dst_y * w + dst_x) * 4, t.CPtr), t.CVoid(t.CUInt64T(win_fb) + src_off * 4, t.CPtr), actual_w * 4)
+                    else:
+                        copy_w: t.CInt = fb_stride - 1
+                        if copy_w > ww - 1: copy_w = ww - 1
+                        for col_px in range(1, copy_w):
+                            if ry < r:
+                                if col_px < r:
+                                    if not _is_in_corner(col_px, ry, r, r, r): continue
+                                elif col_px >= ww - r:
+                                    if not _is_in_corner(col_px, ry, ww - r - 1, r, r): continue
+                            elif ry >= wh - r:
+                                if col_px < r:
+                                    if not _is_in_corner(col_px, ry, r, wh - r - 1, r): continue
+                                elif col_px >= ww - r:
+                                    if not _is_in_corner(col_px, ry, ww - r - 1, wh - r - 1, r): continue
+                            if _is_on_border(col_px, ry, ww, wh, r): continue
+                            dst_x2: t.CInt = wx + col_px
+                            if dst_x2 < 0 or dst_x2 >= w: continue
+                            if col_px >= fb_stride: continue
+                            px_off: t.CInt = row * fb_stride + col_px
+                            if px_off < 0 or px_off >= fb_total: continue
+                            back[dst_y * w + dst_x2] = win_fb[px_off]
+                else:
+                    src_x2: t.CInt = 1
+                    dst_x3: t.CInt = wx + 1
+                    if dst_x3 < 0:
+                        src_x2 = src_x2 - dst_x3
+                        dst_x3 = 0
+                    end_x2: t.CInt = wx + ww - 1
+                    if end_x2 > w: end_x2 = w
+                    actual_w2: t.CInt = end_x2 - dst_x3
+                    if actual_w2 <= 0: continue
+                    if src_x2 + actual_w2 > fb_stride: actual_w2 = fb_stride - src_x2
+                    if actual_w2 <= 0: continue
+                    src_off2: t.CInt = row * fb_stride + src_x2
+                    if src_off2 + actual_w2 > fb_total: continue
+                    string.memcpy(t.CVoid(t.CUInt64T(back) + (dst_y * w + dst_x3) * 4, t.CPtr), t.CVoid(t.CUInt64T(win_fb) + src_off2 * 4, t.CPtr), actual_w2 * 4)
+
+    btn_w: t.CInt = CLOSE_BTN_SIZE
+    btn_h: t.CInt = CLOSE_BTN_SIZE
+    btn_x: t.CInt = wx + ww - btn_w - 4
+    btn_y: t.CInt = wy + (th - btn_h) // 2
+    clip_r: t.CInt = 0
+    if style == STYLE_WIN7:
+        btn_w = CLOSE_BTN_W7_W
+        btn_h = CLOSE_BTN_W7_H
+        btn_x = wx + ww - btn_w - 5
+        btn_y = wy + (th - btn_h) // 2
+        if rounded:
+            clip_r = r
+    elif style == STYLE_WINXP:
+        btn_w = CLOSE_BTN_XP_SZ
+        btn_h = CLOSE_BTN_XP_SZ
+        btn_x = wx + ww - btn_w - 5
+        btn_y = wy + (th - btn_h) // 2
+    elif style == STYLE_WIN10 or style == STYLE_WIN11:
+        btn_w = CLOSE_BTN_W_WIN
+        btn_h = th - 2
+        btn_x = wx + ww - btn_w
+        btn_y = wy + 1
+        if rounded:
+            clip_r = r
+    _draw_close_btn(back, w, h, btn_x, btn_y, btn_w, btn_h, win.close_hover, style, wx, wy, ww, clip_r)
+    max_bx: t.CInt = btn_x - btn_w
+    if style == STYLE_WIN7 or style == STYLE_WINXP:
+        max_bx = btn_x - btn_w - 1
+    _draw_max_btn(back, w, h, max_bx, btn_y, btn_w, btn_h, win.max_hover, style, win.is_maximized)
+    min_bx: t.CInt = max_bx - btn_w
+    if style == STYLE_WIN7 or style == STYLE_WINXP:
+        min_bx = max_bx - btn_w - 1
+    _draw_min_btn(back, w, h, min_bx, btn_y, btn_w, btn_h, win.min_hover, style)
+
+    text_col: t.CUInt32T = 0xFFFFFFFF
+    if not is_active:
+        text_col = gfx.COLOR_RGB(170, 170, 170)
+    text_y: t.CInt = wy + (th - 16) // 2
+    _draw_text(back, w, h, wx + 8, text_y, c.Addr(win.title[0]), text_col)
+
+def create(x: t.CInt, y: t.CInt, w: t.CInt, h: t.CInt, title: t.CConst | t.CChar | t.CPtr, style: t.CInt) -> t.CInt:
+    global _win_count, _next_z, _focused_win
+    if _win_count >= MAX_APP_WINDOWS: return -1
+    idx: t.CInt = _win_count
+    _win_count += 1
+    aw: AppWindow | t.CPtr = c.Addr(_wins[idx])
+    aw.active    = 1
+    aw.x         = x
+    aw.y         = y
+    aw.w         = w
+    aw.h         = h
+    aw.content_h = h - _get_title_height(style) - 2
+    _next_z += 1
+    aw.z_order   = _next_z
+    aw.style = style
+    aw.close_hover = 0
+    aw.min_hover = 0
+    aw.max_hover = 0
+    aw.is_maximized = 0
+    aw.orig_x = x
+    aw.orig_y = y
+    aw.orig_w = w
+    aw.orig_h = h
+    aw.pid = _current_app_pid
+    aw.cursor_type = 0
+    aw.app_cursor_type = 0
+    aw.fb_w = 0
+    aw.fb_h = 0
+    aw.old_fb = t.CVoid(0, t.CPtr)
+    aw.ping_pending = 0
+    aw.no_resp = 0
+    aw.no_resp_sec = 0
+    aw.minimized = 0
+    aw.resizable_w = 1
+    aw.resizable_h = 1
+    aw.resize_w = 0
+    aw.resize_h = 0
+    string.memset(c.Addr(aw.title), 0, 32)
+    string.memset(c.Addr(aw.orig_title), 0, 32)
+    for i in range(31):
+        ch: t.CChar = title[i]
+        if ch == 0: break
+        aw.title[i] = ch
+        aw.orig_title[i] = ch
+    aw.fb = mm.malloc(w * aw.content_h * 4)
+    aw.fb_w = w
+    aw.fb_h = aw.content_h
+    if aw.fb:
+        bg_col: t.CUInt32T = gfx.COLOR_RGB(25, 25, 35)
+        fb_size: t.CInt = w * aw.content_h
+        for fi in range(fb_size):
+            aw.fb[fi] = bg_col
+    _mark_rows_dirty(y, h)
+    _focused_win = idx
+    return idx
+
+def draw_text(win_id: t.CInt, x: t.CInt, y: t.CInt, text: t.CConst | t.CChar | t.CPtr, color: t.CUInt32T) -> t.CInt:
+    if win_id < 0 or win_id >= _win_count: return -1
+    aw: AppWindow | t.CPtr = c.Addr(_wins[win_id])
+    if not aw.active: return -1
+    win_fb: UINT32PTR = aw.fb
+    if not win_fb: return -1
+    fbw: t.CInt = aw.fb_w
+    fbh: t.CInt = aw.fb_h
+    _draw_text(win_fb, fbw, fbh, x, y, text, color)
+    _mark_rows_dirty(aw.y + _get_title_height(aw.style) + 1 + y, 16)
+    return 0
+
+def set_app_pid(pid: t.CInt):
+    global _current_app_pid
+    _current_app_pid = pid
+
+def is_active(win_id: t.CInt) -> t.CInt:
+    if win_id < 0 or win_id >= _win_count: return 0
+    return _wins[win_id].active
+
+def get_fb(win_id: t.CInt) -> UINT32PTR:
+    if win_id < 0 or win_id >= _win_count: return t.CVoid(0, t.CPtr)
+    aw: AppWindow | t.CPtr = c.Addr(_wins[win_id])
+    if not aw.active: return t.CVoid(0, t.CPtr)
+    if aw.old_fb:
+        mm.free(aw.old_fb)
+        aw.old_fb = t.CVoid(0, t.CPtr)
+    if aw.resize_w != 0 and (aw.fb_w != aw.resize_w or aw.fb_h != aw.resize_h):
+        target_w: t.CInt = aw.resize_w
+        target_h: t.CInt = aw.resize_h
+        if target_w <= 0 or target_h <= 0:
+            aw.resize_w = 0
+            aw.resize_h = 0
+            return aw.fb
+        new_fb_sz_gf: t.CInt = target_w * target_h
+        new_fb_gf: UINT32PTR = mm.malloc(new_fb_sz_gf * 4)
+        if not new_fb_gf:
+            aw.resize_w = 0
+            aw.resize_h = 0
+            return aw.fb
+        old_fb_gf: UINT32PTR = aw.fb
+        old_fbw_gf: t.CInt = aw.fb_w
+        old_fbh_gf: t.CInt = aw.fb_h
+        aw.fb = new_fb_gf
+        aw.fb_w = target_w
+        aw.fb_h = target_h
+        aw.w = target_w
+        aw.content_h = target_h
+        aw.resize_w = 0
+        aw.resize_h = 0
+        bg_gf: t.CUInt32T = gfx.COLOR_RGB(30, 30, 50)
+        for fi_gf in range(new_fb_sz_gf):
+            aw.fb[fi_gf] = bg_gf
+        if old_fb_gf:
+            cph_gf: t.CInt = old_fbh_gf
+            if cph_gf > target_h: cph_gf = target_h
+            for ri_gf in range(cph_gf):
+                rb_gf: t.CInt = old_fbw_gf
+                if rb_gf > target_w: rb_gf = target_w
+                string.memcpy(t.CVoid(t.CUInt64T(aw.fb) + ri_gf * target_w * 4, t.CPtr), t.CVoid(t.CUInt64T(old_fb_gf) + ri_gf * old_fbw_gf * 4, t.CPtr), rb_gf * 4)
+            if aw.old_fb:
+                mm.free(aw.old_fb)
+            aw.old_fb = old_fb_gf
+    return aw.fb
+
+def get_size(win_id: t.CInt) -> t.CInt:
+    if win_id < 0 or win_id >= _win_count: return 0
+    aw: AppWindow | t.CPtr = c.Addr(_wins[win_id])
+    if not aw.active: return 0
+    return (aw.fb_w << 16) | (aw.fb_h & 0xFFFF)
+
+_NO_RESP_SUFFIX: t.CArray[t.CChar, 14] = " - (No Resp)"
+
+def _update_no_resp_title(win_id: t.CInt, mark: t.CInt):
+    if win_id < 0 or win_id >= _win_count: return
+    aw: AppWindow | t.CPtr = c.Addr(_wins[win_id])
+    if not aw.active: return
+    string.memset(c.Addr(aw.title), 0, 32)
+    if mark:
+        j: t.CInt = 0
+        for ch in aw.orig_title:
+            if j >= 31: break
+            if ch == 0: break
+            aw.title[j] = ch
+            j += 1
+        for sc in _NO_RESP_SUFFIX:
+            if j >= 13: break
+            if sc == 0: break
+            if j < 31:
+                aw.title[j] = sc
+                j += 1
+    else:
+        j2: t.CInt = 0
+        for ch2 in aw.orig_title:
+            if j2 >= 31: break
+            if ch2 == 0: break
+            aw.title[j2] = ch2
+            j2 += 1
+    _mark_rows_dirty(aw.y, _get_title_height(aw.style) + 2)
+
+def _heartbeat_check():
+    global _hb_last_sec
+    cur_sec: t.CUInt32T = timer.timer_get_seconds()
+    if cur_sec - _hb_last_sec < HB_INTERVAL_SEC: return
+    _hb_last_sec = cur_sec
+    for i in range(_win_count):
+        aw: AppWindow | t.CPtr = c.Addr(_wins[i])
+        if not aw.active:
+            continue
+        if aw.pid == 0:
+            continue
+        if aw.ping_pending:
+            if not aw.no_resp:
+                aw.no_resp = 1
+                aw.no_resp_sec = cur_sec
+                _update_no_resp_title(i, 1)
+            else:
+                elapsed: t.CUInt32T = cur_sec - aw.no_resp_sec
+                if elapsed >= HB_NO_RESP_SEC:
+                    aw.active = 0
+                    _mark_rows_dirty(aw.y, aw.h)
+                    p_ref: process.Process | t.CPtr = process.ProcessManager.get_process(aw.pid)
+                    if p_ref is not None:
+                        p_ref.exit()
+        else:
+            aw.ping_pending = 1
+            evt: InputEvent
+            string.memset(c.Addr(evt), 0, INPUT_EVENT_SIZE)
+            evt.type = EVENT_TYPE_PING
+            evt.win_id = i
+            _push_event(evt)
+
+def flush(win_id: t.CInt):
+    if win_id < 0 or win_id >= _win_count: return
+    aw: AppWindow | t.CPtr = c.Addr(_wins[win_id])
+    if not aw.active: return
+    if aw.old_fb:
+        mm.free(aw.old_fb)
+        aw.old_fb = t.CVoid(0, t.CPtr)
+    if aw.ping_pending:
+        aw.ping_pending = 0
+        if aw.no_resp:
+            aw.no_resp = 0
+            aw.no_resp_sec = 0
+            _update_no_resp_title(win_id, 0)
+    _mark_rows_dirty(aw.y + _get_title_height(aw.style) + 1, _eff_h(aw))
+
+def set_title(win_id: t.CInt, title: t.CConst | t.CChar | t.CPtr) -> t.CInt:
+    if win_id < 0 or win_id >= _win_count: return -1
+    aw: AppWindow | t.CPtr = c.Addr(_wins[win_id])
+    if not aw.active: return -1
+    string.memset(c.Addr(aw.title), 0, 32)
+    string.memset(c.Addr(aw.orig_title), 0, 32)
+    for i in range(31):
+        ch: t.CChar = title[i]
+        if ch == 0: break
+        aw.title[i] = ch
+        aw.orig_title[i] = ch
+    _mark_rows_dirty(aw.y, _get_title_height(aw.style) + 2)
+    return 0
+
+def set_geometry(win_id: t.CInt, x: t.CInt, y: t.CInt, w: t.CInt, h: t.CInt) -> t.CInt:
+    if win_id < 0 or win_id >= _win_count: return -1
+    aw: AppWindow | t.CPtr = c.Addr(_wins[win_id])
+    if not aw.active: return -1
+    old_y: t.CInt = aw.y
+    old_h: t.CInt = aw.h
+    aw.x = x
+    aw.y = y
+    aw.resize_w = w
+    aw.resize_h = h - _get_title_height(aw.style) - 2
+    aw.h = h
+    _mark_rows_dirty(old_y, old_h)
+    _mark_rows_dirty(y, h)
+    return 0
+
+def set_resizable(win_id: t.CInt, rw: t.CInt, rh: t.CInt) -> t.CInt:
+    if win_id < 0 or win_id >= _win_count: return -1
+    aw: AppWindow | t.CPtr = c.Addr(_wins[win_id])
+    if not aw.active: return -1
+    aw.resizable_w = rw
+    aw.resizable_h = rh
+    return 0
+
+def destroy_by_pid(pid: t.CInt):
+    global _focused_win, _last_hover_win
+    for i in range(_win_count):
+        if _wins[i].pid == pid and _wins[i].active:
+            _wins[i].active = 0
+            _mark_rows_dirty(_wins[i].y, _wins[i].h)
+            if _focused_win == i:
+                _focused_win = -1
+            if _last_hover_win == i:
+                _last_hover_win = -1
+    if _focused_win < 0:
+        for j in range(_win_count - 1, -1, -1):
+            if _wins[j].active and not _wins[j].minimized:
+                _focused_win = j
+                break

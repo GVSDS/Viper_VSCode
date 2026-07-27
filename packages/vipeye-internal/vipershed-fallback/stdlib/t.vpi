@@ -1,0 +1,646 @@
+# Viper 类型系统模块 t 的存根。
+#
+# 姑息策略（完善版）：
+#   - 基本数值/字符类型使用 TypeAlias 别名（等价 Python 内置类型），
+#     使 `k: t.CInt = 1` 合法（1 是 int，CInt 别名 int）
+#   - 指针/修饰符/命名类型作为独立 class 继承 CType，
+#     保持"类型"语义（绿色高亮）和联合类型 `T | t.CPtr` 支持
+#   - CPtr 支持泛型下标 `t.CPtr[t.CInt]`
+#   - CArray 支持下标 `t.CArray[t.CInt, 64]`
+#
+# 来源：D:\Users\TermiNexus\Desktop\TransPyC\lib\includes\t.py
+# 仅保留核心语义，省略 CTypeRegistry/attr/ASM_DESCR 等运行时设施。
+
+from typing import Any, Generic, Optional, Type, TypeAlias, TypeVar
+from typing import Callable as CallableT
+
+T = TypeVar('T')
+
+
+# =============================================================================
+# CType 基类
+# =============================================================================
+class CType:
+    """C 类型基类。"""
+    PREFIX: str
+    BASE: str
+    POINTER: str
+    ARRAY: str
+    NAMED: str
+    STORAGE_CLASS: str
+    TYPE_QUALIFIER: str
+
+    Name: str
+    IsBasicType: bool
+    IsPointer: bool
+    IsSigned: Optional[bool]
+    Size: Optional[int]
+
+    def __init__(self, value: Any = None, *types: Any) -> None: ...
+    def GetPositions(self) -> frozenset[str]: ...
+    def GetFullType(self, VarName: str = '', ArraySizeStr: str = '') -> str: ...
+    def __or__(self, other: Any) -> list[Any]: ...
+    def __set_default__(self, **kwargs: Any) -> 'CTypeDefault': ...
+
+    # Viper 扩展：__sizeof__ 作为类方法，返回类型的大小（字节数）。
+    # C 语义：sizeof(struct memory_block) -> memory_block.__sizeof__()
+    # 第一个参数是 cls（类本身），无需显式传递 self。
+    @classmethod
+    def __sizeof__(cls) -> int: ...
+
+
+class CTypeDefault(CType):
+    """C 类型默认值/初始化包装类。"""
+    BaseType: Any
+    defaults: dict[str, Any]
+    def __init__(self, BaseType: Any, **kwargs: Any) -> None: ...
+
+
+# =============================================================================
+# 基本整数类型（TypeAlias 别名，等价 int）
+# =============================================================================
+CChar: TypeAlias = int
+CShort: TypeAlias = int
+CInt: TypeAlias = int
+CLong: TypeAlias = int
+CLongLong: TypeAlias = int
+CSignedChar: TypeAlias = int
+CUnsignedChar: TypeAlias = int
+CUnsignedShort: TypeAlias = int
+CUnsignedInt: TypeAlias = int
+CUnsignedLong: TypeAlias = int
+CUnsignedLongLong: TypeAlias = int
+
+# 固定宽度整数
+CInt8T: TypeAlias = int
+CInt16T: TypeAlias = int
+CInt32T: TypeAlias = int
+CInt64T: TypeAlias = int
+CUInt8T: TypeAlias = int
+CUInt16T: TypeAlias = int
+CUInt32T: TypeAlias = int
+CUInt64T: TypeAlias = int
+
+# 最小/最快宽度整数
+CIntLeast8T: TypeAlias = int
+CIntLeast16T: TypeAlias = int
+CIntLeast32T: TypeAlias = int
+CIntLeast64T: TypeAlias = int
+CIntFast8T: TypeAlias = int
+CIntFast16T: TypeAlias = int
+CIntFast32T: TypeAlias = int
+CIntFast64T: TypeAlias = int
+CUIntLeast8T: TypeAlias = int
+CUIntLeast16T: TypeAlias = int
+CUIntLeast32T: TypeAlias = int
+CUIntLeast64T: TypeAlias = int
+CUIntFast8T: TypeAlias = int
+CUIntFast16T: TypeAlias = int
+CUIntFast32T: TypeAlias = int
+CUIntFast64T: TypeAlias = int
+
+# 最大宽度整数
+CIntMaxT: TypeAlias = int
+CUIntMaxT: TypeAlias = int
+
+# 平台相关整数
+CSizeT: TypeAlias = int
+CIntPtrT: TypeAlias = int
+CUIntPtrT: TypeAlias = int
+CPtrDiffT: TypeAlias = int
+
+# 布尔
+CBool: TypeAlias = int
+
+# 宽字符
+CWCharT: TypeAlias = int
+CChar8T: TypeAlias = int
+CChar16T: TypeAlias = int
+CChar32T: TypeAlias = int
+
+# LLVM 简写（直接作为类型别名，等价于固定宽度整数）
+i1: TypeAlias = int
+i8: TypeAlias = int
+i16: TypeAlias = int
+i32: TypeAlias = int
+i64: TypeAlias = int
+u1: TypeAlias = int
+u8: TypeAlias = int
+u16: TypeAlias = int
+u32: TypeAlias = int
+u64: TypeAlias = int
+
+
+# =============================================================================
+# 浮点类型（TypeAlias 别名，等价 float）
+# =============================================================================
+CFloat: TypeAlias = float
+CDouble: TypeAlias = float
+CFloat8T: TypeAlias = float
+CFloat16T: TypeAlias = float
+CFloat32T: TypeAlias = float
+CFloat64T: TypeAlias = float
+CFloat128T: TypeAlias = float
+
+
+# =============================================================================
+# void 类型
+# =============================================================================
+class CVoid(CType):
+    """void 类型。Size=0，IsSigned=None。"""
+    pass
+
+
+# =============================================================================
+# 指针类型（支持泛型下标）
+# =============================================================================
+class CPtr(CType, Generic[T]):
+    """指针类型。用法: t.CPtr[t.CInt] 表示 int*。"""
+    def __class_getitem__(cls, item: Any) -> type: ...
+    # 指针解引用：通过 __getattr__/__setattr__ 将属性访问转发到 T 的字段。
+    # 模拟 C 语言的 ptr->field 语义。
+    def __getattr__(self, name: str) -> T: ...
+    def __setattr__(self, name: str, value: T) -> None: ...
+
+
+class CNeedPtr(CPtr):
+    """函数签名注解：自动取地址（仅对非指针值）。"""
+    pass
+
+
+class CAutoPtr(CPtr):
+    """函数签名注解：无条件取地址。"""
+    pass
+
+
+class CArrayPtr(CType):
+    """数组指针。"""
+    pass
+
+
+# =============================================================================
+# 数组类型（支持下标）
+# =============================================================================
+class CArray(CType):
+    """栈上固定数组类型注解。
+    用法: names: t.CArray[VOIDPTR, 32]  # void*[32]
+          data: t.CArray[t.CInt, 64]    # int[64]
+    """
+    def __class_getitem__(cls, item: Any) -> type: ...
+    def __getitem__(self, index: int) -> Any: ...
+    def __setitem__(self, index: int, value: Any) -> None: ...
+
+
+# =============================================================================
+# 修饰符类型（用于联合类型注解）
+# =============================================================================
+class CConst(CType):
+    """const 类型限定符。"""
+    pass
+
+
+class CVolatile(CType):
+    """volatile 类型限定符。"""
+    pass
+
+
+class CStatic(CType):
+    """static 存储类。"""
+    pass
+
+
+class CExtern(CType):
+    """extern 存储类。"""
+    pass
+
+
+class CInline(CType):
+    """inline 存储类。"""
+    pass
+
+
+class CExport(CType):
+    """导出符号存储类。"""
+    pass
+
+
+class CRegister(CType):
+    """register 存储类。"""
+    pass
+
+
+class CAuto(CType):
+    """auto 存储类。"""
+    pass
+
+
+class CPass(CType):
+    """占位类型。"""
+    pass
+
+
+class CUnsigned(CType):
+    """unsigned 修饰符。"""
+    pass
+
+
+class State(CType):
+    """状态标记，等价 CExport | CExtern。仅声明不定义。"""
+    pass
+
+
+# CDefine 是编译时元指令（非数据类型）：
+#  - 单独使用（t.CDefine）：类型检查时视为任意类型，可接受任何值，可传给任何参数
+#  - 联合使用（t.CDefine | t.CInt）：CDefine 被过滤，按 t.CInt 规则严格检查
+#  - 右值位或运算（MAX_SIZE | PAGE_SIZE）：结果仍为 CDefine，保持任意传参语义
+#  - 代码生成时 t.CDefine 常量/函数会被完全内联展开，不生成 LLVM IR 声明
+# 注：严格联合语义由 typeEvaluator.combineTypes 中的特殊处理实现
+class CDefine(CType):
+    """编译期宏定义类型（编译时元指令）。"""
+    def __or__(self, other: Any) -> 'CDefine':
+        """位或运算结果保持 CDefine 类型（任意传参语义）。"""
+        ...
+    def __ror__(self, other: Any) -> 'CDefine':
+        """反向位或运算结果保持 CDefine 类型。"""
+        ...
+
+
+# CTypedef 是 TypeAlias 的别名（用于 typedef 语义）
+CTypedef: TypeAlias = TypeAlias
+
+
+# =============================================================================
+# OOP 修饰符（函数形式，用作装饰器）
+# Object/NoVTable 为类装饰器：接收 type 返回 type
+# CVTable 为类装饰器：接收 type 返回 type
+# TLS 为函数装饰器：接收 Callable 返回 Callable
+# 使用 Type[T] -> Type[T] 保留被装饰类的类型信息
+# =============================================================================
+def Object(cls: Type[T]) -> Type[T]:
+    """Python 对象类型装饰器（类方法外联函数）。"""
+    ...
+
+
+def CVTable(cls: Type[T]) -> Type[T]:
+    """启用多态 vtable 装饰器。"""
+    ...
+
+
+def NoVTable(cls: Type[T]) -> Type[T]:
+    """标记类为非多态继承基类：子类继承时字段直接展平嵌入，不生成 vtable。"""
+    ...
+
+
+def TLS(func: CallableT[..., Any]) -> CallableT[..., Any]:
+    """标记函数为 TLS 初始化函数。"""
+    ...
+
+
+# =============================================================================
+# 命名类型基类（struct/union/enum）
+# =============================================================================
+class CStruct(CType):
+    """struct 命名类型。"""
+    pass
+
+
+class CUnion(CType):
+    """union 命名类型。"""
+    pass
+
+
+class CEnum(CType):
+    """enum 命名类型。"""
+    pass
+
+
+# Enum 是 CEnum 的别名
+Enum: TypeAlias = CEnum
+
+
+class REnum(CType):
+    """运行时 enum 命名类型。"""
+    pass
+
+
+class Anonymous(CType):
+    """匿名类型标记。"""
+    pass
+
+
+# =============================================================================
+# 位域与字节序
+# =============================================================================
+class Bit:
+    """位域标记。"""
+    def __init__(self, i: Any) -> None: ...
+
+
+class BigEndian(CType):
+    """大端序字节序标记类。"""
+    IsSigned: bool
+    Size: int
+    Align: int
+
+
+class LittleEndian(CType):
+    """小端序字节序标记类。"""
+    IsSigned: bool
+    Size: int
+    Align: int
+
+
+# =============================================================================
+# C 语言 __attribute__ 属性操作类型
+# =============================================================================
+class attr:
+    """C 语言 __attribute__ 属性操作类型。
+
+    来源：D:\\Users\\TermiNexus\\Desktop\\TransPyC\\lib\\includes\\t.py
+    """
+    @staticmethod
+    def noreturn() -> str: ...
+    @staticmethod
+    def format(printf: Any, arg1: Any, arg2: Any) -> str: ...
+    @staticmethod
+    def section(name: str) -> str: ...
+    @staticmethod
+    def aligned(bytes: int) -> str: ...
+    @staticmethod
+    def packed() -> str: ...
+    @staticmethod
+    def unused() -> str: ...
+    @staticmethod
+    def used() -> str: ...
+    @staticmethod
+    def weak() -> str: ...
+    @staticmethod
+    def alias(name: str) -> str: ...
+    @staticmethod
+    def visibility(type: str) -> str: ...
+    @staticmethod
+    def constructor() -> str: ...
+    @staticmethod
+    def destructor() -> str: ...
+    @staticmethod
+    def always_inline() -> str: ...
+    @staticmethod
+    def noinline() -> str: ...
+    @staticmethod
+    def pure() -> str: ...
+    @staticmethod
+    def const() -> str: ...
+    @staticmethod
+    def malloc() -> str: ...
+    @staticmethod
+    def alloc_size(n: int) -> str: ...
+    @staticmethod
+    def warn_unused_result() -> str: ...
+    @staticmethod
+    def deprecated(msg: Optional[str] = None) -> str: ...
+    @staticmethod
+    def fallthrough() -> str: ...
+    @staticmethod
+    def likely() -> str: ...
+    @staticmethod
+    def unlikely() -> str: ...
+    @staticmethod
+    def hot() -> str: ...
+    @staticmethod
+    def cold() -> str: ...
+    @staticmethod
+    def interrupt() -> str: ...
+    @staticmethod
+    def naked() -> str: ...
+    @staticmethod
+    def sentinel(n: int = 0) -> str: ...
+    @staticmethod
+    def nonnull(*args: Any) -> str: ...
+    @staticmethod
+    def returns_nonnull() -> str: ...
+    @staticmethod
+    def access(mode: Any, *args: Any) -> str: ...
+    @staticmethod
+    def cleanup(func: str) -> str: ...
+    @staticmethod
+    def transparent_union() -> str: ...
+    @staticmethod
+    def mode(mode_name: str) -> str: ...
+    @staticmethod
+    def vector_size(bytes: int) -> str: ...
+    @staticmethod
+    def target(string: str) -> str: ...
+    @staticmethod
+    def optimize(level: str) -> str: ...
+    @staticmethod
+    def no_instrument_function() -> str: ...
+    @staticmethod
+    def no_sanitize(type: str) -> str: ...
+    @staticmethod
+    def no_stack_protector() -> str: ...
+    @staticmethod
+    def stack_protector() -> str: ...
+    @staticmethod
+    def error(msg: str) -> str: ...
+    @staticmethod
+    def warning(msg: str) -> str: ...
+
+    class llvm:
+        """LLVM 函数属性描述符。
+
+        用于在返回类型注解中指定 LLVM 函数属性。
+        例如: def foo() -> t.CInt | t.attr.llvm.nobuiltin | t.attr.llvm.nounwind:
+        """
+
+        class nobuiltin: pass
+        class nounwind: pass
+        class noredzone: pass
+        class willreturn: pass
+        class mustprogress: pass
+        class optnone: pass
+        class noinline: pass
+        class alwaysinline: pass
+        class readnone: pass
+        class readonly: pass
+        class writeonly: pass
+        class inaccessiblememonly: pass
+        class inaccessiblemem_or_argmemonly: pass
+
+
+# ASM 描述符
+# =============================================================================
+class ASM_DESCR:
+    """内嵌 ASM 破坏描述符类。
+
+    定义所有可能的破坏描述符和约束字符，用于 GCC 内嵌汇编。
+    来源：D:\\Users\\TermiNexus\\Desktop\\TransPyC\\lib\\includes\\t.py
+    """
+    # 操作数修饰符
+    MODIFIER_OUTPUT: str
+    MODIFIER_READWRITE: str
+    MODIFIER_INPUT: str
+    MODIFIER_GLOBAL: str
+
+    # 寄存器约束（32位命名）
+    REG_ANY: str
+    REG_EAX: str
+    REG_EBX: str
+    REG_ECX: str
+    REG_EDX: str
+    REG_ESI: str
+    REG_EDI: str
+    REG_STACK: str
+    REG_FLOAT: str
+    REG_MMX: str
+    REG_XMM: str
+
+    # 寄存器约束（64位命名，GCC约束字符与32位相同）
+    REG_RAX: str
+    REG_RBX: str
+    REG_RCX: str
+    REG_RDX: str
+    REG_RSI: str
+    REG_RDI: str
+    REG_R8: str
+    REG_R9: str
+    REG_R10: str
+    REG_R11: str
+    REG_R12: str
+    REG_R13: str
+    REG_R14: str
+    REG_R15: str
+    REG_RBP: str
+    REG_RSP: str
+
+    # 内存约束
+    MEMORY: str
+
+    # 立即数约束
+    IMMEDIATE: str
+    IMMEDIATE_CONST: str
+
+    # 综合约束
+    ANY: str
+    MEMORY_OR_REG: str
+
+    # 破坏描述符 - 32位寄存器
+    CLOBBER_EAX: str
+    CLOBBER_EBX: str
+    CLOBBER_ECX: str
+    CLOBBER_EDX: str
+    CLOBBER_ESI: str
+    CLOBBER_EDI: str
+    CLOBBER_EBP: str
+    CLOBBER_ESP: str
+
+    # 破坏描述符 - 8位寄存器
+    CLOBBER_AL: str
+    CLOBBER_AH: str
+    CLOBBER_BL: str
+    CLOBBER_BH: str
+    CLOBBER_CL: str
+    CLOBBER_CH: str
+    CLOBBER_DL: str
+    CLOBBER_DH: str
+
+    # 破坏描述符 - 特殊
+    CLOBBER_CC: str
+    CLOBBER_MEMORY: str
+
+    # 破坏描述符 - 16位寄存器
+    CLOBBER_AX: str
+    CLOBBER_BX: str
+    CLOBBER_CX: str
+    CLOBBER_DX: str
+    CLOBBER_SI: str
+    CLOBBER_DI: str
+    CLOBBER_BP: str
+
+    # 破坏描述符 - 64位寄存器
+    CLOBBER_RAX: str
+    CLOBBER_RBX: str
+    CLOBBER_RCX: str
+    CLOBBER_RDX: str
+    CLOBBER_RSI: str
+    CLOBBER_RDI: str
+    CLOBBER_RBP: str
+    CLOBBER_RSP: str
+    CLOBBER_R8: str
+    CLOBBER_R9: str
+    CLOBBER_R10: str
+    CLOBBER_R11: str
+    CLOBBER_R12: str
+    CLOBBER_R13: str
+    CLOBBER_R14: str
+    CLOBBER_R15: str
+
+    # 预定义组合约束 - 输出（32位命名）
+    OUTPUT_REG: str
+    OUTPUT_MEM: str
+    OUTPUT_EAX: str
+    OUTPUT_EBX: str
+    OUTPUT_ECX: str
+    OUTPUT_EDX: str
+    OUTPUT_ESI: str
+    OUTPUT_EDI: str
+
+    # 预定义组合约束 - 输出（64位命名）
+    OUTPUT_RAX: str
+    OUTPUT_RBX: str
+    OUTPUT_RCX: str
+    OUTPUT_RDX: str
+    OUTPUT_RSI: str
+    OUTPUT_RDI: str
+
+    # 预定义组合约束 - 输入（32位命名）
+    INPUT_REG: str
+    INPUT_MEM: str
+    INPUT_EAX: str
+    INPUT_EBX: str
+    INPUT_ECX: str
+    INPUT_EDX: str
+    INPUT_ESI: str
+    INPUT_EDI: str
+    INPUT_IMM: str
+    INPUT_ANY: str
+
+    # 预定义组合约束 - 输入（64位命名）
+    INPUT_RAX: str
+    INPUT_RBX: str
+    INPUT_RCX: str
+    INPUT_RDX: str
+    INPUT_RSI: str
+    INPUT_RDI: str
+
+    # 所有单独约束字符列表
+    ALL_CONSTRAINTS: list[str]
+
+    # 所有破坏描述符列表
+    ALL_CLOBBERS: list[str]
+
+    # 所有描述符列表
+    ALL: list[str]
+
+
+# =============================================================================
+# 函数指针
+# =============================================================================
+class Callable(CType):
+    """函数指针类型。"""
+    pass
+
+
+# =============================================================================
+# 平台配置
+# =============================================================================
+def configure_platform(triple: Optional[str] = None) -> None:
+    """根据目标三元组配置平台相关类型大小。"""
+    ...
+
+
+# =============================================================================
+# 兜底：未声明的 t.C* 类型通过 __getattr__ 返回 int 别名
+# =============================================================================
+def __getattr__(name: str) -> int:
+    """未声明的 t.C* 类型返回 int 别名。"""
+    return 0

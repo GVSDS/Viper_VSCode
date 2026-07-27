@@ -1,0 +1,37 @@
+import t, c
+import drivers.usb.usb as usb
+
+HID_BOOT_PROTOCOL: t.CDefine = 0
+HID_REPORT_PROTOCOL: t.CDefine = 1
+
+HID_KBD_REPORT_SIZE: t.CDefine = 8
+HID_MOUSE_REPORT_SIZE: t.CDefine = 4
+
+class hid_kbd_report(t.CStruct):
+    modifier: t.CUInt8T
+    reserved: t.CUInt8T
+    keycode: t.CArray[t.CUInt8T, 6]
+
+class hid_mouse_report(t.CStruct):
+    buttons: t.CUInt8T
+    dx: t.CInt8T
+    dy: t.CInt8T
+    wheel: t.CInt8T
+
+def init_keyboard(dev: usb.usb_device | t.CPtr) -> t.CInt:
+    if dev.iface_class != 0x03: return -1
+    if dev.iface_protocol != 0x01: return -2
+    if dev.ep_in == 0: return -3
+    return 0
+
+def init_mouse(dev: usb.usb_device | t.CPtr) -> t.CInt:
+    if dev.iface_class != 0x03: return -1
+    if dev.iface_protocol != 0x02: return -2
+    if dev.ep_in == 0: return -3
+    return 0
+
+def read_keyboard(dev: usb.usb_device | t.CPtr, report: hid_kbd_report | t.CPtr) -> t.CInt:
+    return usb.read_interrupt(dev, c.Addr(report))
+
+def read_mouse(dev: usb.usb_device | t.CPtr, report: hid_mouse_report | t.CPtr) -> t.CInt:
+    return usb.read_interrupt(dev, c.Addr(report))

@@ -1,0 +1,305 @@
+from stdint import *
+import vipermath
+import string
+import t, c
+
+
+PI: t.CDefine = float(3.14159265358979323846)
+
+SPHERE_SLICES: t.CDefine = (24 * 1)
+SPHERE_STACKS: t.CDefine = (16 * 1)
+SIN_WAVE_GRID: t.CDefine = (40 * 1)
+
+def COLOR_RGB(r: int, g: int, b: int) -> t.CInline | t.CInt:
+    return (255 << 24) | (r << 16) | (g << 8) | (b)
+
+@t.Object
+class Vec3:
+    x: float
+    y: float
+    z: float
+    def __init__(self, x: float, y: float, z: float):
+        self.x = x
+        self.y = y
+        self.z = z
+    def Sub(self, b: 'Vec3') -> 'Vec3':
+        return Vec3(self.x - b.x, self.y - b.y, self.z - b.z)
+    def Cross(self, b: 'Vec3') -> 'Vec3':
+        return Vec3(self.y * b.z - self.z * b.y, self.z * b.x - self.x * b.z, self.x * b.y - self.y * b.x)
+    def Dot(self, b: 'Vec3') -> float:
+        return self.x * b.x + self.y * b.y + self.z * b.z
+    def Norm(self) -> 'Vec3':
+        l = vipermath.sqrtf(self.Dot(self))
+        return Vec3(self.x / l, self.y / l, self.z / l)
+
+class Mat4:
+    m: t.CArray[t.CArray[float, 4], 4]
+
+def Mat4_Identity() -> Mat4:
+    m: Mat4 = Mat4()
+    string.memset(c.Addr(m), 0, Mat4.__sizeof__())
+    m.m[0][0] = 1; m.m[1][1] = 1; m.m[2][2] = 1; m.m[3][3] = 1 
+    return m
+
+def Mat4_Mul(a: Mat4, b: Mat4) -> Mat4:
+    res: Mat4 = Mat4()
+    string.memset(c.Addr(res), 0, Mat4.__sizeof__())
+    for i in range(4):
+        for j in range(4):
+            for k in range(4):
+                res.m[i][j] += a.m[i][k] * b.m[k][j]
+    return res
+
+def Mat4_MulVec(m: Mat4, v: Vec3) -> Vec3:
+    x: float = m.m[0][0] * v.x + m.m[0][1] * v.y + m.m[0][2] * v.z + m.m[0][3]
+    y: float = m.m[1][0] * v.x + m.m[1][1] * v.y + m.m[1][2] * v.z + m.m[1][3]
+    z: float = m.m[2][0] * v.x + m.m[2][1] * v.y + m.m[2][2] * v.z + m.m[2][3]
+    w: float = m.m[3][0] * v.x + m.m[3][1] * v.y + m.m[3][2] * v.z + m.m[3][3]
+    if w != 0:
+        x /= w; y /= w; z /= w
+    return Vec3(x, y, z)
+
+def Mat4_Perspective(fov: float, aspect: float, zn: float, zf: float) -> Mat4:
+    m: Mat4 = Mat4()
+    string.memset(c.Addr(m), 0, Mat4.__sizeof__())
+    f: float = float(1.0) / vipermath.tanf(fov / float(2.0))
+    m.m[0][0] = f / aspect; m.m[1][1] = f
+    m.m[2][2] = zf / (zn - zf); m.m[2][3] = (zf * zn) / (zn - zf); m.m[3][2] = -1
+    return m
+
+def Mat4_LookAt(eye: Vec3, target: Vec3, up: Vec3) -> Mat4:
+    zaxis: Vec3 = eye.Sub(target).Norm()
+    xaxis: Vec3 = up.Cross(zaxis).Norm()
+    yaxis: Vec3 = zaxis.Cross(xaxis)
+    m: Mat4 = Mat4_Identity()
+    m.m[0][0]=xaxis.x; m.m[0][1]=xaxis.y; m.m[0][2]=xaxis.z; m.m[0][3]= -xaxis.Dot(eye)
+    m.m[1][0]=yaxis.x; m.m[1][1]=yaxis.y; m.m[1][2]=yaxis.z; m.m[1][3]= -yaxis.Dot(eye)
+    m.m[2][0]=zaxis.x; m.m[2][1]=zaxis.y; m.m[2][2]=zaxis.z; m.m[2][3]= -zaxis.Dot(eye)
+    m.m[3][3] = 1
+    return m
+
+def Mat4_Translate(x: float, y: float, z: float) -> Mat4:
+    m: Mat4 = Mat4_Identity()
+    m.m[0][3] = x; m.m[1][3] = y; m.m[2][3] = z
+    return m
+
+def Mat4_RotateY(a: float) -> Mat4:
+    m: Mat4 = Mat4_Identity(); 
+    m.m[0][0] = vipermath.cosf(a); m.m[0][2] = vipermath.sinf(a) 
+    m.m[2][0] = -vipermath.sinf(a); m.m[2][2] = vipermath.cosf(a) 
+    return m
+
+
+@t.Object
+class Surface:
+    fb: UINT32PTR
+    zb: float | t.CPtr
+    w: int
+    h: int
+    def __init__(self, fb: UINT32PTR, zb: float | t.CPtr, w: int, h: int):
+        self.fb = fb
+        self.zb = zb
+        self.w = w
+        self.h = h
+
+@t.Object
+class Renderer:
+    _fb: UINT32PTR
+    _zb: float | t.CPtr
+    _w: int
+    _h: int
+    
+    def __init__(self, fb: UINT32PTR, zb: float | t.CPtr, w: int, h: int):
+        self._fb = fb
+        self._zb = zb
+        self._w = w
+        self._h = h
+
+    def Clear(self, color: t.CUInt32T):
+        fb: UINT32PTR = self._fb
+        zb: float | t.CPtr = self._zb
+        size: int = self._w * self._h
+        for i in range(size):
+            fb[i] = color
+            zb[i] = float(1.0)
+
+    def DrawLine2D(self, x0: int, y0: int, x1: int, y1: int, col: t.CUInt32T):
+        fb: UINT32PTR = self._fb
+        w: int = self._w; h: int = self._h
+        dx: int = abs(x1-x0); dy: int = abs(y1-y0)
+        sx: int = 1 if x0 < x1 else -1; sy: int = 1 if y0 < y1 else -1
+        err: int = dx - dy
+        while True:
+            if x0 >= 0 and x0 < w and y0 >= 0 and y0 < h: fb[y0 * w + x0] = col
+            if x0 == x1 and y0 == y1: break
+            e2: int = 2 * err
+            if e2 > -dy: err -= dy; x0 += sx
+            if e2 < dx: err += dx; y0 += sy
+
+    def DrawTriangle(self, v0: Vec3, v1: Vec3, v2: Vec3, col: t.CUInt32T):
+        if v0.z < float(0.0) or v1.z < float(0.0) or v2.z < float(0.0): return
+        if (v0.x > float(10.0) or v0.x < float(-10.0) or v0.y > float(10.0) or v0.y < float(-10.0) or
+           v1.x > float(10.0) or v1.x < float(-10.0) or v1.y > float(10.0) or v1.y < float(-10.0) or
+           v2.x > float(10.0) or v2.x < float(-10.0) or v2.y > float(10.0) or v2.y < float(-10.0)): return
+
+        fb: UINT32PTR = self._fb
+        zb: float | t.CPtr = self._zb
+        w: int = self._w
+        h: int = self._h
+
+        sx0: float = (v0.x + float(1.0)) * float(0.5) * w; sy0: float = (float(1.0) - v0.y) * float(0.5) * h
+        sx1: float = (v1.x + float(1.0)) * float(0.5) * w; sy1: float = (float(1.0) - v1.y) * float(0.5) * h
+        sx2: float = (v2.x + float(1.0)) * float(0.5) * w; sy2: float = (float(1.0) - v2.y) * float(0.5) * h
+
+        minX: int = max(0, int(vipermath.floorf(min(min(sx0, sx1), sx2))))
+        maxX: int = min(w - 1, int(vipermath.ceilf(max(max(sx0, sx1), sx2))))
+        minY: int = max(0, int(vipermath.floorf(min(min(sy0, sy1), sy2))))
+        maxY: int = min(h - 1, int(vipermath.ceilf(max(max(sy0, sy1), sy2))))
+
+        dx12: float = sx1 - sx2; dy12: float = sy1 - sy2
+        dx02: float = sx0 - sx2; dy02: float = sy0 - sy2
+        denom: float = dx12 * dy02 - dy12 * dx02
+        if denom < float(0.001) and denom > float(-0.001): return
+        invDenom: float = float(1.0) / denom
+
+        row_dxP_start: float = float(minX) - sx2
+        for y in range(minY, maxY + 1):
+            dyP: float = float(y) - sy2
+            dxP: float = row_dxP_start
+            row_base: int = y * w
+            for x in range(minX, maxX + 1):
+                w0: float = (dx12 * dyP - dy12 * dxP) * invDenom
+                w1: float = (dxP * dy02 - dyP * dx02) * invDenom
+                w2: float = float(1.0) - w0 - w1
+                if w0 >= 0 and w1 >= 0 and w2 >= 0:
+                    z: float = w0 * v0.z + w1 * v1.z + w2 * v2.z
+                    idx: int = row_base + x
+                    if z < zb[idx]:
+                        zb[idx] = z
+                        fb[idx] = col
+                dxP += float(1.0)
+
+    def DrawGlowDot(self, x: float, y: float, radius: float, core_col: t.CUInt32T, intensity: float):
+        fb: UINT32PTR = self._fb; w: int = self._w; h: int = self._h
+        r: int = int(radius) + 4
+        ix: int = int(x); iy: int = int(y)
+        for dy in range(-r, r + 1):
+            py: int = iy + dy
+            if py < 0 or py >= h: continue
+            for dx in range(-r, r + 1):
+                px: int = ix + dx
+                if px < 0 or px >= w: continue
+                dist: float = vipermath.sqrtf(float(dx*dx + dy*dy))
+                if dist < radius:
+                    self.BlendPixel(px, py, core_col, intensity)
+                elif dist < float(r):
+                    fade: float = 1.0 - (dist - radius) / 4.0
+                    self.BlendPixel(px, py, core_col, intensity * fade * 0.5)
+
+    def BlendPixel(self, x: int, y: int, col: t.CUInt32T, alpha: float):
+        if alpha <= 0.0: return
+        fb: UINT32PTR = self._fb; w: int = self._w; h: int = self._h
+        if x < 0 or x >= w or y < 0 or y >= h: return
+        
+        idx: int = y * w + x
+        bg: t.CUInt32T = fb[idx]
+        bg_b: int = bg & 0xFF; bg_g: int = (bg >> 8) & 0xFF; bg_r: int = (bg >> 16) & 0xFF
+        f_b: int = col & 0xFF; f_g: int = (col >> 8) & 0xFF; f_r: int = (col >> 16) & 0xFF
+        
+        a: int = int(alpha * 255.0)
+        inv_a: int = 255 - a
+        nr: int = (f_r * a + bg_r * inv_a) >> 8
+        ng: int = (f_g * a + bg_g * inv_a) >> 8
+        nb: int = (f_b * a + bg_b * inv_a) >> 8
+        
+        fb[idx] = COLOR_RGB(255 if (nr > 255) else nr,
+                            255 if (ng > 255) else ng,
+                            255 if (nb > 255) else nb)
+
+
+@t.Object
+class Scene3D:
+    renderer: Renderer
+    
+    def __init__(self, fb: UINT32PTR, zb: float | t.CPtr, w: int, h: int):
+        self.renderer = Renderer(fb, zb, w, h)
+
+    def Render(self, time: float):
+        rw: int = self.renderer._w
+        rh: int = self.renderer._h
+        self.renderer.Clear(COLOR_RGB(15, 15, 25))
+        
+        yaw: float = float(45.0) * PI / float(180.0); pitch: float = float(45.0) * PI / float(180.0); radius: float = float(10.0)
+        eye: Vec3 = Vec3(radius*vipermath.cosf(pitch)*vipermath.cosf(yaw), radius*vipermath.sinf(pitch), radius*vipermath.cosf(pitch)*vipermath.sinf(yaw))
+        target: Vec3 = Vec3(0, 0, 0); up: Vec3 = Vec3(0, 1, 0)
+        view: Mat4 = Mat4_LookAt(eye, target, up)
+        proj: Mat4 = Mat4_Perspective(PI / float(3.0), float(rw)/float(rh), float(0.1), float(100.0))
+        vp: Mat4 = Mat4_Mul(proj, view)
+        
+        cubeX: float = float(-3.5)
+        cubeMVP: Mat4 = Mat4_Mul(vp, Mat4_Translate(cubeX, 0, 0))
+        self._DrawCube(cubeMVP, COLOR_RGB(180, 180, 180))
+        
+        colors: t.CArray[t.CUInt32T, 4] = [COLOR_RGB(255,50,50), COLOR_RGB(50,50,255), COLOR_RGB(255,255,50), COLOR_RGB(50,255,255)]
+        for i in range(4):
+            a: float = time * float(1.5) + i * (PI / float(2.0)); r: float = float(3.0)
+            pos: Vec3 = Vec3(vipermath.cosf(a) * r + cubeX, 0, vipermath.sinf(a) * r)
+            sphereMVP: Mat4 = Mat4_Mul(vp, Mat4_Translate(pos.x, pos.y, pos.z))
+            self._DrawSphere(sphereMVP, Vec3(0,0,0), float(0.5), colors[i])
+        
+        self._Draw3DSinWave(vp, Vec3(float(3.5), 0, 0), time)
+        
+        self.renderer.DrawLine2D(50, rh - 150, rw - 50, rh - 150, COLOR_RGB(80, 80, 80))
+        self.renderer.DrawLine2D(50, rh -  50,     50, rh - 250, COLOR_RGB(80, 80, 80))
+        wave_shift: float = time * float(2.0) 
+        prev_x: int = 50; prev_y: int = rh - 150 - int(vipermath.sinf(0 - wave_shift) * float(100.0))
+        for i in range(1, rw - 100):
+            tr: float = float(i) / float(rw-100) * float(4.0) * PI
+            cx: int = 50 + i; cy: int = rh - 150 - int(vipermath.sinf(tr - wave_shift) * float(100.0))
+            self.renderer.DrawLine2D(prev_x, prev_y, cx, cy, COLOR_RGB(0, 255, 100))
+            prev_x = cx; prev_y = cy
+
+    def _DrawCube(self, mvp: Mat4, col: t.CUInt32T):
+        v: t.CArray[Vec3, 8] = [
+            Vec3(-1, -1, -1), Vec3(-1, -1,  1), Vec3(-1,  1, -1), Vec3(-1,  1,  1),
+            Vec3( 1, -1, -1), Vec3( 1, -1,  1), Vec3( 1,  1, -1), Vec3( 1,  1,  1)
+        ]
+        for i in range(8): v[i] = Mat4_MulVec(mvp, v[i])
+        faces: t.CArray[t.CArray[int, 3], 12] = [
+            [0, 2, 1], [1, 2, 3], [4, 1, 5], [4, 0, 1], [6, 3, 2], [6, 7, 3],
+            [4, 6, 0], [0, 6, 2], [5, 7, 4], [4, 7, 6], [1, 3, 5], [5, 3, 7]
+        ]
+        for i in range(12): self.renderer.DrawTriangle(v[faces[i][0]], v[faces[i][1]], v[faces[i][2]], col)
+
+    def _DrawSphere(self, mvp: Mat4, center: Vec3, radius: float, col: t.CUInt32T):
+        step_pi: float = PI / SPHERE_STACKS; step_2pi: float = float(2.0) * PI / SPHERE_SLICES
+        for i in range(SPHERE_STACKS):
+            for j in range(SPHERE_SLICES):
+                theta1: float = i * step_pi; theta2: float = (i + 1) * step_pi
+                phi1: float = j * step_2pi; phi2: float = (j + 1) * step_2pi
+                v: t.CArray[Vec3, 4]
+                v[0] = Vec3(center.x+radius*vipermath.sinf(theta1)*vipermath.cosf(phi1), center.y+radius*vipermath.cosf(theta1), center.z+radius*vipermath.sinf(theta1)*vipermath.sinf(phi1))
+                v[1] = Vec3(center.x+radius*vipermath.sinf(theta1)*vipermath.cosf(phi2), center.y+radius*vipermath.cosf(theta1), center.z+radius*vipermath.sinf(theta1)*vipermath.sinf(phi2))
+                v[2] = Vec3(center.x+radius*vipermath.sinf(theta2)*vipermath.cosf(phi1), center.y+radius*vipermath.cosf(theta2), center.z+radius*vipermath.sinf(theta2)*vipermath.sinf(phi1))
+                v[3] = Vec3(center.x+radius*vipermath.sinf(theta2)*vipermath.cosf(phi2), center.y+radius*vipermath.cosf(theta2), center.z+radius*vipermath.sinf(theta2)*vipermath.sinf(phi2))
+                for k in range(4): v[k] = Mat4_MulVec(mvp, v[k])
+                self.renderer.DrawTriangle(v[0], v[1], v[2], col)
+                self.renderer.DrawTriangle(v[1], v[3], v[2], col)
+
+    def _Draw3DSinWave(self, vp: Mat4, pos: Vec3, time: float):
+        _range: float = float(2.0) * PI; step: float = _range / SIN_WAVE_GRID; scale: float = float(0.5)
+        mvp: Mat4 = Mat4_Mul(vp, Mat4_Mul(Mat4_Translate(pos.x, pos.y, pos.z), Mat4_RotateY(time * float(1.0))))
+        for i in range(SIN_WAVE_GRID):
+            for j in range(SIN_WAVE_GRID):
+                x0: float = -PI + i * step; z0 = -PI + j * step; x1: float = x0 + step; z1 = z0 + step
+                y00: float = vipermath.sinf(x0) * vipermath.cosf(z0) * scale; y10: float = vipermath.sinf(x1) * vipermath.cosf(z0) * scale
+                y01: float = vipermath.sinf(x0) * vipermath.cosf(z1) * scale; y11: float = vipermath.sinf(x1) * vipermath.cosf(z1) * scale
+                
+                t1: float = (y00 / scale + float(1.0)) * float(0.5); r1: int = int(50 + 205 * t1); g1: int = int(80 + 120 * vipermath.sinf(t1 * PI)); b1: int = int(255 - 205 * t1)
+                col1: t.CUInt32T = COLOR_RGB(255 if (r1 > 255) else (0 if (r1 < 0) else r1), 255 if (g1 > 255) else (0 if (g1 < 0) else g1), 255 if (b1 > 255) else (0 if (b1 < 0) else b1))
+                t2: float = (y11 / scale + float(1.0)) * float(0.5); r2: int = int(50 + 205 * t2); g2: int = int(80 + 120 * vipermath.sinf(t2 * PI)); b2: int = int(255 - 205 * t2)
+                col2: t.CUInt32T = COLOR_RGB(255 if (r2 > 255) else (0 if (r2 < 0) else r2), 255 if (g2 > 255) else (0 if (g2 < 0) else g2), 255 if (b2 > 255) else (0 if (b2 < 0) else b2))
+                
+                v00: Vec3 = Mat4_MulVec(mvp, Vec3(x0, y00, z0)); v10: Vec3 = Mat4_MulVec(mvp, Vec3(x1, y10, z0))
+                v01: Vec3 = Mat4_MulVec(mvp, Vec3(x0, y01, z1)); v11: Vec3 = Mat4_MulVec(mvp, Vec3(x1, y11, z1))
+                self.renderer.DrawTriangle(v00, v10, v11, col1); self.renderer.DrawTriangle(v00, v11, v01, col2)

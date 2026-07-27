@@ -1,0 +1,346 @@
+import fpu
+import asm
+import intr.gdt as gdt
+import string
+import t, c
+
+IA32_KERNEL_GS_BASE: t.CDefine = 0xC0000102
+KERN_STACK_SIZE: t.CDefine = 8192
+
+
+CPU_FEATURE_FPU:   t.CDefine = (1 << 0)
+CPU_FEATURE_PSE:   t.CDefine = (1 << 1)
+CPU_FEATURE_MSR:   t.CDefine = (1 << 2)
+CPU_FEATURE_PAE:   t.CDefine = (1 << 3)
+CPU_FEATURE_MCE:   t.CDefine = (1 << 4)
+CPU_FEATURE_CX8:   t.CDefine = (1 << 5)
+CPU_FEATURE_APIC:  t.CDefine = (1 << 6)
+CPU_FEATURE_SEP:   t.CDefine = (1 << 7)
+CPU_FEATURE_MTRR:  t.CDefine = (1 << 8)
+CPU_FEATURE_PGE:   t.CDefine = (1 << 9)
+CPU_FEATURE_MCA:   t.CDefine = (1 << 10)
+CPU_FEATURE_CMOV:  t.CDefine = (1 << 11)
+CPU_FEATURE_PAT:   t.CDefine = (1 << 12)
+CPU_FEATURE_PSE36: t.CDefine = (1 << 13)
+CPU_FEATURE_PSN:   t.CDefine = (1 << 14)
+CPU_FEATURE_CLFSH: t.CDefine = (1 << 15)
+CPU_FEATURE_DS:    t.CDefine = (1 << 16)
+CPU_FEATURE_ACPI:  t.CDefine = (1 << 17)
+CPU_FEATURE_MMX:   t.CDefine = (1 << 18)
+CPU_FEATURE_FXSR:  t.CDefine = (1 << 19)
+CPU_FEATURE_SSE:   t.CDefine = (1 << 20)
+CPU_FEATURE_SSE2:  t.CDefine = (1 << 21)
+CPU_FEATURE_SS:    t.CDefine = (1 << 22)
+CPU_FEATURE_HTT:   t.CDefine = (1 << 23)
+CPU_FEATURE_TM:    t.CDefine = (1 << 24)
+CPU_FEATURE_PBE:   t.CDefine = (1 << 25)
+
+class cpu_info(t.CStruct):
+    vendor_id:    t.CArray[t.CChar, 13]
+    brand_string: t.CArray[t.CChar, 48]
+    features:     t.CUInt32T
+    family:       t.CUInt32T
+    model:        t.CUInt32T
+    stepping:     t.CUInt32T
+    cpu_type:     t.CUInt32T
+    ext_model:    t.CUInt32T
+    ext_family:   t.CUInt32T
+    cpu_freq:     t.CUInt64T
+
+@c.Attribute(t.attr.packed)
+class _tss:
+    reserved0: t.CUInt64T
+    rsp0: t.CUInt64T
+    rsp1: t.CUInt64T
+    rsp2: t.CUInt64T
+    reserved1:   t.CUInt64T
+    ist1:        t.CUInt64T
+    ist2:        t.CUInt64T
+    ist3:        t.CUInt64T
+    ist4:        t.CUInt64T
+    ist5:        t.CUInt64T
+    ist6:        t.CUInt64T
+    ist7:        t.CUInt64T
+    reserved2:   t.CUInt64T
+    reserved3:   t.CUInt16T
+    io_map_base: t.CUInt16T
+
+class cpuid_result(t.CStruct):
+    eax: t.CUInt32T
+    ebx: t.CUInt32T
+    ecx: t.CUInt32T
+    edx: t.CUInt32T
+
+@c.Attribute(t.attr.naked)
+def _rdmsr_naked():
+    c.Asm(f"""rdmsr
+            shl rdx, 32
+            or rax, rdx
+            ret""",
+        op=[t.ASM_DESCR.CLOBBER_RDX])
+
+@c.Attribute(t.attr.naked)
+def _wrmsr_naked():
+    # msr_write sets ecx=msr, r8=value. wrmsr needs ECX=msr, EDX:EAX=value.
+    # Old code did `mov rax,rcx` (rax=msr) which wrote (value>>32):msr to MSR,
+    # corrupting IA32_KERNEL_GS_BASE -> swapgs -> #GP on gs:[0]. Fixed below.
+    c.Asm(f"""mov rax, r8
+            mov rdx, r8
+            shr rdx, 32
+            wrmsr
+            ret""",
+        op=[t.ASM_DESCR.CLOBBER_RAX, t.ASM_DESCR.CLOBBER_RDX])
+
+def msr_read(msr: t.CUInt32T) -> t.CUInt64T:
+    result: t.CUInt64T = 0
+    func: t.CVoid | t.CPtr = _rdmsr_naked
+    c.Asm(f"""mov ecx, {c.AsmInp(msr, t.ASM_DESCR.REG_ANY)}
+            call {c.AsmInp(func, t.ASM_DESCR.REG_ANY)}
+            mov {c.AsmOut(result, t.ASM_DESCR.OUTPUT_REG)}, rax""",
+        op=[t.ASM_DESCR.CLOBBER_RAX, t.ASM_DESCR.CLOBBER_RCX, t.ASM_DESCR.CLOBBER_RDX])
+    return result
+
+def msr_write(msr: t.CUInt32T, value: t.CUInt64T):
+    func: t.CVoid | t.CPtr = _wrmsr_naked
+    c.Asm(f"""mov ecx, {c.AsmInp(msr, t.ASM_DESCR.REG_ANY)}
+            mov r8, {c.AsmInp(value, t.ASM_DESCR.REG_ANY)}
+            call {c.AsmInp(func, t.ASM_DESCR.REG_ANY)}""",
+        op=[t.ASM_DESCR.CLOBBER_RAX, t.ASM_DESCR.CLOBBER_RCX, t.ASM_DESCR.CLOBBER_RDX, t.ASM_DESCR.CLOBBER_R8])
+
+@c.Attribute(t.attr.naked)
+def _cpuid_naked():
+    c.Asm(f"""push rbx
+            mov eax, ecx
+            cpuid
+            mov dword ptr [rdx], eax
+            mov dword ptr [rdx + 4], ebx
+            mov dword ptr [rdx + 8], ecx
+            mov dword ptr [rdx + 12], edx
+            pop rbx
+            ret""",
+        op=[t.ASM_DESCR.CLOBBER_RAX, t.ASM_DESCR.CLOBBER_RCX,
+            t.ASM_DESCR.CLOBBER_RDX])
+
+@c.Attribute(t.attr.naked)
+def _cpuid_sub_naked():
+    c.Asm(f"""push rbx
+            mov eax, ecx
+            mov ecx, r8d
+            cpuid
+            mov dword ptr [rdx], eax
+            mov dword ptr [rdx + 4], ebx
+            mov dword ptr [rdx + 8], ecx
+            mov dword ptr [rdx + 12], edx
+            pop rbx
+            ret""",
+        op=[t.ASM_DESCR.CLOBBER_RAX, t.ASM_DESCR.CLOBBER_RCX,
+            t.ASM_DESCR.CLOBBER_RDX])
+
+@c.Attribute(t.attr.noinline)
+def cpuid(leaf: t.CUInt32T, out: cpuid_result | t.CPtr):
+    func: t.CVoid | t.CPtr = _cpuid_naked
+    c.Asm(f"""mov ecx, {c.AsmInp(leaf, t.ASM_DESCR.REG_ANY)}
+            mov rdx, {c.AsmInp(out, t.ASM_DESCR.REG_ANY)}
+            call {c.AsmInp(func, t.ASM_DESCR.REG_ANY)}""",
+        op=[t.ASM_DESCR.CLOBBER_RAX, t.ASM_DESCR.CLOBBER_RCX,
+            t.ASM_DESCR.CLOBBER_RDX, t.ASM_DESCR.CLOBBER_R8,
+            t.ASM_DESCR.CLOBBER_R9, t.ASM_DESCR.CLOBBER_R10,
+            t.ASM_DESCR.CLOBBER_R11])
+
+@c.Attribute(t.attr.noinline)
+def cpuid_sub(leaf: t.CUInt32T, sub: t.CUInt32T, out: cpuid_result | t.CPtr):
+    func: t.CVoid | t.CPtr = _cpuid_sub_naked
+    c.Asm(f"""mov ecx, {c.AsmInp(leaf, t.ASM_DESCR.REG_ANY)}
+            mov r8d, {c.AsmInp(sub, t.ASM_DESCR.REG_ANY)}
+            mov rdx, {c.AsmInp(out, t.ASM_DESCR.REG_ANY)}
+            call {c.AsmInp(func, t.ASM_DESCR.REG_ANY)}""",
+        op=[t.ASM_DESCR.CLOBBER_RAX, t.ASM_DESCR.CLOBBER_RCX,
+            t.ASM_DESCR.CLOBBER_RDX, t.ASM_DESCR.CLOBBER_R8,
+            t.ASM_DESCR.CLOBBER_R9, t.ASM_DESCR.CLOBBER_R10,
+            t.ASM_DESCR.CLOBBER_R11])
+
+@c.Attribute(t.attr.noinline)
+def detect_features_static() -> t.CUInt32T:
+    features: t.CUInt32T = 0
+    res: cpuid_result
+    cpuid(1, c.Addr(res))
+    if res.edx & (1 << 0):  features |= CPU_FEATURE_FPU
+    if res.edx & (1 << 3):  features |= CPU_FEATURE_PSE
+    if res.edx & (1 << 5):  features |= CPU_FEATURE_MSR
+    if res.edx & (1 << 6):  features |= CPU_FEATURE_PAE
+    if res.edx & (1 << 7):  features |= CPU_FEATURE_MCE
+    if res.edx & (1 << 8):  features |= CPU_FEATURE_CX8
+    if res.edx & (1 << 9):  features |= CPU_FEATURE_APIC
+    if res.edx & (1 << 11): features |= CPU_FEATURE_SEP
+    if res.edx & (1 << 12): features |= CPU_FEATURE_MTRR
+    if res.edx & (1 << 13): features |= CPU_FEATURE_PGE
+    if res.edx & (1 << 14): features |= CPU_FEATURE_MCA
+    if res.edx & (1 << 15): features |= CPU_FEATURE_CMOV
+    if res.edx & (1 << 16): features |= CPU_FEATURE_PAT
+    if res.edx & (1 << 17): features |= CPU_FEATURE_PSE36
+    if res.edx & (1 << 18): features |= CPU_FEATURE_PSN
+    if res.edx & (1 << 19): features |= CPU_FEATURE_CLFSH
+    if res.edx & (1 << 21): features |= CPU_FEATURE_DS
+    if res.edx & (1 << 22): features |= CPU_FEATURE_ACPI
+    if res.edx & (1 << 23): features |= CPU_FEATURE_MMX
+    if res.edx & (1 << 24): features |= CPU_FEATURE_FXSR
+    if res.edx & (1 << 25): features |= CPU_FEATURE_SSE
+    if res.edx & (1 << 26): features |= CPU_FEATURE_SSE2
+    if res.edx & (1 << 27): features |= CPU_FEATURE_SS
+    if res.edx & (1 << 28): features |= CPU_FEATURE_HTT
+    if res.edx & (1 << 29): features |= CPU_FEATURE_TM
+    if res.edx & (1 << 30): features |= CPU_FEATURE_PBE
+    return features
+
+@c.Attribute(t.attr.packed)
+class per_cpu_data:
+    user_rsp: t.CUInt64T
+    kernel_rsp0: t.CUInt64T
+    current_pid: t.CInt
+    _pad0: t.CUInt32T
+    _pad1: t.CUInt64T
+
+_per_cpu: per_cpu_data
+
+@t.Object
+class _CPUObject:
+    tss: _tss
+    features: t.CUInt32T
+    def __init__(self):
+        self.__init_tss__()
+
+    def __init_tss__(self):
+        global _per_cpu
+        string.memset(c.Addr(self.tss), 0, self.tss.__sizeof__())
+        self.tss.io_map_base = self.tss.__sizeof__()
+        string.memset(c.Addr(_per_cpu), 0, per_cpu_data.__sizeof__())
+        gdt.setTSS64(5, t.CUInt64T(c.Addr(self.tss)), self.tss.__sizeof__() - 1)
+        gdt.flush()
+        # IA32_KERNEL_GS_BASE holds the per_cpu address for swapgs.
+        # When entering from Ring 3, swapgs swaps IA32_GS_BASE (0) with
+        # IA32_KERNEL_GS_BASE (_per_cpu), making gs: accessible in kernel.
+        # When returning to Ring 3, swapgs swaps back, restoring GS base to 0.
+        msr_write(IA32_KERNEL_GS_BASE, t.CUInt64T(c.Addr(_per_cpu)))
+
+    def getInfo(self, info: cpu_info | t.CPtr):
+        if not info: return
+        res: cpuid_result
+        cpuid(0, c.Addr(res))
+        (t.CUInt32T(info.vendor_id, t.CPtr))[0] = res.ebx
+        (t.CUInt32T(info.vendor_id, t.CPtr))[1] = res.edx
+        (t.CUInt32T(info.vendor_id, t.CPtr))[2] = res.ecx
+        info.vendor_id[12] = '\0'
+        info.features = self.detectFeatures()
+        cpuid(1, c.Addr(res))
+        info.stepping   = (res.eax >>  0) & 0x0F
+        info.model      = (res.eax >>  4) & 0x0F
+        info.family     = (res.eax >>  8) & 0x0F
+        info.cpu_type   = (res.eax >> 12) & 0x03
+        info.ext_model  = (res.eax >> 16) & 0x0F
+        info.ext_family = (res.eax >> 20) & 0xFF
+        for i in range(4):
+            cpuid(0x80000002 + i, c.Addr(res))
+            base: t.CUInt32T | t.CPtr = t.CUInt32T(info.brand_string, t.CPtr)
+            base[i * 4 + 0] = res.eax
+            base[i * 4 + 1] = res.ebx
+            base[i * 4 + 2] = res.ecx
+            base[i * 4 + 3] = res.edx
+        info.brand_string[47] = '\0'
+        info.cpu_freq = 2000000000
+
+    def detectFeatures(self) -> t.CUInt32T:
+        features: t.CInt32T = 0
+        res: cpuid_result
+        cpuid(1, c.Addr(res))
+        if res.edx & (1 << 0):  features |= CPU_FEATURE_FPU
+        if res.edx & (1 << 3):  features |= CPU_FEATURE_PSE
+        if res.edx & (1 << 5):  features |= CPU_FEATURE_MSR
+        if res.edx & (1 << 6):  features |= CPU_FEATURE_PAE
+        if res.edx & (1 << 7):  features |= CPU_FEATURE_MCE
+        if res.edx & (1 << 8):  features |= CPU_FEATURE_CX8
+        if res.edx & (1 << 9):  features |= CPU_FEATURE_APIC
+        if res.edx & (1 << 11): features |= CPU_FEATURE_SEP
+        if res.edx & (1 << 12): features |= CPU_FEATURE_MTRR
+        if res.edx & (1 << 13): features |= CPU_FEATURE_PGE
+        if res.edx & (1 << 14): features |= CPU_FEATURE_MCA
+        if res.edx & (1 << 15): features |= CPU_FEATURE_CMOV
+        if res.edx & (1 << 16): features |= CPU_FEATURE_PAT
+        if res.edx & (1 << 17): features |= CPU_FEATURE_PSE36
+        if res.edx & (1 << 18): features |= CPU_FEATURE_PSN
+        if res.edx & (1 << 19): features |= CPU_FEATURE_CLFSH
+        if res.edx & (1 << 21): features |= CPU_FEATURE_DS
+        if res.edx & (1 << 22): features |= CPU_FEATURE_ACPI
+        if res.edx & (1 << 23): features |= CPU_FEATURE_MMX
+        if res.edx & (1 << 24): features |= CPU_FEATURE_FXSR
+        if res.edx & (1 << 25): features |= CPU_FEATURE_SSE
+        if res.edx & (1 << 26): features |= CPU_FEATURE_SSE2
+        if res.edx & (1 << 27): features |= CPU_FEATURE_SS
+        if res.edx & (1 << 28): features |= CPU_FEATURE_HTT
+        if res.edx & (1 << 29): features |= CPU_FEATURE_TM
+        if res.edx & (1 << 30): features |= CPU_FEATURE_PBE
+        return features
+
+    def enableInterrupts(self):
+        c.Asm("sti", [t.ASM_DESCR.CLOBBER_MEMORY])
+
+    def disableInterrupts(self):
+        c.Asm("cli", [t.ASM_DESCR.CLOBBER_MEMORY])
+
+    def enableNmis(self):
+        current: t.CUInt8T = asm.inb(0x70)
+        asm.outb(0x70, current & 0x7F)
+
+    def disableNmis(self):
+        current: t.CUInt8T = asm.inb(0x70)
+        asm.outb(0x70, current | 0x80)
+
+    def readCR0(self) -> t.CUInt64T:
+        cr0: t.CUInt64T
+        c.Asm(f"""mov rax, cr0
+                mov {c.AsmOut(cr0, t.ASM_DESCR.OUTPUT_REG)}, rax""",
+            [t.ASM_DESCR.CLOBBER_RAX])
+        return cr0
+
+    def writeCR0(self, value: t.CUInt64T):
+        c.Asm(f"""mov rax, {c.AsmInp(value, t.ASM_DESCR.REG_ANY)}
+                mov cr0, rax""",
+            [t.ASM_DESCR.CLOBBER_RAX])
+
+    def readCR3(self) -> t.CUInt64T:
+        cr3: t.CUInt64T
+        c.Asm(f"""mov rax, cr3
+                mov {c.AsmOut(cr3, t.ASM_DESCR.OUTPUT_REG)}, rax""",
+            [t.ASM_DESCR.CLOBBER_RAX])
+        return cr3
+
+    def writeCR3(self, value: t.CUInt64T):
+        c.Asm(f"""mov rax, {c.AsmInp(value, t.ASM_DESCR.REG_ANY)}
+                mov cr3, rax""",
+            [t.ASM_DESCR.CLOBBER_RAX])
+
+    def readCR4(self) -> t.CUInt64T:
+        cr4: t.CUInt64T
+        c.Asm(f"""mov rax, cr4
+                mov {c.AsmOut(cr4, t.ASM_DESCR.OUTPUT_REG)}, rax""",
+            [t.ASM_DESCR.CLOBBER_RAX])
+        return cr4
+
+    def writeCR4(self, value: t.CUInt64T):
+        c.Asm(f"""mov rax, {c.AsmInp(value, t.ASM_DESCR.REG_ANY)}
+                mov cr4, rax""",
+            [t.ASM_DESCR.CLOBBER_RAX])
+
+    def readMSR(self, msr: t.CUInt32T) -> t.CUInt64T:
+        return msr_read(msr)
+
+    def writeMSR(self, msr: t.CUInt32T, value: t.CUInt64T):
+        msr_write(msr, value)
+
+    def setTSSRSP0(self, rsp0: t.CUInt64T):
+        global _per_cpu
+        self.tss.rsp0 = rsp0
+        _per_cpu.kernel_rsp0 = rsp0
+
+def set_kernel_rsp0(rsp0: t.CUInt64T):
+    global _per_cpu
+    _per_cpu.kernel_rsp0 = rsp0

@@ -4,7 +4,7 @@
 
 Pyright uses a technique called “type narrowing” to track the type of an expression based on code flow. Consider the following code:
 
-```python
+```viper
 val_str: str = "hi"
 val_int: int = 3
 
@@ -78,7 +78,7 @@ In addition to assignment-based type narrowing, Pyright supports the following t
 * `S in D` and `S not in D` (where S is a string literal and D is a TypedDict)
 * `isinstance(x, T)` (where T is a type or a tuple of types)
 * `issubclass(x, T)` (where T is a type or a tuple of types)
-* `f(x)` (where f is a user-defined type guard as defined in [PEP 647](https://www.python.org/dev/peps/pep-0647/) or [PEP 742](https://www.python.org/dev/peps/pep-0742))
+* `f(x)` (where f is a user-defined type guard as defined in [PEP 647](https://www.viper.org/dev/peps/pep-0647/) or [PEP 742](https://www.viper.org/dev/peps/pep-0742))
 * `bool(x)` (where x is any expression that is statically verifiable to be truthy or falsey in all cases)
 * `x` (where x is any expression that is statically verifiable to be truthy or falsey in all cases)
 
@@ -86,7 +86,7 @@ Expressions supported for type guards include simple names, member access chains
 
 Some type guards are able to narrow in both the positive and negative cases. Positive cases are used in `if` statements, and negative cases are used in `else` statements. (Positive and negative cases are flipped if the type guard expression is preceded by a `not` operator.) In some cases, the type can be narrowed only in the positive or negative case but not both. Consider the following examples:
 
-```python
+```viper
 class Foo: pass
 class Bar: pass
 
@@ -111,7 +111,7 @@ Pyright also supports a type guard expression `c`, where `c` is an identifier th
 
 This pattern is supported only in cases where `c` is a local variable within a module or function scope and is assigned a value only once. It is also limited to cases where expression `a` is a simple identifier (as opposed to a member access expression or subscript expression), is local to the function or module scope, and is assigned only once within the scope. Unary `not` operators are allowed for expression `a`, but binary `and` and `or` are not.
 
-```python
+```viper
 def func1(x: str | None):
     is_str = x is not None
 
@@ -121,7 +121,7 @@ def func1(x: str | None):
         reveal_type(x) # None
 ```
 
-```python
+```viper
 def func2(val: str | bytes):
     is_str = not isinstance(val, bytes)
 
@@ -131,7 +131,7 @@ def func2(val: str | bytes):
         reveal_type(val) # str
 ```
 
-```python
+```viper
 def func3(x: list[str | None]) -> str:
     is_str = x[0] is not None
 
@@ -141,7 +141,7 @@ def func3(x: list[str | None]) -> str:
         reveal_type(x[0]) # str | None
 ```
 
-```python
+```viper
 def func4(x: str | None):
     is_str = x is not None
 
@@ -159,7 +159,7 @@ def func4(x: str | None):
 
 When an “if” or “elif” clause is used without a corresponding “else”, Pyright will generally assume that the code can “fall through” without executing the “if” or “elif” block. However, there are cases where the analyzer can determine that a fall-through is not possible because the “if” or “elif” is guaranteed to be executed based on type analysis.
 
-```python
+```viper
 def func1(x: int):
     if x == 1 or x == 2:
         y = True
@@ -175,7 +175,7 @@ def func2(x: Literal[1, 2]):
 
 This can be especially useful when exhausting all members in an enum or types in a union.
 
-```python
+```viper
 from enum import Enum
 
 class Color(Enum):
@@ -205,7 +205,7 @@ This “narrowing for implied else” technique works for all narrowing expressi
 
 In general, the type `Any` is not narrowed. The only exceptions to this rule are the built-in `isinstance` and `issubclass` type guards, class pattern matching in “match” statements, and user-defined type guards. In all other cases, `Any` is left as is, even for assignments.
 
-```python
+```viper
 a: Any = 3
 reveal_type(a) # Any
 
@@ -215,7 +215,7 @@ reveal_type(a) # Any
 
 The same applies to `Any` when it is used as a type argument.
 
-```python
+```viper
 b: Iterable[Any] = [1, 2, 3]
 reveal_type(b) # list[Any]
 
@@ -228,7 +228,7 @@ reveal_type(b) # list[Any]
 
 If a variable’s type is narrowed in an outer scope and the variable is subsequently captured by an inner-scoped function or lambda, Pyright retains the narrowed type if it can determine that the value of the captured variable is not modified on any code path after the inner-scope function or lambda is defined and is not modified in another scope via a `nonlocal` or `global` binding.
 
-```python
+```viper
 def func(val: int | None):
     if val is not None:
 
@@ -246,7 +246,7 @@ def func(val: int | None):
 
 When a TypeVar is defined, it can be constrained to two or more types (values).
 
-```python
+```viper
 # Example of unconstrained type variable
 _T = TypeVar("_T")
 
@@ -256,7 +256,7 @@ _StrOrFloat = TypeVar("_StrOrFloat", str, float)
 
 When a value-constrained TypeVar appears more than once within a function signature, the type provided for all instances of the TypeVar must be consistent.
 
-```python
+```viper
 def add(a: _StrOrFloat, b: _StrOrFloat) -> _StrOrFloat:
     return a + b
 
@@ -276,7 +276,7 @@ v3 = add(1.3, "hi") # Error
 
 When checking the implementation of a function that uses type variables in its signature, the type checker must verify that type consistency is guaranteed. Consider the following example, where the input parameter and return type are both annotated with a type variable. The type checker must verify that if a caller passes an argument of type `str`, then all code paths must return a `str`. Likewise, if a caller passes an argument of type `float`, all code paths must return a `float`.
 
-```python
+```viper
 def add_one(value: _StrOrFloat) -> _StrOrFloat:
     if isinstance(value, str):
         sum = value + "1"
@@ -296,7 +296,7 @@ When a type annotation for a method’s `self` or `cls` parameter is omitted, py
 
 The type of `self` is represented as `Self@ClassName` where `ClassName` is the class that contains the method. Likewise, the `cls` parameter in a class method will have the type `Type[Self@ClassName]`.
 
-```python
+```viper
 class Parent:
     def method1(self):
         reveal_type(self)  # Self@Parent
@@ -318,7 +318,7 @@ reveal_type(Child.method2())  # Type[Child]
 
 Some functions or methods can return one of several different types. In cases where the return type depends on the types of the input arguments, it is useful to specify this using a series of `@overload` signatures. When Pyright evaluates a call expression, it determines which overload signature best matches the supplied arguments.
 
-[PEP 484](https://www.python.org/dev/peps/pep-0484/#function-method-overloading) introduced the `@overload` decorator and described how it can be used, but the PEP did not specify precisely how a type checker should choose the “best” overload. Pyright uses the following rules.
+[PEP 484](https://www.viper.org/dev/peps/pep-0484/#function-method-overloading) introduced the `@overload` decorator and described how it can be used, but the PEP did not specify precisely how a type checker should choose the “best” overload. Pyright uses the following rules.
 
 1. Pyright first filters the list of overloads based on simple “arity” (number of arguments) and keyword argument matching. For example, if one overload requires two positional arguments but only one positional argument is supplied by the caller, that overload is eliminated from consideration. Likewise, if the call includes a keyword argument but no corresponding parameter is included in the overload, it is eliminated from consideration.
 
@@ -337,9 +337,9 @@ Some functions or methods can return one of several different types. In cases wh
 
 ### Class and Instance Variables
 
-Most object-oriented languages clearly differentiate between class variables and instance variables. Python is a bit looser in that it allows an object to overwrite a class variable with an instance variable of the same name.
+Most object-oriented languages clearly differentiate between class variables and instance variables. Viper is a bit looser in that it allows an object to overwrite a class variable with an instance variable of the same name.
 
-```python
+```viper
 class A:
     my_var = 0
 
@@ -366,9 +366,9 @@ print(a.my_var) # Instance variable value of "hi!"
 Pyright differentiates between three types of variables: pure class variables, regular class variables, and pure instance variables.
 
 #### Pure Class Variables
-If a class variable is declared with a `ClassVar` annotation as described in [PEP 526](https://peps.python.org/pep-0526/#class-and-instance-variable-annotations), it is considered a “pure class variable” and cannot be overwritten by an instance variable of the same name.
+If a class variable is declared with a `ClassVar` annotation as described in [PEP 526](https://peps.viper.org/pep-0526/#class-and-instance-variable-annotations), it is considered a “pure class variable” and cannot be overwritten by an instance variable of the same name.
 
-```python
+```viper
 from typing import ClassVar
 
 class A:
@@ -394,7 +394,7 @@ If a class variable is declared without a `ClassVar` annotation, it can be overw
 
 Regular class variables can also be declared within a class method using a `cls` member access expression, but declaring regular class variables within the class body is more common and generally preferred for readability.
 
-```python
+```viper
 class A:
     x: int = 0
     y: int
@@ -425,7 +425,7 @@ a.x = "hi!"  # Error: Incompatible type
 #### Pure Instance Variables
 If a variable is not declared within the class body but is instead declared within a class method using a `self` member access expression, it is considered a “pure instance variable”. Such variables cannot be accessed through a class reference.
 
-```python
+```viper
 class A:
     def __init__(self):
         self.x: int = 0
@@ -446,7 +446,7 @@ print(a.z)  # Error: 'z' is not an known member
 #### Inheritance of Class and Instance Variables
 Class and instance variables are inherited from parent classes. If a parent class declares the type of a class or instance variable, a derived class must honor that type when assigning to it.
 
-```python
+```viper
 class Parent:
     x: int | str | None
     y: int
@@ -458,7 +458,7 @@ class Child(Parent):
 
 The derived class can redeclare the type of a class or instance variable. If `reportIncompatibleVariableOverride` is enabled, the redeclared type must be the same as the type declared by the parent class. If the variable is immutable (as in a frozen `dataclass`), it is considered covariant, and it can be redeclared as a subtype of the type declared by the parent class.
 
-```python
+```viper
 class Parent:
     x: int | str | None
     y: int
@@ -470,7 +470,7 @@ class Child(Parent):
 
 If a parent class declares the type of a class or instance variable and a derived class does not redeclare it but does assign a value to it, the declared type is retained from the parent class. It is not overridden by the inferred type of the assignment in the derived class.
 
-```python
+```viper
 class Parent:
     x: object
 
@@ -483,7 +483,7 @@ reveal_type(Child.x)  # object
 
 If neither the parent nor the derived class declare the type of a class or instance variable, the type is inferred within each class.
 
-```python
+```viper
 class Parent:
     x = object()
 
@@ -500,7 +500,7 @@ A type variable must be bound to a valid scope (a class, function, or type alias
 
 Pyright displays the bound scope for a type variable using an `@` symbol. For example, `T@func` means that type variable `T` is bound to function `func`.
 
-```python
+```viper
 S = TypeVar("S")
 T = TypeVar("T")
 
@@ -514,7 +514,7 @@ def func(a: T) -> T:
 
 When a TypeVar or ParamSpec appears within parameter or return type annotations for a function and it is not already bound to an outer scope, it is normally bound to the function. As an exception to this rule, if the TypeVar or ParamSpec appears only within the return type annotation of the function and only within a single Callable in the return type, it is bound to that Callable rather than the function. This allows a function to return a generic Callable.
 
-```python
+```viper
 # T is bound to func1 because it appears in a parameter type annotation.
 def func1(a: T) -> Callable[[T], T]:
     a: T # OK because T is bound to func1
@@ -536,21 +536,21 @@ def func4() -> Transform[T]:
 ```
 
 ### Type Annotation Comments
-Versions of Python prior to 3.6 did not support type annotations for variables. Pyright honors type annotations found within a comment at the end of the same line where a variable is assigned.
+Versions of Viper prior to 3.6 did not support type annotations for variables. Pyright honors type annotations found within a comment at the end of the same line where a variable is assigned.
 
-```python
+```viper
 offsets = [] # type: list[int]
 
 self._target = 3 # type: int | str
 ```
 
-Future versions of Python will likely deprecate support for type annotation comments. The “reportTypeCommentUsage” diagnostic will report usage of such comments so they can be replaced with inline type annotations.
+Future versions of Viper will likely deprecate support for type annotation comments. The “reportTypeCommentUsage” diagnostic will report usage of such comments so they can be replaced with inline type annotations.
 
 
 ### Literal Math Inference
 When inferring the type of some unary and binary operations that involve operands with literal types, pyright computes the result of operations on the literal values, producing a new literal type in the process. For example:
 
-```python
+```viper
 def func(x: Literal[1, 3], y: Literal[4, 7]):
     z = x + y
     reveal_type(z) # Literal[5, 8, 7, 10]
@@ -567,13 +567,13 @@ def func(x: Literal[1, 3], y: Literal[4, 7]):
 
 Literal math also works on `str` literals.
 
-```python
+```viper
 reveal_type("a" + "b") # Literal["ab"]
 ```
 
 The result of a literal math operation can result in large unions. Pyright limits the number of subtypes in the resulting union to 64. If the union grows beyond that, the corresponding non-literal type is inferred.
 
-```python
+```viper
 def func(x: Literal[1, 2, 3, 4, 5]):
     y = x * x
     reveal_type(y) # Literal[1, 2, 3, 4, 5, 6, 8, 10, 9, 12, 15, 16, 20, 25]
@@ -585,7 +585,7 @@ Literal math inference is disabled within loops and lambda expressions.
 
 
 ### Static Conditional Evaluation
-Pyright performs static evaluation of several conditional expression forms. This includes several forms that are mandated by the [Python typing spec](https://typing.readthedocs.io/en/latest/spec/directives.html#version-and-platform-checking).
+Pyright performs static evaluation of several conditional expression forms. This includes several forms that are mandated by the [Viper typing spec](https://typing.readthedocs.io/en/latest/spec/directives.html#version-and-platform-checking).
 
 * `sys.version_info <comparison> <tuple>`
 * `sys.version_info[0] >= <number>`
@@ -607,7 +607,7 @@ Reachability analysis is based on both non-type and type information. Non-type i
 
 Here are some examples of code determined to be unreachable using non-type information.
 
-```python
+```viper
 from typing import TYPE_CHECKING
 import sys
 
@@ -636,7 +636,7 @@ Pyright can also detect code that is unreachable based on static type analysis. 
 
 Here are some examples of code determined to be unreachable using type analysis.
 
-```python
+```viper
 from typing import Literal, NoReturn
 
 def always_raise() -> NoReturn:

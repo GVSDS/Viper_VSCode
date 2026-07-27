@@ -1,0 +1,116 @@
+import platform.pch as pch
+import asm
+import t, c
+
+
+
+# 串口端口定义
+COM1_PORT: t.CDefine = 0x3F8  # COM1端口地址
+COM2_PORT: t.CDefine = 0x2F8  # COM2端口地址
+
+# 8250/16550 UART寄存器偏移
+UART_RBR: t.CDefine = 0   # 接收缓冲区寄存器（读）
+UART_THR: t.CDefine = 0   # 发送保持寄存器（写）
+UART_DLL: t.CDefine = 0   # 除数锁存低位（写，DLAB=1）
+UART_IER: t.CDefine = 1   # 中断使能寄存器
+UART_DLM: t.CDefine = 1   # 除数锁存高位（写，DLAB=1）
+UART_FCR: t.CDefine = 2   # FIFO控制寄存器
+UART_IIR: t.CDefine = 2   # 中断识别寄存器（读）
+UART_LCR: t.CDefine = 3   # 线路控制寄存器
+UART_MCR: t.CDefine = 4   # 调制解调器控制寄存器
+UART_LSR: t.CDefine = 5   # 线路状态寄存器
+UART_MSR: t.CDefine = 6   # 调制解调器状态寄存器
+UART_SCR: t.CDefine = 7   #  scratch register
+
+
+UART_LSR_THRE: t.CDefine =   0x20    # THRE：发送保持寄存器空
+UART_LSR_TEMT: t.CDefine =   0x40    # TEMT：发送移位寄存器空（真正的发送完成）
+
+
+# 线路控制寄存器位定义
+UART_LCR_DLAB: t.CDefine = 0x80  # 除数锁存访问位
+UART_LCR_8BIT: t.CDefine = 0x03  # 8位数据位
+
+# 线路状态寄存器位定义
+UART_LSR_DR:   t.CDefine =  0x01   # 数据就绪
+UART_LSR_THRE: t.CDefine = 0x20   # 发送保持寄存器空
+
+# 波特率除数（115200 bps）
+BAUD_115200: t.CDefine = 1
+
+
+# 初始化UART 8250/16550
+def init(port: t.CUInt16T):
+    # 1. 禁用中断
+    asm.outb(port + UART_IER, 0x00)
+    delay(1000)
+    # 2. 设置波特率除数（115200 bps）
+    asm.outb(port + UART_LCR, UART_LCR_DLAB) # 设置DLAB位
+    delay(1000)
+    asm.outb(port + UART_DLL, 0x01) # 除数低位 (115200 bps)
+    delay(1000)
+    asm.outb(port + UART_DLM, 0x00) # 除数高位
+    delay(1000)
+    # 3. 设置线路控制：8位数据位，1位停止位，无校验
+    asm.outb(port + UART_LCR, UART_LCR_8BIT)
+    delay(1000)
+    # 4. 初始化FIFO
+    asm.outb(port + UART_FCR, 0x07) # 启用FIFO，清除接收和发送FIFO
+    delay(1000)
+    # 5. 设置调制解调器控制
+    asm.outb(port + UART_MCR, 0x03) # 启用DTR、RTS
+    delay(1000)
+    # 6. 清除任何待处理的中断
+    asm.inb(port + UART_IIR)
+    delay(1000)
+    asm.inb(port + UART_RBR)
+    delay(1000)
+    # 7. 等待一段时间让设备稳定
+    delay(10000)
+
+# 延迟函数
+def delay(count: t.CInt):
+    for i in range(count): c.Asm("nop")
+
+# 检查发送缓冲区是否为空
+def isTransmitEmpty(port: t.CUInt16T) -> t.CInt:
+    return asm.inb(port + UART_LSR) & UART_LSR_THRE
+
+def putchar(port: t.CUInt16T, cr: t.CChar):
+    # 1. 处理换行符：串口终端需要\r\n才会正确换行，只发\n会错位
+    if cr == '\n':
+        # 直接发送\r，避免递归调用
+        timeout: t.CUInt32T = 1000000
+        while ((asm.inb(port + UART_LSR) & UART_LSR_THRE) == 0) and timeout:
+            c.Asm("nop")
+            timeout -= 1
+        if timeout == 0: return
+        asm.outb(port + UART_THR, '\r')
+        timeout = 1000000
+        while ((asm.inb(port + UART_LSR) & UART_LSR_TEMT) == 0) and timeout:
+            c.Asm("nop")
+            timeout -= 1
+    # 2. 等待发送缓冲区为空
+    timeout: t.CUInt32T = 1000000
+    while ((asm.inb(port + UART_LSR) & UART_LSR_THRE) == 0) and timeout:
+        c.Asm("nop")
+        timeout -= 1
+    if timeout == 0: return
+    # 3. 发送字符
+    asm.outb(port + UART_THR, cr)
+    # 4. 等待发送完成
+    timeout = 1000000
+    while ((asm.inb(port + UART_LSR) & UART_LSR_TEMT) == 0) and timeout:
+        c.Asm("nop")
+        timeout -= 1
+
+# 检查是否有数据可读
+def isDataAvailable(port: t.CUInt16T) -> t.CInt:
+    return asm.inb(port + UART_LSR) & UART_LSR_DR
+
+# 读取一个字符
+def getchar(port: t.CUInt16T) -> t.CChar:
+    # 等待数据可用
+    while not isDataAvailable(port): pass
+    # 读取字符
+    return asm.inb(port + UART_RBR)

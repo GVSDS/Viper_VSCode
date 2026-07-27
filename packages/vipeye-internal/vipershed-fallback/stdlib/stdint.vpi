@@ -1,0 +1,138 @@
+# Viper C stdint.h 类型别名存根。
+# 姑息策略：所有整数/指针别名映射为 Python int，浮点映射为 float。
+# 与 t.vpi 配合，提供 Win32/TransPyC 风格的大写别名及 C 标准小写 _t 别名。
+
+from t import *
+
+# =============================================================================
+# 大写别名（Win32/TransPyC 风格）
+# 注意：INTPTR/UINTPTR 在此模块中是 int*/unsigned int* 指针类型（历史命名）。
+# 它们与 C 标准的 intptr_t/uintptr_t 整数类型不同，后者见下方小写 _t 区域。
+# =============================================================================
+INT: int            # = t.CInt
+INTPTR: int         # = t.CInt | t.CPtr（int 指针）
+
+BOOL: int           # = t.CInt
+UINT: int           # = t.CUnsignedInt
+UINTPTR: int        # = UINT | t.CPtr
+BYTE: int           # = t.CUnsignedChar
+BYTEPTR: int        # = BYTE | t.CPtr
+WORD: int           # = t.CUInt16T
+DWORD: int          # = t.CUInt32T
+QWORD: int          # = t.CUInt64T
+TCHAR: int          # = t.CChar
+CHARLIST: int       # = str | t.CPtr
+VOID: int           # = t.CVoid
+
+SHORT: int          # = t.CShort
+SHORTPTR: int       # = t.CShort | t.CPtr
+USHORT: int         # = t.CUnsignedShort
+USHORTPTR: int      # = t.CUnsignedShort | t.CPtr
+
+LONGLONG: int       # = t.CLongLong
+ULONGLONG: int      # = t.CUnsignedLongLong
+LONG: int           # = t.CLong
+ULONG: int          # = t.CUnsignedLong
+
+WCHAR: int          # = WORD
+WCHARPTR: int       # = WORD | t.CPtr
+CHARPTR: int        # = t.CChar | t.CPtr
+FSIZE_t: int        # = DWORD
+LBA_t: int          # = DWORD
+
+VOIDPTR: int        # = t.CVoid | t.CPtr
+FLOAT: float        # = t.CFloat
+DOUBLE: float       # = t.CDouble
+
+FLOAT8: float       # = t.CFloat8T
+FLOAT16: float      # = t.CFloat16T
+FLOAT32: float      # = t.CFloat32T
+FLOAT64: float      # = t.CFloat64T
+FLOAT128: float     # = t.CFloat128T
+
+# =============================================================================
+# 定长整数大写别名
+# =============================================================================
+INT8: int           # = t.CInt8T
+INT16: int          # = t.CInt16T
+INT32: int          # = t.CInt32T
+INT64: int          # = t.CInt64T
+
+UINT8: int          # = t.CUInt8T
+UINT16: int         # = t.CUInt16T
+UINT32: int         # = t.CUInt32T
+UINT64: int         # = t.CUInt64T
+
+INT8PTR: int        # = t.CInt8T | t.CPtr
+INT16PTR: int       # = t.CInt16T | t.CPtr
+INT32PTR: int       # = t.CInt32T | t.CPtr
+INT64PTR: int       # = t.CInt64T | t.CPtr
+
+UINT8PTR: int       # = t.CUInt8T | t.CPtr
+UINT16PTR: int      # = t.CUInt16T | t.CPtr
+UINT32PTR: int      # = t.CUInt32T | t.CPtr
+UINT64PTR: int      # = t.CUInt64T | t.CPtr
+
+CHAR8: int          # = t.CChar8T
+CHAR16: int         # = t.CChar16T
+CHAR32: int         # = t.CChar32T
+CHAR8PTR: int       # = t.CChar8T | t.CPtr
+CHAR16PTR: int      # = t.CChar16T | t.CPtr
+CHAR32PTR: int      # = t.CChar32T | t.CPtr
+
+i8: int             # = t.CInt8T
+i16: int            # = t.CInt16T
+i32: int            # = t.CInt32T
+i64: int            # = t.CInt64T
+
+u8: int             # = t.CUInt8T
+u16: int            # = t.CUInt16T
+u32: int            # = t.CUInt32T
+u64: int            # = t.CUInt64T
+
+SIZE_T: int         # = t.CSizeT
+SSIZE_T: int        # = t.CPtrDiffT
+PTRDIFF_T: int      # = t.CPtrDiffT
+
+# =============================================================================
+# C 标准库 <stdint.h> 类型名（小写 _t 后缀）
+# 用户 `from stdint import *` 后即可直接使用 int8_t / size_t 等。
+# =============================================================================
+int8_t: int         # = t.CInt8T
+int16_t: int        # = t.CInt16T
+int32_t: int        # = t.CInt32T
+int64_t: int        # = t.CInt64T
+
+uint8_t: int        # = t.CUInt8T
+uint16_t: int       # = t.CUInt16T
+uint32_t: int       # = t.CUInt32T
+uint64_t: int       # = t.CUInt64T
+
+size_t: int         # = t.CSizeT
+ssize_t: int        # = t.CPtrDiffT
+ptrdiff_t: int      # = t.CPtrDiffT
+
+# intptr_t/uintptr_t 是足以容纳指针的整数类型（不是指针！）
+# 与上方的 INTPTR/UINTPTR（int 指针）语义不同。
+intptr_t: int       # = t.CIntPtrT
+uintptr_t: int      # = t.CUIntPtrT
+
+# 宽字符 / 字符类型
+wchar_t: int        # = t.CWCharT
+char8_t: int        # = t.CChar8T
+char16_t: int       # = t.CChar16T
+char32_t: int       # = t.CChar32T
+
+# 浮点特化类型
+float8_t: float     # = t.CFloat8T
+float16_t: float    # = t.CFloat16T
+float32_t: float    # = t.CFloat32T
+float64_t: float    # = t.CFloat64T
+float128_t: float   # = t.CFloat128T
+
+_Bool: int          # = t.CBool
+
+
+def __getattr__(name: str) -> int:
+    """兜底：未声明的 stdint 别名返回 int。"""
+    return 0

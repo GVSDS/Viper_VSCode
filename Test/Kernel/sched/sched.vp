@@ -1,0 +1,299 @@
+import mm
+import asm
+import sched.process as proc
+import drivers.serial.uart.serial as serial
+import viperlib
+import t, c
+
+
+THREAD_READY: t.CDefine = 0
+THREAD_RUNNING: t.CDefine = 1
+THREAD_BLOCKED: t.CDefine = 2
+THREAD_DONE: t.CDefine = 3
+MAX_THREADS: t.CDefine = 16
+THREAD_STACK_SIZE: t.CDefine = 65536
+SCHED_QUANTUM: t.CDefine = 10
+
+_yield_cnt: t.CUInt32T = 0
+_yield_lock: t.CInt = 0
+
+
+@t.Object
+class Thread:
+    rsp:        t.CUInt64T
+    stack:      t.CVoid | t.CPtr
+    stack_size: t.CUInt64T
+    func:       t.CVoid | t.CPtr
+    arg:        t.CVoid | t.CPtr
+    state:      t.CInt
+    tid:        int
+    pid:        t.CInt
+
+    def block(self):
+        self.state = THREAD_BLOCKED
+        Scheduler._yield()
+
+    def unblock(self):
+        if self.state == THREAD_BLOCKED:
+            self.state = THREAD_READY
+
+    @property
+    def is_running(self) -> t.CInt:
+        if self.state == THREAD_RUNNING:
+            return 1
+        return 0
+
+    @property
+    def is_blocked(self) -> t.CInt:
+        if self.state == THREAD_BLOCKED:
+            return 1
+        return 0
+
+    @property
+    def is_done(self) -> t.CInt:
+        if self.state == THREAD_DONE:
+            return 1
+        return 0
+
+
+@t.Object
+class Scheduler:
+    threads:          t.CArray[Thread, MAX_THREADS]
+    current_tid:      t.CInt
+    thread_count:     t.CInt
+    enabled:          t.CInt
+    needs_reschedule: t.CInt
+    tick_count:       t.CInt
+
+    def __init__(self):
+        global _sched_ptr
+        _sched_ptr = c.Addr(_sched_storage)
+        s: Scheduler | t.CPtr = _sched_ptr
+        s.current_tid = 0
+        s.thread_count = 1
+        s.enabled = 0
+        s.needs_reschedule = 0
+        s.tick_count = 0
+        i: int
+        for i in range(MAX_THREADS):
+            s.threads[i].rsp = 0
+            s.threads[i].stack = None
+            s.threads[i].stack_size = 0
+            s.threads[i].func = None
+            s.threads[i].arg = None
+            s.threads[i].state = THREAD_DONE
+            s.threads[i].tid = i
+            s.threads[i].pid = 0
+        s.enabled = 1
+        s.threads[0].state = THREAD_RUNNING
+        s.threads[0].tid = 0
+        main_rsp_ptr: t.CVoid | t.CPtr = c.Addr(s.threads[0].rsp)
+        c.Asm(f"""mov qword ptr [{c.AsmInp(main_rsp_ptr, t.ASM_DESCR.REG_ANY)}], rsp""",
+            op=[t.ASM_DESCR.CLOBBER_MEMORY])
+
+    @staticmethod
+    def _yield():
+        global _switch_old_rsp, _switch_new_rsp, _yield_cnt, _yield_lock
+        _if_saved: t.CInt = 0
+        c.Asm(f"""pushfq
+                pop rax
+                shr rax, 9
+                and eax, 1
+                mov {c.AsmOut(_if_saved, t.ASM_DESCR.OUTPUT_REG)}, eax""",
+            op=[t.ASM_DESCR.CLOBBER_RAX])
+        asm.cli()
+        if _yield_lock:
+            if _if_saved:
+                asm.sti()
+            return
+        _yield_lock = 1
+        s: Scheduler | t.CPtr = _sched_ptr
+        s.needs_reschedule = 0
+        s.tick_count = 0
+        old_tid: t.CInt = s.current_tid
+        next_tid: t.CInt = old_tid + 1
+        if next_tid >= s.thread_count:
+            next_tid = 0
+        found: t.CInt = 0
+        count: t.CInt = 0
+        while count < s.thread_count:
+            st: t.CInt = s.threads[next_tid].state
+            if st == THREAD_READY or st == THREAD_RUNNING:
+                found = 1
+                break
+            next_tid += 1
+            if next_tid >= s.thread_count:
+                next_tid = 0
+            count += 1
+        if found == 0:
+            _yield_lock = 0
+            if _if_saved:
+                asm.sti()
+            return
+        if next_tid == old_tid:
+            _yield_lock = 0
+            if _if_saved:
+                asm.sti()
+            return
+        if s.threads[old_tid].state == THREAD_RUNNING:
+            s.threads[old_tid].state = THREAD_READY
+        s.threads[next_tid].state = THREAD_RUNNING
+        _switch_old_rsp = c.Addr(s.threads[old_tid].rsp)
+        _switch_new_rsp = c.Addr(s.threads[next_tid].rsp)
+        s.current_tid = next_tid
+        next_pid: t.CInt = s.threads[next_tid].pid
+        _yield_cnt += 1
+        proc.switch_pid(next_pid)
+        _yield_lock = 0
+        _do_switch()
+        if _if_saved:
+            asm.sti()
+
+    @staticmethod
+    def sched_tick():
+        s: Scheduler | t.CPtr = _sched_ptr
+        if not s.enabled: return
+        if s.thread_count <= 1: return
+        s.tick_count += 1
+        if s.tick_count >= SCHED_QUANTUM:
+            s.tick_count = 0
+            s.needs_reschedule = 1
+
+    @staticmethod
+    def try_reschedule():
+        s: Scheduler | t.CPtr = _sched_ptr
+        if s.needs_reschedule:
+            s.needs_reschedule = 0
+            Scheduler._yield()
+
+    @staticmethod
+    def disable():
+        s: Scheduler | t.CPtr = _sched_ptr
+        s.enabled = 0
+
+    @staticmethod
+    def enable():
+        s: Scheduler | t.CPtr = _sched_ptr
+        s.enabled = 1
+
+    @staticmethod
+    def current() -> Thread | t.CPtr:
+        s: Scheduler | t.CPtr = _sched_ptr
+        return c.Addr(s.threads[s.current_tid])
+
+    @staticmethod
+    def get_thread(tid: t.CInt) -> Thread | t.CPtr:
+        s: Scheduler | t.CPtr = _sched_ptr
+        if tid < 0 or tid >= s.thread_count: return None
+        return c.Addr(s.threads[tid])
+
+    @staticmethod
+    def create_thread(func: t.CVoid | t.CPtr, arg: t.CVoid | t.CPtr, thread_pid: t.CInt = 0) -> Thread | t.CPtr:
+        s: Scheduler | t.CPtr = _sched_ptr
+        if s.thread_count >= MAX_THREADS: return None
+        tid: int = s.thread_count
+        s.thread_count += 1
+        th: Thread | t.CPtr = c.Addr(s.threads[tid])
+        th.state = THREAD_READY
+        th.tid = tid
+        th.pid = thread_pid
+        th.func = func
+        th.arg = arg
+        stack_size: t.CUInt64T = THREAD_STACK_SIZE
+        stack_ptr: t.CVoid | t.CPtr = mm.malloc(stack_size)
+        if not stack_ptr: return None
+        th.stack = stack_ptr
+        th.stack_size = stack_size
+        stack_top: t.CUInt64T = t.CUInt64T(stack_ptr) + stack_size - 16
+        stack_top = stack_top & ~t.CUInt64T(0xF)
+        entry_addr: t.CUInt64T = t.CUInt64T(c.Addr(_thread_entry))
+        sp: t.CPtr = t.CPtr(stack_top)
+        c.Asm(f"""mov rax, {c.AsmInp(sp, t.ASM_DESCR.REG_ANY)}
+                mov qword ptr [rax - 64], 0x202
+                mov qword ptr [rax - 56], 0
+                mov qword ptr [rax - 48], 0
+                mov qword ptr [rax - 40], 0
+                mov qword ptr [rax - 32], 0
+                mov qword ptr [rax - 24], 0
+                mov qword ptr [rax - 16], 0
+                mov qword ptr [rax - 8], 0
+                mov qword ptr [rax], {c.AsmInp(entry_addr, t.ASM_DESCR.REG_ANY)}""",
+            op=[t.ASM_DESCR.CLOBBER_MEMORY, t.ASM_DESCR.CLOBBER_RAX])
+        stack_top = stack_top - 64
+        th.rsp = stack_top
+        return th
+
+
+_sched_storage:  Scheduler = Scheduler()
+_sched_ptr:      Scheduler | t.CPtr = c.Addr(_sched_storage)
+_switch_old_rsp: t.CVoid | t.CPtr
+_switch_new_rsp: t.CVoid | t.CPtr
+
+@c.Attribute(t.attr.naked)
+def _do_switch():
+    c.Asm(f"""push rax
+            push rbx
+            push rbp
+            push r12
+            push r13
+            push r14
+            push r15
+            pushfq
+            mov rax, qword ptr [rip + _switch_old_rsp]
+            mov qword ptr [rax], rsp
+            mov rax, qword ptr [rip + _switch_new_rsp]
+            mov rsp, qword ptr [rax]
+            popfq
+            pop r15
+            pop r14
+            pop r13
+            pop r12
+            pop rbp
+            pop rbx
+            pop rax
+            ret""",
+          op=[t.ASM_DESCR.CLOBBER_MEMORY])
+
+@c.Attribute(t.attr.naked)
+def _thread_entry():
+    c.Asm(f"""sub rsp, 8
+            mov rax, qword ptr [rip + _sched_ptr]
+            mov ecx, dword ptr [rax + 896]
+            movsxd rcx, ecx
+            imul rcx, rcx, 56
+            mov rdi, qword ptr [rax + rcx + 32]
+            mov rax, qword ptr [rax + rcx + 24]
+            call rax
+            mov rax, qword ptr [rip + _sched_ptr]
+            mov ecx, dword ptr [rax + 896]
+            movsxd rcx, ecx
+            imul rcx, rcx, 56
+            mov dword ptr [rax + rcx + 40], 3
+            add rsp, 8""",
+          op=[t.ASM_DESCR.CLOBBER_MEMORY, t.ASM_DESCR.CLOBBER_RAX,
+              t.ASM_DESCR.CLOBBER_RCX, t.ASM_DESCR.CLOBBER_RDX,
+              t.ASM_DESCR.CLOBBER_R8, t.ASM_DESCR.CLOBBER_R9,
+              t.ASM_DESCR.CLOBBER_R10, t.ASM_DESCR.CLOBBER_R11])
+    Scheduler._yield()
+    while True:
+        asm.sti()
+        asm.hlt()
+        Scheduler._yield()
+
+def thread_current() -> t.CInt:
+    s: Scheduler | t.CPtr = _sched_ptr
+    return s.current_tid
+
+def needs_reschedule() -> t.CInt:
+    s: Scheduler | t.CPtr = _sched_ptr
+    return s.needs_reschedule
+
+def sched_dump():
+    s: Scheduler | t.CPtr = _sched_ptr
+    dl: t.CArray[t.CChar, 80]
+    viperlib.snprintf(c.Addr(dl), 80, "[sched] dump: cur=%d cnt=%d yields=%u\n", s.current_tid, s.thread_count, _yield_cnt)
+    serial.puts(dl)
+    for i in range(s.thread_count):
+        sl: t.CArray[t.CChar, 80]
+        viperlib.snprintf(c.Addr(sl), 80, "  t%d: st=%d pid=%d rsp=0x%lx\n", i, s.threads[i].state, s.threads[i].pid, s.threads[i].rsp)
+        serial.puts(sl)

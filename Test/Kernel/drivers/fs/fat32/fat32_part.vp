@@ -1,0 +1,147 @@
+from stdint import *
+import fat32_types as types
+import fat32_diskio as diskio
+import string
+import t, c
+
+
+MAX_VOLUMES: t.CDefine = 4
+MAX_PARTITIONS: t.CDefine = 4
+
+MBR_SIGNATURE:       t.CDefine = 0xAA55
+PART_TYPE_FAT32:     t.CDefine = 0x0C
+PART_TYPE_FAT32_LBA: t.CDefine = 0x0B
+PART_TYPE_FAT16:     t.CDefine = 0x06
+PART_TYPE_FAT16_LBA: t.CDefine = 0x0E
+
+class partition_entry:
+	boot_flag:  t.CUInt8T
+	start_chs:  t.CArray[t.CUInt8T, 3]
+	part_type:  t.CUInt8T
+	end_chs:    t.CArray[t.CUInt8T, 3]
+	start_lba:  t.CUInt32T
+	total_sectors: t.CUInt32T
+
+drive_pdrv:       t.CArray[t.CUInt8T, MAX_VOLUMES]
+drive_num_parts:  t.CArray[t.CInt, MAX_VOLUMES]
+drive_letter_map: t.CArray[t.CChar, MAX_VOLUMES]
+volume_mounted:   t.CArray[t.CInt, MAX_VOLUMES]
+part_types:       t.CArray[t.CUInt8T, MAX_VOLUMES * MAX_PARTITIONS]
+part_start_lbas:  t.CArray[t.CUInt64T, MAX_VOLUMES * MAX_PARTITIONS]
+part_totals:      t.CArray[t.CUInt64T, MAX_VOLUMES * MAX_PARTITIONS]
+part_is_fat32:    t.CArray[t.CInt, MAX_VOLUMES * MAX_PARTITIONS]
+
+num_drives: t.CInt = 0
+
+def _init():
+	if num_drives > 0: return
+	i: t.CInt
+	for i in range(MAX_VOLUMES):
+		drive_letter_map[i] = 0
+		volume_mounted[i]   = 0
+		drive_pdrv[i]       = 0
+		drive_num_parts[i]  = 0
+	j: t.CInt
+	for j in range(MAX_VOLUMES * MAX_PARTITIONS):
+		part_types[j]      = 0
+		part_start_lbas[j] = 0
+		part_totals[j]     = 0
+		part_is_fat32[j]   = 0
+
+def _part_idx(drive: t.CInt, part: t.CInt) -> t.CInt:
+	return drive * MAX_PARTITIONS + part
+
+def parse_mbr(pdrv: t.CUInt8T, drive_idx: t.CInt) -> types.FRESULT:
+	buf: t.CArray[t.CUInt8T, 512]
+	res: types.DRESULT = diskio.read(pdrv, c.Addr(buf[0]), 0, 1)
+	if res != types.DRESULT.RES_OK: return types.FRESULT.FR_DISK_ERR
+	if buf[0] == 0xEB or buf[0] == 0xE9:
+		return types.FRESULT.FR_NO_FILESYSTEM
+	sig: t.CUInt16T = t.CUInt16T(buf[510]) | (t.CUInt16T(buf[511]) << 8)
+	if sig != MBR_SIGNATURE: return types.FRESULT.FR_NO_FILESYSTEM
+	drive_pdrv[drive_idx]      = pdrv
+	drive_num_parts[drive_idx] = 0
+	i: t.CInt
+	for i in range(4):
+		base: t.CUInt32T = 446 + t.CUInt32T(i * 16)
+		ptype:  t.CUInt8T  = buf[base + 4]
+		slba:   t.CUInt32T = t.CUInt32T(buf[base + 8])  | (t.CUInt32T(buf[base + 9])  << 8) | (t.CUInt32T(buf[base + 10]) << 16) | (t.CUInt32T(buf[base + 11]) << 24)
+		tsec:   t.CUInt32T = t.CUInt32T(buf[base + 12]) | (t.CUInt32T(buf[base + 13]) << 8) | (t.CUInt32T(buf[base + 14]) << 16) | (t.CUInt32T(buf[base + 15]) << 24)
+		if ptype != 0 and tsec > 0:
+			pi: t.CInt = drive_num_parts[drive_idx]
+			if pi < MAX_PARTITIONS:
+				pidx: t.CInt = _part_idx(drive_idx, pi)
+				part_types[pidx]      = ptype
+				part_start_lbas[pidx] = t.CUInt64T(slba)
+				part_totals[pidx]     = t.CUInt64T(tsec)
+				part_is_fat32[pidx]   = 1 if (ptype == PART_TYPE_FAT32 or ptype == PART_TYPE_FAT32_LBA) else 0
+				drive_num_parts[drive_idx] = pi + 1
+	return types.FRESULT.FR_OK
+
+def scan_drives() -> types.FRESULT:
+	_init()
+	global num_drives
+	num_drives = 0
+	pdrv: t.CUInt8T
+	for pdrv in range(MAX_VOLUMES):
+		res: types.DRESULT = diskio.init(pdrv)
+		if res != types.DRESULT.RES_OK: continue
+		res2: types.FRESULT = parse_mbr(pdrv, num_drives)
+		if res2 == types.FRESULT.FR_OK and drive_num_parts[num_drives] > 0:
+			drive_letter_map[num_drives] = t.CChar(ord('C') + num_drives)
+		else:
+			drive_pdrv[num_drives]      = pdrv
+			drive_num_parts[num_drives] = 1
+			pidx: t.CInt = _part_idx(num_drives, 0)
+			part_types[pidx]      = PART_TYPE_FAT32_LBA
+			part_start_lbas[pidx] = 0
+			part_totals[pidx]     = 0
+			part_is_fat32[pidx]   = 1
+			drive_letter_map[num_drives] = t.CChar(ord('C') + num_drives)
+		num_drives = num_drives + 1
+		if num_drives >= MAX_VOLUMES: break
+	return types.FRESULT.FR_OK
+
+def get_drive(letter: t.CChar) -> t.CInt:
+	_init()
+	i: t.CInt
+	for i in range(num_drives):
+		if drive_letter_map[i] == letter or drive_letter_map[i] == (letter - 32) or drive_letter_map[i] == (letter + 32):
+			return i
+	return -1
+
+def get_pdrv(letter: t.CChar) -> t.CUInt8T:
+	idx: t.CInt = get_drive(letter)
+	if idx < 0: return 0
+	return drive_pdrv[idx]
+
+def get_partition_start(letter: t.CChar, part_idx: t.CInt) -> t.CUInt64T:
+	idx: t.CInt = get_drive(letter)
+	if idx < 0: return 0
+	if part_idx >= drive_num_parts[idx]: return 0
+	pidx: t.CInt = _part_idx(idx, part_idx)
+	return part_start_lbas[pidx]
+
+def get_partition_count(letter: t.CChar) -> t.CInt:
+	idx: t.CInt = get_drive(letter)
+	if idx < 0: return 0
+	return drive_num_parts[idx]
+
+def is_partition_fat32(letter: t.CChar, part_idx: t.CInt) -> t.CInt:
+	idx: t.CInt = get_drive(letter)
+	if idx < 0: return 0
+	if part_idx >= drive_num_parts[idx]: return 0
+	pidx: t.CInt = _part_idx(idx, part_idx)
+	return part_is_fat32[pidx]
+
+def get_drive_count() -> t.CInt:
+	return num_drives
+
+def get_drive_letter(idx: t.CInt) -> t.CChar:
+	if idx < 0 or idx >= num_drives: return 0
+	return drive_letter_map[idx]
+
+def set_drive_letter(idx: t.CInt, letter: t.CChar) -> types.FRESULT:
+	if idx < 0 or idx >= num_drives: return types.FRESULT.FR_INVALID_PARAMETER
+	drive_letter_map[idx] = letter
+	return types.FRESULT.FR_OK

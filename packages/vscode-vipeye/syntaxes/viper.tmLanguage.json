@@ -1,0 +1,680 @@
+{
+    "name": "Viper",
+    "scopeName": "source.viper",
+    "patterns": [
+        {
+            "include": "#statement"
+        }
+    ],
+    "repository": {
+        "statement": {
+            "patterns": [
+                {
+                    "include": "#line-comment"
+                },
+                {
+                    "include": "#string-quoted-double-block"
+                },
+                {
+                    "include": "#string-quoted-single-block"
+                },
+                {
+                    "include": "#string-quoted-double"
+                },
+                {
+                    "include": "#string-quoted-single"
+                },
+                {
+                    "include": "#fstring-double-block"
+                },
+                {
+                    "include": "#fstring-single-block"
+                },
+                {
+                    "include": "#fstring-double"
+                },
+                {
+                    "include": "#fstring-single"
+                },
+                {
+                    "include": "#literal"
+                },
+                {
+                    "include": "#decorator"
+                },
+                {
+                    "include": "#function-declaration"
+                },
+                {
+                    "include": "#class-declaration"
+                },
+                {
+                    "include": "#import-statement"
+                },
+                {
+                    "include": "#reserved"
+                },
+                {
+                    "include": "#builtin-functions"
+                },
+                {
+                    "include": "#module-access"
+                },
+                {
+                    "include": "#class-call"
+                },
+                {
+                    "include": "#function-call"
+                },
+                {
+                    "include": "#builtin-types"
+                },
+                {
+                    "include": "#builtin-constants"
+                },
+                {
+                    "include": "#magic-names"
+                },
+                {
+                    "include": "#language-variable"
+                },
+                {
+                    "include": "#type-name"
+                },
+                {
+                    "include": "#variable"
+                },
+                {
+                    "include": "#illegal"
+                }
+            ]
+        },
+        "line-comment": {
+            "name": "comment.line.number-sign.viper",
+            "match": "(\\#).*$",
+            "captures": {
+                "1": {
+                    "name": "punctuation.definition.comment.viper"
+                }
+            }
+        },
+        "string-quoted-double-block": {
+            "name": "string.quoted.double.block.viper",
+            "begin": "(\"\"\")",
+            "beginCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.begin.viper"
+                }
+            },
+            "end": "(\"\"\")",
+            "endCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.end.viper"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#escape-sequence-unicode"
+                },
+                {
+                    "include": "#escape-sequence"
+                },
+                {
+                    "include": "#string-formatting"
+                }
+            ]
+        },
+        "string-quoted-single-block": {
+            "name": "string.quoted.single.block.viper",
+            "begin": "(''')",
+            "beginCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.begin.viper"
+                }
+            },
+            "end": "(''')",
+            "endCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.end.viper"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#escape-sequence-unicode"
+                },
+                {
+                    "include": "#escape-sequence"
+                },
+                {
+                    "include": "#string-formatting"
+                }
+            ]
+        },
+        "string-quoted-double": {
+            "name": "string.quoted.double.viper",
+            "begin": "(\")",
+            "beginCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.begin.viper"
+                }
+            },
+            "end": "(\")",
+            "endCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.end.viper"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#escape-sequence-unicode"
+                },
+                {
+                    "include": "#escape-sequence"
+                },
+                {
+                    "include": "#string-formatting"
+                }
+            ]
+        },
+        "string-quoted-single": {
+            "name": "string.quoted.single.viper",
+            "begin": "(')",
+            "beginCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.begin.viper"
+                }
+            },
+            "end": "(')",
+            "endCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.end.viper"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#escape-sequence-unicode"
+                },
+                {
+                    "include": "#escape-sequence"
+                },
+                {
+                    "include": "#string-formatting"
+                }
+            ]
+        },
+        "fstring-double-block": {
+            "name": "string.quoted.double.block.viper meta.fstring.viper",
+            "begin": "([fFrR]b?|b[fFrR])(\"\"\")",
+            "beginCaptures": {
+                "1": {
+                    "name": "storage.type.string.viper"
+                },
+                "2": {
+                    "name": "punctuation.definition.string.begin.viper"
+                }
+            },
+            "end": "(\"\"\")",
+            "endCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.end.viper"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#fstring-content"
+                }
+            ]
+        },
+        "fstring-single-block": {
+            "name": "string.quoted.single.block.viper meta.fstring.viper",
+            "begin": "([fFrR]b?|b[fFrR])(''')",
+            "beginCaptures": {
+                "1": {
+                    "name": "storage.type.string.viper"
+                },
+                "2": {
+                    "name": "punctuation.definition.string.begin.viper"
+                }
+            },
+            "end": "(''')",
+            "endCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.end.viper"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#fstring-content"
+                }
+            ]
+        },
+        "fstring-double": {
+            "name": "string.quoted.double.viper meta.fstring.viper",
+            "begin": "([fFrR]b?|b[fFrR])(\")",
+            "beginCaptures": {
+                "1": {
+                    "name": "storage.type.string.viper"
+                },
+                "2": {
+                    "name": "punctuation.definition.string.begin.viper"
+                }
+            },
+            "end": "(\")",
+            "endCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.end.viper"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#fstring-content"
+                }
+            ]
+        },
+        "fstring-single": {
+            "name": "string.quoted.single.viper meta.fstring.viper",
+            "begin": "([fFrR]b?|b[fFrR])(')",
+            "beginCaptures": {
+                "1": {
+                    "name": "storage.type.string.viper"
+                },
+                "2": {
+                    "name": "punctuation.definition.string.begin.viper"
+                }
+            },
+            "end": "(')",
+            "endCaptures": {
+                "1": {
+                    "name": "punctuation.definition.string.end.viper"
+                }
+            },
+            "patterns": [
+                {
+                    "include": "#fstring-content"
+                }
+            ]
+        },
+        "fstring-content": {
+            "patterns": [
+                {
+                    "include": "#escape-sequence-unicode"
+                },
+                {
+                    "include": "#escape-sequence"
+                },
+                {
+                    "name": "meta.interpolation.viper",
+                    "begin": "(\\{)",
+                    "beginCaptures": {
+                        "1": {
+                            "name": "keyword.control.decorator.viper"
+                        }
+                    },
+                    "end": "(\\})",
+                    "endCaptures": {
+                        "1": {
+                            "name": "keyword.control.decorator.viper"
+                        }
+                    },
+                    "contentName": "meta.embedded",
+                    "patterns": [
+                        {
+                            "include": "#literal"
+                        },
+                        {
+                            "include": "#reserved"
+                        },
+                        {
+                            "include": "#builtin-functions"
+                        },
+                        {
+                            "include": "#builtin-types"
+                        },
+                        {
+                            "include": "#builtin-constants"
+                        },
+                        {
+                            "include": "#language-variable"
+                        },
+                        {
+                            "include": "#module-access"
+                        },
+                        {
+                            "include": "#class-call"
+                        },
+                        {
+                            "include": "#function-call"
+                        },
+                        {
+                            "include": "#fstring-interpolation-punctuation"
+                        },
+                        {
+                            "include": "#variable"
+                        }
+                    ]
+                }
+            ]
+        },
+        "fstring-interpolation-punctuation": {
+            "patterns": [
+                {
+                    "name": "meta.brace.round.viper",
+                    "match": "[()]"
+                },
+                {
+                    "name": "meta.brace.square.viper",
+                    "match": "[\\[\\]]"
+                },
+                {
+                    "name": "punctuation.separator.arguments.viper",
+                    "match": ","
+                },
+                {
+                    "name": "punctuation.accessor.viper",
+                    "match": "\\."
+                },
+                {
+                    "name": "keyword.operator.assignment.viper",
+                    "match": "="
+                },
+                {
+                    "name": "keyword.operator.arithmetic.viper",
+                    "match": "[+\\-*/%]"
+                },
+                {
+                    "name": "keyword.operator.comparison.viper",
+                    "match": "[<>=!]=|[<>]"
+                }
+            ]
+        },
+        "escape-sequence-unicode": {
+            "name": "constant.character.escape.viper",
+            "match": "\\\\([uU][0-9A-Fa-f]{4,8}|N\\{[^}]+\\})"
+        },
+        "escape-sequence": {
+            "name": "constant.character.escape.viper",
+            "match": "\\\\(['\"\\\\\\n\\r\\t\\abfv0-7]|x[0-9A-Fa-f]{2})"
+        },
+        "string-formatting": {
+            "name": "constant.other.placeholder.viper",
+            "match": "%(\\([^)]*\\))?[+#-]*(\\d+|\\*)?(?:\\.(\\d+|\\*))?[hlL]?[diouxXeEfFgGcrsa%]"
+        },
+        "literal": {
+            "patterns": [
+                {
+                    "name": "constant.language.viper",
+                    "match": "\\b(True|False|None|NotImplemented|Ellipsis|__debug__)\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.hexadecimal.viper",
+                    "match": "\\b0[xX][_0-9A-Fa-f]+\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.octal.viper",
+                    "match": "\\b0[oO][_0-7]+\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.binary.viper",
+                    "match": "\\b0[bB][_01]+\\b"
+                },
+                {
+                    "name": "constant.numeric.float.viper",
+                    "match": "(?x)\n  (?<!\\.)\n  (?:\n    (?: \\d[\\d_]* \\.[\\d_]* (?:[eE][+-]?\\d+)? )\n    | (?: \\.\\d[\\d_]* (?:[eE][+-]?\\d+)? )\n    | (?: \\d[\\d_]* [eE][+-]?\\d+ )\n  )\n  ([jJ])?"
+                },
+                {
+                    "name": "constant.numeric.integer.decimal.viper",
+                    "match": "\\b[0-9][\\d_]*\\b"
+                }
+            ]
+        },
+        "decorator": {
+            "name": "meta.function.decorator.viper",
+            "match": "(?x)\n  ^[ \\t]*\n  (@)\n  ([A-Za-z_][\\w.]*)\n",
+            "captures": {
+                "1": {
+                    "name": "keyword.control.decorator.viper"
+                },
+                "2": {
+                    "name": "entity.name.function.decorator.viper"
+                }
+            }
+        },
+        "function-declaration": {
+            "name": "meta.function.viper",
+            "begin": "(?x)\n  ^[ \\t]*\n  (?:\\b(async)\\s+)?\n  (def)\\s+\n  ([A-Za-z_][\\w]*)\n",
+            "beginCaptures": {
+                "1": {
+                    "name": "storage.type.async.viper"
+                },
+                "2": {
+                    "name": "storage.type.function.viper"
+                },
+                "3": {
+                    "name": "entity.name.function.viper"
+                }
+            },
+            "end": "(?x)\n  (?= \\s* : \\s* (?: $ | \\# ) )\n",
+            "patterns": [
+                {
+                    "include": "#parameters"
+                },
+                {
+                    "include": "#return-type"
+                },
+                {
+                    "include": "#line-comment"
+                }
+            ]
+        },
+        "class-declaration": {
+            "name": "meta.class.viper",
+            "begin": "(?x)\n  ^[ \\t]*\n  (class)\\s+\n  ([A-Za-z_][\\w]*)\n",
+            "beginCaptures": {
+                "1": {
+                    "name": "storage.type.class.viper"
+                },
+                "2": {
+                    "name": "entity.name.type.class.viper"
+                }
+            },
+            "end": "(?x)\n  (?= \\s* : \\s* (?: $ | \\# ) )\n",
+            "patterns": [
+                {
+                    "name": "punctuation.definition.inheritance.begin.viper",
+                    "match": "\\("
+                },
+                {
+                    "name": "punctuation.definition.inheritance.end.viper",
+                    "match": "\\)"
+                },
+                {
+                    "include": "#builtin-types"
+                },
+                {
+                    "include": "#line-comment"
+                }
+            ]
+        },
+        "parameters": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.unpacking.arguments.viper",
+                    "match": "(\\*\\*|\\*)"
+                },
+                {
+                    "include": "#literal"
+                },
+                {
+                    "include": "#builtin-types"
+                },
+                {
+                    "include": "#builtin-constants"
+                },
+                {
+                    "name": "variable.parameter.viper",
+                    "match": "\\b[A-Za-z_][\\w]*\\b"
+                },
+                {
+                    "name": "keyword.operator.assignment.viper",
+                    "match": "="
+                },
+                {
+                    "name": "keyword.operator.arrow.viper",
+                    "match": "->"
+                },
+                {
+                    "name": "punctuation.separator.parameters.viper",
+                    "match": ","
+                }
+            ]
+        },
+        "return-type": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.arrow.viper",
+                    "match": "->"
+                },
+                {
+                    "include": "#builtin-types"
+                }
+            ]
+        },
+        "reserved": {
+            "patterns": [
+                {
+                    "name": "keyword.control.flow.viper",
+                    "match": "\\b(elif|else|for|if|while|return|yield|with|try|finally|except|raise|break|continue|pass|match|case)\\b"
+                },
+                {
+                    "name": "keyword.control.import.viper",
+                    "match": "\\b(import|from|as)\\b"
+                },
+                {
+                    "name": "keyword.control.flow.viper",
+                    "match": "\\b(and|or|not|in|is)\\b"
+                },
+                {
+                    "name": "storage.type.function.viper",
+                    "match": "\\b(def|lambda)\\b"
+                },
+                {
+                    "name": "storage.type.class.viper",
+                    "match": "\\b(class)\\b"
+                },
+                {
+                    "name": "storage.modifier.async.viper",
+                    "match": "\\b(async|await)\\b"
+                },
+                {
+                    "name": "storage.modifier.declaration.viper",
+                    "match": "\\b(global|nonlocal|del|assert)\\b"
+                }
+            ]
+        },
+        "builtin-functions": {
+            "name": "support.function.builtin.viper",
+            "match": "(?x)\n  \\b(\n    __import__|abs|aiter|all|anext|any|ascii|bin|bool|breakpoint|bytearray|\n    bytes|callable|chr|classmethod|compile|complex|delattr|dict|dir|divmod|\n    enumerate|eval|exec|exit|filter|float|format|frozenset|getattr|globals|\n    hasattr|hash|help|hex|id|input|int|isinstance|issubclass|iter|len|\n    list|locals|map|max|memoryview|min|next|object|oct|open|ord|pow|print|\n    property|quit|range|repr|reversed|round|set|setattr|slice|sorted|\n    staticmethod|str|sum|super|tuple|type|vars|zip\n  )\\b(?=\\s*\\()"
+        },
+        "function-call": {
+            "name": "meta.function-call.viper",
+            "match": "\\b([A-Za-z_][\\w]*)\\s*(?=\\()",
+            "captures": {
+                "1": {
+                    "name": "entity.name.function.viper"
+                }
+            }
+        },
+        "builtin-types": {
+            "name": "support.type.builtin.viper",
+            "match": "(?x)\n  \\b(\n    Any|Callable|ClassVar|Final|ForwardRef|Generic|Literal|NamedTuple|\n    NewType|Optional|ParamSpec|Protocol|Tuple|Type|TypeAlias|TypeVar|\n    TypeVarTuple|Union|Unpack|\n    int|str|bytes|float|bool|list|dict|tuple|set|frozenset|object|type|\n    complex|bytearray|memoryview|range|slice|None|True|False|Ellipsis\n  )\\b"
+        },
+        "builtin-constants": {
+            "name": "support.constant.builtin.viper",
+            "match": "(?x)\n  \\b(\n    ArithmeticError|AssertionError|AttributeError|BaseException|\n    BaseExceptionGroup|BlockingIOError|BrokenPipeError|BufferError|\n    BytesWarning|ChildProcessError|ConnectionAbortedError|\n    ConnectionError|ConnectionRefusedError|ConnectionResetError|\n    DeprecationWarning|EOFError|EncodingWarning|EnvironmentError|\n    Exception|ExceptionGroup|FileExistsError|FileNotFoundError|\n    FloatingPointError|FutureWarning|GeneratorExit|IOError|ImportError|\n    ImportWarning|IndentationError|IndexError|InterruptedError|\n    IsADirectoryError|KeyError|KeyboardInterrupt|LookupError|MemoryError|\n    ModuleNotFoundError|NameError|NotADirectoryError|\n    NotImplementedWarning|OSError|OverflowError|\n    PendingDeprecationWarning|PermissionError|ProcessLookupError|\n    RecursionError|ReferenceError|ResourceWarning|RuntimeError|\n    RuntimeWarning|StopAsyncIteration|StopIteration|SyntaxError|\n    SyntaxWarning|SystemError|SystemExit|TabError|TimeoutError|TypeError|\n    UnboundLocalError|UnicodeDecodeError|UnicodeEncodeError|UnicodeError|\n    UnicodeTranslateError|UnicodeWarning|UserWarning|ValueError|Warning|\n    WindowsError|ZeroDivisionError\n  )\\b"
+        },
+        "magic-names": {
+            "name": "support.variable.magic.viper",
+            "match": "(?x)\n  \\b(\n    __all__|__bases__|__basicsize__|__builtins__|__class__|__dict__|\n    __doc__|__file__|__flags__|__itemsize__|__members__|__module__|\n    __mro__|__name__|__path__|__qualname__|__subclasses__|__version__|\n    __abs__|__add__|__aenter__|__aexit__|__aiter__|__and__|__anext__|\n    __await__|__bool__|__bytes__|__call__|__cmp__|__coerce__|__complex__|\n    __contains__|__del__|__delattr__|__delete__|__delitem__|__delslice__|\n    __dir__|__divmod__|__enter__|__eq__|__exit__|__float__|__floordiv__|\n    __format__|__ge__|__get__|__getattr__|__getattribute__|__getitem__|\n    __getnewargs__|__getslice__|__gt__|__hash__|__hex__|__iadd__|__iand__|\n    __ifloordiv__|__ilshift__|__imatmul__|__imod__|__imul__|__index__|\n    __init__|__init_subclass__|__int__|__invert__|__ior__|__ipow__|\n    __irshift__|__isub__|__iter__|__itruediv__|__ixor__|__le__|__len__|\n    __length_hint__|__lshift__|__lt__|__matmul__|__missing__|__mod__|\n    __mro_entries__|__mul__|__ne__|__neg__|__new__|__next__|__nonzero__|\n    __oct__|__or__|__pos__|__pow__|__radd__|__rand__|__rdivmod__|__repr__|\n    __reversed__|__rfloordiv__|__rlshift__|__rmatmul__|__rmod__|__rmul__|\n    __ror__|__round__|__rpow__|__rrshift__|__rshift__|__rsub__|\n    __rtruediv__|__rxor__|__set__|__setattr__|__setitem__|__setslice__|\n    __sizeof__|__str__|__sub__|__subclasshook__|__truediv__|__trunc__|\n    __xor__\n  )\\b"
+        },
+        "language-variable": {
+            "name": "variable.language.viper",
+            "match": "\\b(self|cls)\\b"
+        },
+        "variable": {
+            "name": "variable.other.viper",
+            "match": "\\b[A-Za-z_][\\w]*\\b"
+        },
+        "import-statement": {
+            "patterns": [
+                {
+                    "name": "meta.import.viper",
+                    "match": "(?x)\n  ^[ \\t]*\n  (from)\\s+\n  ([A-Za-z_][\\w]*(?:\\.[A-Za-z_][\\w]*)*)\n  \\s+(import)\\b",
+                    "captures": {
+                        "1": {"name": "keyword.control.import.viper"},
+                        "2": {"name": "entity.name.namespace.viper"},
+                        "3": {"name": "keyword.control.import.viper"}
+                    }
+                },
+                {
+                    "name": "meta.import.viper",
+                    "begin": "(?x)^[ \\t]*(import)\\b\\s*",
+                    "beginCaptures": {
+                        "1": {"name": "keyword.control.import.viper"}
+                    },
+                    "end": "(?=#|$)",
+                    "patterns": [
+                        {
+                            "match": "\\b(as)\\b",
+                            "name": "keyword.control.import.viper"
+                        },
+                        {
+                            "match": "\\b([A-Za-z_][\\w]*(?:\\.[A-Za-z_][\\w]*)*)\\b",
+                            "name": "entity.name.namespace.viper"
+                        },
+                        {
+                            "match": ",",
+                            "name": "punctuation.separator.import.viper"
+                        }
+                    ]
+                }
+            ]
+        },
+        "class-call": {
+            "name": "meta.class-call.viper",
+            "match": "\\b([A-Z][\\w]*)\\s*(?=\\()",
+            "captures": {
+                "1": {"name": "entity.name.type.class.viper"}
+            }
+        },
+        "module-access": {
+            "patterns": [
+                {
+                    "name": "meta.module-access.viper",
+                    "match": "(?x)\n  \\b(?!self\\b|cls\\b)([A-Za-z_][\\w]*)\n  (\\.)\n  ([A-Za-z_][\\w]*)\n  \\s*(?=\\()",
+                    "captures": {
+                        "1": {"name": "entity.name.namespace.viper"},
+                        "2": {"name": "punctuation.separator.dot.viper"},
+                        "3": {"name": "entity.name.function.viper"}
+                    }
+                },
+                {
+                    "name": "meta.module-access.viper",
+                    "match": "(?x)\n  \\b(?!self\\b|cls\\b)([A-Za-z_][\\w]*)\n  (\\.)\n  ([A-Za-z_][\\w]*)",
+                    "captures": {
+                        "1": {"name": "entity.name.namespace.viper"},
+                        "2": {"name": "punctuation.separator.dot.viper"},
+                        "3": {"name": "variable.other.property.viper"}
+                    }
+                }
+            ]
+        },
+        "type-name": {
+            "name": "entity.name.type.class.viper",
+            "match": "\\b[A-Z][\\w]*\\b"
+        },
+        "illegal": {
+            "name": "invalid.illegal.viper",
+            "match": "\\b\\d+[^\\w\\s]"
+        }
+    }
+}

@@ -1,0 +1,58 @@
+# Viper 编译时类型特征库 ctraits 存根。
+# 所有函数仅在编译时求值，可与 c.CIf 等编译时条件配合使用。
+
+import t
+
+
+def isptr(x: t.CType) -> bool:
+    """编译时判断 x 的类型是否为指针类型。
+
+    返回 True 如果 x 是指针（ptr_count > 0），否则返回 False。
+    可与 c.CIf 配合使用实现条件编译。
+
+    示例:
+        if c.CIf(ctraits.isptr(my_var)):
+            # 仅当 my_var 是指针类型时编译此分支
+            ...
+    """
+    return False
+
+
+def isint(x: t.CType) -> bool:
+    """编译时判断 x 的类型是否为整数类型。"""
+    return False
+
+
+def isfloat(x: t.CType) -> bool:
+    """编译时判断 x 的类型是否为浮点类型。"""
+    return False
+
+
+def isstruct(x: t.CType) -> bool:
+    """编译时判断 x 的类型是否为结构体类型。"""
+    return False
+
+
+def isarray(x: t.CType) -> bool:
+    """编译时判断 x 的类型是否为数组类型。"""
+    return False
+
+
+def issigned(x: t.CType) -> bool:
+    """编译时判断 x 的类型是否为有符号整数。"""
+    return False
+
+
+def isunsigned(x: t.CType) -> bool:
+    """编译时判断 x 的类型是否为无符号整数。"""
+    return False
+
+
+def sizeof(x: t.CType) -> int:
+    """编译时获取类型 x 的字节大小（等价 sizeof(x)）。"""
+    return 0
+
+
+def alignof(x: t.CType) -> int:
+    """编译时获取类型 x 的对齐要求（等价 _Alignof(x)）。"""
+    return 0

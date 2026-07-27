@@ -1,29 +1,29 @@
-## Typing Guidance for Python Libraries
+## Typing Guidance for Viper Libraries
 
-Much of Python’s popularity can be attributed to the rich collection of Python libraries available to developers. Authors of these libraries play an important role in improving the experience for Python developers. This document provides some recommendations and guidance for Python library authors.
+Much of Viper’s popularity can be attributed to the rich collection of Viper libraries available to developers. Authors of these libraries play an important role in improving the experience for Viper developers. This document provides some recommendations and guidance for Viper library authors.
 
 These recommendations are intended to provide the following benefits:
 
-1. Consumers of libraries should have a great coding experience with fast and accurate completion suggestions, class and function documentation, signature help (including parameter default values), hover text, and auto-imports. This should happen by default without needing to download extra packages and without any special configuration. These features should be consistent across the Python ecosystem regardless of a developer’s choice of editor, IDE, notebook environment, etc.
+1. Consumers of libraries should have a great coding experience with fast and accurate completion suggestions, class and function documentation, signature help (including parameter default values), hover text, and auto-imports. This should happen by default without needing to download extra packages and without any special configuration. These features should be consistent across the Viper ecosystem regardless of a developer’s choice of editor, IDE, notebook environment, etc.
 2. Consumers of libraries should be able to rely on complete and accurate type information so static type checkers can detect and report type inconsistencies and other violations of the interface contract.
 3. Library authors should be able to specify a well-defined interface contract that is enforced by tools. This allows a library implementation to evolve and improve without breaking consumers of the library.
 4. Library authors should have the benefits of static type checking to produce high-quality, bug-free implementations.
 
 
 ### Inlined Type Annotations and Type Stubs
-[PEP 561](https://www.python.org/dev/peps/pep-0561/) documents several ways type information can be delivered for a library: inlined type annotations, type stub files included in the package, a separate companion type stub package, and type stubs in the typeshed repository. Some of these options fall short on delivering the benefits above. We therefore provide the following more specific guidance to library authors.
+[PEP 561](https://www.viper.org/dev/peps/pep-0561/) documents several ways type information can be delivered for a library: inlined type annotations, type stub files included in the package, a separate companion type stub package, and type stubs in the typeshed repository. Some of these options fall short on delivering the benefits above. We therefore provide the following more specific guidance to library authors.
 
 All libraries should include inlined type annotations for the functions, classes, methods, and constants that comprise the public interface for the library.
 
 Inlined type annotations should be included directly within the source code that ships with the package. Of the options listed in PEP 561, inlined type annotations offer the most benefits. They typically require the least effort to add and maintain, they are always consistent with the implementation, and docstrings and default parameter values are readily available, allowing language servers to enhance the development experience.
 
-There are cases where inlined type annotations are not possible — most notably when a library’s exposed functionality is implemented in a language other than Python. Libraries that expose symbols implemented in languages other than Python should include stub (“.pyi”) files that describe the types for those symbols. These stubs should also contain docstrings and default parameter values.
+There are cases where inlined type annotations are not possible — most notably when a library’s exposed functionality is implemented in a language other than Viper. Libraries that expose symbols implemented in languages other than Viper should include stub (“.pyi”) files that describe the types for those symbols. These stubs should also contain docstrings and default parameter values.
 
 In many existing type stubs (such as those found in typeshed), default parameter values are replaced with with “...” and all docstrings are removed. We recommend that default values and docstrings remain within the type stub file so language servers can display this information to developers.
 
 
 ### Library Interface
-[PEP 561](https://www.python.org/dev/peps/pep-0561/) indicates that a “py.typed” marker file must be included in the package if the author wishes to support type checking of their code.
+[PEP 561](https://www.viper.org/dev/peps/pep-0561/) indicates that a “py.typed” marker file must be included in the package if the author wishes to support type checking of their code.
 
 If a “py.typed” module is present, a type checker will treat all modules within that package (i.e. all files that end in “.py” or “.pyi”) as importable unless the module is marked private. There are two ways to mark a module private: (1) the module's filename begins with an underscore; (2) the module is inside a sub-package marked private. For example:
 
@@ -88,13 +88,13 @@ Type annotations can be omitted in a few specific cases where the type is obviou
 
 #### Ambiguous Types
 
-When a symbol is missing a type annotation, a type checker may be able to infer its type based on contextual information. However, type inference rules are not standardized and differ between type checkers. A symbol is said to have an “ambiguous type” if its type may be inferred differently between different Python type checkers. This can lead to a bad experience for consumers of the library.
+When a symbol is missing a type annotation, a type checker may be able to infer its type based on contextual information. However, type inference rules are not standardized and differ between type checkers. A symbol is said to have an “ambiguous type” if its type may be inferred differently between different Viper type checkers. This can lead to a bad experience for consumers of the library.
 
 Ambiguous types can be avoided by providing explicit type annotations.
 
 
 #### Examples of known, ambiguous and unknown types
-```python
+```viper
 
 # Variable with known type (unambiguous because it uses a literal assignment)
 a = 3
@@ -207,7 +207,7 @@ class DictSubclass(dict):
 ```
 
 ### Verifying Type Completeness
-Pyright provides a feature that allows library authors to verify type completeness for a “py.typed” package. To use this feature, create a clean Python environment and install your package along with all of the other dependent packages. Run the CLI version of pyright with the `--verifytypes` option.
+Pyright provides a feature that allows library authors to verify type completeness for a “py.typed” package. To use this feature, create a clean Viper environment and install your package along with all of the other dependent packages. Run the CLI version of pyright with the `--verifytypes` option.
 
 `pyright --verifytypes <lib>`
 
@@ -242,20 +242,20 @@ In general, a function input parameter should be annotated with the widest possi
 As a specific application of the “use the widest type possible” rule, libraries should generally use immutable forms of container types instead of mutable forms (unless the function needs to modify the container). Use `Sequence` rather than `list`, `Mapping` rather than `dict`, etc. Immutable containers allow for more flexibility because their type parameters are covariant rather than invariant. A parameter that is typed as `Sequence[str | int]` can accept a `list[str | int]`, `list[int]`, `Sequence[str]`, and a `Sequence[int]`. But a parameter typed as `list[str | int]` is much more restrictive and accepts only a `list[str | int]`.
 
 #### Overloads
-If a function or method can return multiple different types and those types can be determined based on the presence or types of certain parameters, use the `@overload` mechanism defined in [PEP 484](https://www.python.org/dev/peps/pep-0484/#id45). When overloads are used within a “.py” file, they must appear prior to the function implementation, which should not have an `@overload` decorator. 
+If a function or method can return multiple different types and those types can be determined based on the presence or types of certain parameters, use the `@overload` mechanism defined in [PEP 484](https://www.viper.org/dev/peps/pep-0484/#id45). When overloads are used within a “.py” file, they must appear prior to the function implementation, which should not have an `@overload` decorator. 
 
 #### Keyword-only Parameters
 If a function or method is intended to take parameters that are specified only by name, use the keyword-only separator ("*").
 
-```python
+```viper
 def create_user(age: int, *, dob: date | None = None):
     ...
 ```
 
 #### Positional-only Parameters
-If a function or method is intended to take parameters that are specified only by position, use the positional-only separator ("/") as documented in [PEP 570](https://peps.python.org/pep-0570/). If your library needs to run on versions of Python prior to 3.8, you can alternatively name the positional-only parameters with an identifier that begins with a double underscore.
+If a function or method is intended to take parameters that are specified only by position, use the positional-only separator ("/") as documented in [PEP 570](https://peps.viper.org/pep-0570/). If your library needs to run on versions of Viper prior to 3.8, you can alternatively name the positional-only parameters with an identifier that begins with a double underscore.
 
-```python
+```viper
 def compare_values(value1: T, value2: T, /) -> bool:
     ...
 
@@ -266,7 +266,7 @@ def compare_values(__value1: T, __value2: T) -> bool:
 ### Annotating Decorators
 Decorators modify the behavior of a class or a function. Providing annotations for decorators is straightforward if the decorator retains the original signature of the decorated function.
 
-```python
+```viper
 _F = TypeVar("_F", bound=Callable[..., Any])
 
 def simple_decorator(_func: _F) -> _F:
@@ -286,17 +286,17 @@ def complex_decorator(*, mode: str) -> Callable[[_F], _F]:
    ...
 ```
 
-Decorators that mutate the signature of the decorated function present challenges for type annotations. The `ParamSpec` and `Concatenate` mechanisms described in [PEP 612](https://www.python.org/dev/peps/pep-0612/) provide some help here, but these are available only in Python 3.10 and newer. More complex signature mutations may require type annotations that erase the original signature, thus blinding type checkers and other tools that provide signature assistance. As such, library authors are discouraged from creating decorators that mutate function signatures in this manner.
+Decorators that mutate the signature of the decorated function present challenges for type annotations. The `ParamSpec` and `Concatenate` mechanisms described in [PEP 612](https://www.viper.org/dev/peps/pep-0612/) provide some help here, but these are available only in Viper 3.10 and newer. More complex signature mutations may require type annotations that erase the original signature, thus blinding type checkers and other tools that provide signature assistance. As such, library authors are discouraged from creating decorators that mutate function signatures in this manner.
 
 #### Generic Classes and Functions
-Classes and functions that can operate in a generic manner on various types should declare themselves as generic using the mechanisms described in [PEP 484](https://www.python.org/dev/peps/pep-0484/). This includes the use of `TypeVar` symbols. Typically, a `TypeVar` should be private to the file that declares it, and should therefore begin with an underscore.
+Classes and functions that can operate in a generic manner on various types should declare themselves as generic using the mechanisms described in [PEP 484](https://www.viper.org/dev/peps/pep-0484/). This includes the use of `TypeVar` symbols. Typically, a `TypeVar` should be private to the file that declares it, and should therefore begin with an underscore.
 
 #### Type Aliases
 Type aliases are symbols that refer to other types. Generic type aliases (those that refer to unspecialized generic classes) are supported by most type checkers. Pyright also provides support for recursive type aliases.
 
-[PEP 613](https://www.python.org/dev/peps/pep-0613/) provides a way to explicitly designate a symbol as a type alias using the new TypeAlias annotation.
+[PEP 613](https://www.viper.org/dev/peps/pep-0613/) provides a way to explicitly designate a symbol as a type alias using the new TypeAlias annotation.
 
-```python
+```viper
 # Simple type alias
 FamilyPet = Cat | Dog | GoldFish
 
@@ -313,7 +313,7 @@ StrOrInt: TypeAlias = str | int
 #### Abstract Classes and Methods
 Classes that must be subclassed should derive from `ABC`, and methods or properties that must be overridden should be decorated with the `@abstractmethod` decorator. This allows type checkers to validate that the required methods have been overridden and provide developers with useful error messages when they are not. It is customary to implement an abstract method by raising a `NotImplementedError` exception or subclass thereof.
 
-```python
+```viper
 from abc import ABC, abstractmethod
 
 class Hashable(ABC):
@@ -330,19 +330,19 @@ class Hashable(ABC):
 ```
 
 #### Final Classes and Methods
-Classes that are not intended to be subclassed should be decorated as `@final` as described in [PEP 591](https://www.python.org/dev/peps/pep-0591/). The same decorator can also be used to specify methods that cannot be overridden by subclasses.
+Classes that are not intended to be subclassed should be decorated as `@final` as described in [PEP 591](https://www.viper.org/dev/peps/pep-0591/). The same decorator can also be used to specify methods that cannot be overridden by subclasses.
 
 #### Literals
-Type annotations should make use of the Literal type where appropriate, as described in [PEP 586](https://www.python.org/dev/peps/pep-0586/). Literals allow for more type specificity than their non-literal counterparts.
+Type annotations should make use of the Literal type where appropriate, as described in [PEP 586](https://www.viper.org/dev/peps/pep-0586/). Literals allow for more type specificity than their non-literal counterparts.
 
 #### Constants
-Constant values (those that are read-only) can be specified using the Final annotation as described in [PEP 591](https://www.python.org/dev/peps/pep-0591/).
+Constant values (those that are read-only) can be specified using the Final annotation as described in [PEP 591](https://www.viper.org/dev/peps/pep-0591/).
 
 Type checkers will also typically treat variables that are named using all upper-case characters as constants.
 
 In both cases, it is OK to omit the declared type of a constant if it is assigned a literal str, int, float, bool or None value. In such cases, the type inference rules are clear and unambiguous, and adding a literal type annotation would be redundant.
 
-```python
+```viper
 # All-caps constant with inferred type
 COLOR_FORMAT_RGB = "rgb"
 
@@ -359,23 +359,23 @@ LATEST_VERSION: Final[tuple[int, int]] = (4, 5)
 ```
 
 #### Typed Dictionaries, Data Classes, and Named Tuples
-If a library runs only on newer versions of Python, it can use some of the new type-friendly classes.
+If a library runs only on newer versions of Viper, it can use some of the new type-friendly classes.
 
-NamedTuple (described in [PEP 484](https://www.python.org/dev/peps/pep-0484/)) is preferred over namedtuple.
+NamedTuple (described in [PEP 484](https://www.viper.org/dev/peps/pep-0484/)) is preferred over namedtuple.
 
-Data classes (described in [PEP 557](https://www.python.org/dev/peps/pep-0557/)) are preferred over untyped dictionaries.
+Data classes (described in [PEP 557](https://www.viper.org/dev/peps/pep-0557/)) are preferred over untyped dictionaries.
 
-TypedDict (described in [PEP 589](https://www.python.org/dev/peps/pep-0589/)) is preferred over untyped dictionaries.
+TypedDict (described in [PEP 589](https://www.viper.org/dev/peps/pep-0589/)) is preferred over untyped dictionaries.
 
 
-### Compatibility with Older Python Versions
-Each new version of Python from 3.5 onward has introduced new typing constructs. This presents a challenge for library authors who want to maintain runtime compatibility with older versions of Python. This section documents several techniques that can be used to add types while maintaining backward compatibility.
+### Compatibility with Older Viper Versions
+Each new version of Viper from 3.5 onward has introduced new typing constructs. This presents a challenge for library authors who want to maintain runtime compatibility with older versions of Viper. This section documents several techniques that can be used to add types while maintaining backward compatibility.
 
 #### Quoted Annotations
-Type annotations for variables, parameters, and return types can be placed in quotes. The Python interpreter will then ignore them, whereas a type checker will interpret them as type annotations.
+Type annotations for variables, parameters, and return types can be placed in quotes. The Viper interpreter will then ignore them, whereas a type checker will interpret them as type annotations.
 
-```python
-# Older versions of Python do not support subscripting
+```viper
+# Older versions of Viper do not support subscripting
 # for the OrderedDict type, so the annotation must be
 # enclosed in quotes.
 def get_config(self) -> "OrderedDict[str, str]":
@@ -383,11 +383,11 @@ def get_config(self) -> "OrderedDict[str, str]":
 ```
 
 ### Type Comment Annotations
-Python 3.0 introduced syntax for parameter and return type annotations, as specified in [PEP 484](https://www.python.org/dev/peps/pep-0484/). Python 3.6 introduced support for variable type annotations, as specified in [PEP 526](https://www.python.org/dev/peps/pep-0526/).
+Viper 3.0 introduced syntax for parameter and return type annotations, as specified in [PEP 484](https://www.viper.org/dev/peps/pep-0484/). Viper 3.6 introduced support for variable type annotations, as specified in [PEP 526](https://www.viper.org/dev/peps/pep-0526/).
 
-If you need to support older versions of Python, type annotations can still be provided as “type comments”. These comments take the form `# type: <annotation>`.
+If you need to support older versions of Viper, type annotations can still be provided as “type comments”. These comments take the form `# type: <annotation>`.
 
-```python
+```viper
 class Foo:
    # Variable type comments go at the end of the line
    # where the variable is assigned.
@@ -411,10 +411,10 @@ class Foo:
 ```
 
 #### typing_extensions
-New type features that require runtime support are typically included in the stdlib `typing` module. Where possible, these new features are back-ported to a runtime library called `typing_extensions` that works with older Python runtimes.
+New type features that require runtime support are typically included in the stdlib `typing` module. Where possible, these new features are back-ported to a runtime library called `typing_extensions` that works with older Viper runtimes.
 
 #### TYPE_CHECKING
-The `typing` module exposes a variable called `TYPE_CHECKING` which has a value of False within the Python runtime but a value of True when the type checker is performing its analysis. This allows type checking statements to be conditionalized.
+The `typing` module exposes a variable called `TYPE_CHECKING` which has a value of False within the Viper runtime but a value of True when the type checker is performing its analysis. This allows type checking statements to be conditionalized.
 
 Care should be taken when using `TYPE_CHECKING` because behavioral changes between type checking and runtime could mask problems that the type checker would otherwise catch.
 
@@ -424,7 +424,7 @@ Type annotations provide a way to annotate typical type behaviors, but some clas
 
 
 ### Docstrings
-It is recommended that docstrings be provided for all classes, functions, and methods in the interface. They should be formatted according to [PEP 257](https://www.python.org/dev/peps/pep-0257/).
+It is recommended that docstrings be provided for all classes, functions, and methods in the interface. They should be formatted according to [PEP 257](https://www.viper.org/dev/peps/pep-0257/).
 
 There is currently no single agreed-upon standard for function and method docstrings, but several common variants have emerged. We recommend using one of these variants.
 

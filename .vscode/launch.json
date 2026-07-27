@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Pyright CLI",
+            "name": "Vipeye CLI",
             "type": "node",
             "request": "launch",
-            "program": "${workspaceRoot}/packages/pyright/index.js",
+            "program": "${workspaceRoot}/packages/Vipeye/index.js",
             "preLaunchTask": "npm: build:cli:dev",
             "args": [
                 "--verifytypes",
@@ -13,87 +13,91 @@
             ],
             "internalConsoleOptions": "openOnSessionStart",
             "outFiles": [
-                "${workspaceRoot}/packages/pyright/dist/**/*.js"
+                "${workspaceRoot}/packages/Vipeye/dist/**/*.js"
             ]
         },
         {
-            "name": "Pyright CLI (pyright-internal)",
+            "name": "Vipeye CLI (Vipeye-internal)",
             "type": "node",
             "request": "launch",
-            "program": "${workspaceRoot}/packages/pyright-internal/debug.js",
+            "program": "${workspaceRoot}/packages/Vipeye-internal/debug.js",
             "args": [
                 "--typeshedpath",
-                "${workspaceRoot}/packages/pyright-internal/typeshed-fallback",
+                "${workspaceRoot}/packages/Vipeye-internal/typeshed-fallback",
                 "--version",
             ],
             "internalConsoleOptions": "openOnSessionStart",
             "outFiles": [
-                "${workspaceRoot}/packages/pyright-internal/out/**/*.js"
+                "${workspaceRoot}/packages/Vipeye-internal/out/**/*.js"
             ]
         },
         {
-            "name": "Pyright tests",
+            "name": "Vipeye tests",
             "type": "node",
             "request": "launch",
             "args": [
                 "--runInBand"
             ],
-            "cwd": "${workspaceRoot}/packages/pyright-internal",
+            "cwd": "${workspaceRoot}/packages/Vipeye-internal",
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
-            "program": "${workspaceFolder}/packages/pyright-internal/node_modules/jest/bin/jest"
+            "program": "${workspaceFolder}/packages/Vipeye-internal/node_modules/jest/bin/jest"
         },
         {
-            "name": "Pyright extension",
+            "name": "Vipeye extension",
             "type": "extensionHost",
             "request": "launch",
-            "runtimeExecutable": "${workspaceRoot}/packages/vscode-pyright/dist/extension.js",
+            // "runtimeExecutable": "${workspaceRoot}/packages/vscode-Vipeye/dist/extension.js",
             "preLaunchTask": "npm: build:extension:dev",
             "args": [
-                "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-pyright",
-                // The published extension is named "ms-pyright.pyright", but in debug mode it's "ms-pyright.vscode-pyright"
+                "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-Vipeye",
+                "--extensionDevelopmentPath=${workspaceFolder}/packages/viper",
+                // The published extension is named "ms-Vipeye.Vipeye", but in debug mode it's "ms-Vipeye.vscode-Vipeye"
                 // to allow the extension code to participate in the lerna monorepo. Make sure that the published extension
                 // isn't enabled, otherwise both are loaded and conflict.
-                "--disable-extension=ms-pyright.pyright"
+                "--disable-extension=ms-Vipeye.Vipeye"
             ],
             "smartStep": true,
             "sourceMaps": true,
             "outFiles": [
-                "${workspaceRoot}/packages/vscode-pyright/dist/**/*.js"
+                "${workspaceRoot}/packages/vscode-Vipeye/dist/**/*.js"
             ]
         },
         {
-            "name": "Pyright extension (watch)",
+            "name": "Vipeye extension (watch)",
             "type": "extensionHost",
             "request": "launch",
-            "runtimeExecutable": "${workspaceRoot}/packages/vscode-pyright/dist/extension.js",
+            // "runtimeExecutable": "${workspaceRoot}/packages/vscode-Vipeye/dist/extension.js",
             "preLaunchTask": "Watch extension",
             "args": [
-                "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-pyright",
-                // The published extension is named "ms-pyright.pyright", but in debug mode it's "ms-pyright.vscode-pyright"
+                "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-Vipeye",
+                "--extensionDevelopmentPath=${workspaceFolder}/packages/viper",
+                // The published extension is named "ms-Vipeye.Vipeye", but in debug mode it's "ms-Vipeye.vscode-Vipeye"
                 // to allow the extension code to participate in the lerna monorepo. Make sure that the published extension
                 // isn't enabled, otherwise both are loaded and conflict.
-                "--disable-extension=ms-pyright.pyright"
+                "--disable-extension=ms-Vipeye.Vipeye",
+                "--disable-extension=be5invis.vscode-custom-css",
+                "--disable-extension=msgcenterext.msgcenter"
             ],
             "smartStep": true,
             "sourceMaps": true,
             "outFiles": [
-                "${workspaceRoot}/packages/vscode-pyright/dist/**/*.js"
+                "${workspaceRoot}/packages/vscode-Vipeye/dist/**/*.js"
             ]
         },
         {
-            "name": "Pyright attach server",
+            "name": "Vipeye attach server",
             "type": "node",
             "request": "attach",
             "port": 6600,
             "smartStep": true,
             "sourceMaps": true,
             "outFiles": [
-                "${workspaceRoot}/packages/vscode-pyright/dist/**/*.js"
+                "${workspaceRoot}/packages/vscode-Vipeye/dist/**/*.js"
             ]
         },
         {
-            "name": "Pyright jest current file",
+            "name": "Vipeye jest current file",
             "type": "node",
             "request": "launch",
             "args": [
@@ -103,23 +107,23 @@
                 "--forceExit",
                 "--testTimeout=180000"
             ],
-            "cwd": "${workspaceRoot}/packages/pyright-internal",
+            "cwd": "${workspaceRoot}/packages/Vipeye-internal",
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
-            "program": "${workspaceFolder}/packages/pyright-internal/node_modules/jest/bin/jest"
+            "program": "${workspaceFolder}/packages/Vipeye-internal/node_modules/jest/bin/jest"
         },
         {
-            "name": "Pyright jest selected test",
+            "name": "Vipeye jest selected test",
             "type": "node",
             "request": "launch",
             "args": ["${fileBasenameNoExtension}", "--runInBand", "-t", "${selectedText}", "--forceExit", "--testTimeout=180000"],
-            "cwd": "${workspaceRoot}/packages/pyright-internal",
+            "cwd": "${workspaceRoot}/packages/Vipeye-internal",
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
-            "program": "${workspaceFolder}/packages/pyright-internal/node_modules/jest/bin/jest"
+            "program": "${workspaceFolder}/packages/Vipeye-internal/node_modules/jest/bin/jest"
         },
         {
-            "name": "Pyright fourslash current file",
+            "name": "Vipeye fourslash current file",
             "type": "node",
             "request": "launch",
             "args": [
@@ -127,10 +131,10 @@
                 "-t ${fileBasenameNoExtension}",
                 "--runInBand",
             ],
-            "cwd": "${workspaceRoot}/packages/pyright-internal",
+            "cwd": "${workspaceRoot}/packages/Vipeye-internal",
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
-            "program": "${workspaceFolder}/packages/pyright-internal/node_modules/jest/bin/jest"
+            "program": "${workspaceFolder}/packages/Vipeye-internal/node_modules/jest/bin/jest"
         }
     ]
 }

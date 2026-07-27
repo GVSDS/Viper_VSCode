@@ -1,0 +1,218 @@
+# Viper C string.h 函数存根。
+# 姑息策略：
+#   - 字符串参数映射为 str
+#   - 内存缓冲区指针映射为 int（指针整数）
+#   - 内存函数返回指针（int）
+#   - 长度/比较返回 int
+
+from typing import Any
+
+
+# =============================================================================
+# 字符串复制
+# =============================================================================
+def strcpy(dest: str, src: str) -> str:
+    """复制 src 到 dest（含终止符）。
+
+    Returns:
+        dest 指针
+    """
+    ...
+
+
+def strncpy(dest: str, src: str, n: int) -> str:
+    """复制 src 前 n 个字符到 dest。
+
+    不足 n 时用 \\0 填充，超过 n 不追加终止符。
+
+    Args:
+        n: 最大复制字节数
+    Returns:
+        dest 指针
+    """
+    ...
+
+
+# =============================================================================
+# 字符串拼接
+# =============================================================================
+def strcat(dest: str, src: str) -> str:
+    """将 src 追加到 dest 末尾。
+
+    Returns:
+        dest 指针
+    """
+    ...
+
+
+def strncat(dest: str, src: str, n: int) -> str:
+    """将 src 前 n 个字符追加到 dest 末尾。"""
+    ...
+
+
+# =============================================================================
+# 字符串比较
+# =============================================================================
+def strcmp(str1: str, str2: str) -> int:
+    """比较两个字符串。
+
+    Returns:
+        < 0 表示 str1 < str2，= 0 表示相等，> 0 表示 str1 > str2
+    """
+    return 0
+
+
+def strncmp(str1: str, str2: str, n: int) -> int:
+    """比较两个字符串前 n 个字符。"""
+    return 0
+
+
+def samestr(str1: str, str2: str) -> bool:
+    """Viper 扩展：直接 == 比较。"""
+    return False
+
+
+# =============================================================================
+# 字符串长度
+# =============================================================================
+def strlen(src: str) -> int:
+    """返回字符串长度（不含终止符）。"""
+    return 0
+
+
+# =============================================================================
+# 字符查找
+# =============================================================================
+def strchr(s: str, cr: int) -> str:
+    """在 s 中查找字符 cr 第一次出现的位置。
+
+    Args:
+        cr: 字符的 ASCII 码（int）
+    Returns:
+        指向该字符的指针，未找到返回 None
+    """
+    ...
+
+
+def strrchr(s: str, cr: int) -> str:
+    """在 s 中查找字符 cr 最后一次出现的位置。
+
+    Returns:
+        指向该字符的指针，未找到返回 None
+    """
+    ...
+
+
+def strstr(s: str, needle: str) -> str:
+    """在 s 中查找子串 needle 第一次出现的位置。
+
+    Returns:
+        指向子串起始的指针，未找到返回 None
+    """
+    ...
+
+
+def strspn(s: str, skip: str = " ") -> int:
+    """返回 s 开头连续属于 skip 的字符数。"""
+    return 0
+
+
+# =============================================================================
+# 内存操作
+# =============================================================================
+def memset(ptr: int, value: int, num: int) -> int:
+    """将 ptr 指向的 num 字节内存全部设置为 value。
+
+    Args:
+        ptr: 内存指针（int）
+        value: 填充值（取低 8 位）
+        num: 字节数
+    Returns:
+        ptr 指针
+    """
+    return 0
+
+
+def memset32(ptr: int, value: int, count: int) -> int:
+    """将 ptr 指向的 count 个 32 位整数全部设置为 value。
+
+    Args:
+        ptr: 内存指针（int）
+        value: 32 位填充值
+        count: 32 位整数个数
+    Returns:
+        ptr 指针
+    """
+    return 0
+
+
+def memcpy(dest: int, src: int, num: int) -> int:
+    """从 src 复制 num 字节到 dest（不处理重叠）。
+
+    Returns:
+        dest 指针
+    """
+    return 0
+
+
+def memmove(dest: int, src: int, num: int) -> int:
+    """从 src 复制 num 字节到 dest（处理重叠）。
+
+    Returns:
+        dest 指针
+    """
+    return 0
+
+
+def memcmp(ptr1: int, ptr2: int, n: int) -> int:
+    """比较两块内存前 n 字节。
+
+    Returns:
+        < 0 表示 ptr1 < ptr2，= 0 表示相等，> 0 表示 ptr1 > ptr2
+    """
+    return 0
+
+
+# =============================================================================
+# 字符串转数字（Viper 实现放在 string.py 中）
+# =============================================================================
+def atoi(src: str) -> int:
+    """字符串转 int（支持前导空白和符号）。"""
+    return 0
+
+
+def atoll(src: str) -> int:
+    """字符串转 long long。"""
+    return 0
+
+
+def atof(src: str) -> float:
+    """字符串转 double（支持整数/小数/指数部分）。"""
+    return 0.0
+
+
+def split(s: str, delim: str, result: list) -> int:
+    """Viper 扩展：按单字符分隔符切分字符串。
+
+    Args:
+        s: 待切分字符串
+        delim: 单字符分隔符
+        result: 结果数组（str 指针数组），调用方需保证容量
+    Returns:
+        切分得到的 token 数
+    """
+    return 0
+
+
+# =============================================================================
+# 字符集常量
+# =============================================================================
+ascii_lowercase: str = "abcdefghijklmnopqrstuvwxyz"
+ascii_uppercase: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+ascii_letters: str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+digits: str = "0123456789"
+hexdigits: str = "0123456789abcdefABCDEF"
+octdigits: str = "01234567"
+punctuation: str = "!\"#$%&'()*+,-./:;<=>?@[]^_`{|}~"
+whitespace: str = " \t\n\r\f\v"

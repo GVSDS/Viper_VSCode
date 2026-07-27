@@ -1,0 +1,415 @@
+import t, c
+import asm
+import mm.mm as mm
+import viperstring as string
+import drivers.serial.uart.serial as serial
+import platform.pch.timer as timer
+import intr.idt as idt
+import platform.pch.pic as pic
+import drivers.usb.pci as pci
+
+UHCI_USBCMD: t.CDefine = 0x00
+UHCI_USBSTS: t.CDefine = 0x02
+UHCI_USBINTR: t.CDefine = 0x04
+UHCI_FRNUM: t.CDefine = 0x06
+UHCI_FLBASEADD: t.CDefine = 0x08
+UHCI_SOFMOD: t.CDefine = 0x0C
+UHCI_PORTSC1: t.CDefine = 0x10
+UHCI_PORTSC2: t.CDefine = 0x12
+
+UHCI_CMD_RUN: t.CDefine = 0x0001
+UHCI_CMD_HCRESET: t.CDefine = 0x0002
+UHCI_CMD_GRESET: t.CDefine = 0x0004
+UHCI_CMD_MAXPKT: t.CDefine = 0x0080
+UHCI_CMD_CF: t.CDefine = 0x0040
+
+UHCI_STS_HCHALTED: t.CDefine = 0x0020
+UHCI_STS_USBINT: t.CDefine = 0x0001
+UHCI_STS_USBERRINT: t.CDefine = 0x0002
+UHCI_STS_RESUME: t.CDefine = 0x0004
+UHCI_INTR_TIMEOUT: t.CDefine = 0x0001
+UHCI_INTR_RESUME: t.CDefine = 0x0002
+UHCI_INTR_IOC: t.CDefine = 0x0004
+UHCI_INTR_SHORT: t.CDefine = 0x0008
+
+UHCI_PORT_CONNECT: t.CDefine = 0x0001
+UHCI_PORT_CONNECT_CHANGE: t.CDefine = 0x0002
+UHCI_PORT_ENABLE: t.CDefine = 0x0004
+UHCI_PORT_ENABLE_CHANGE: t.CDefine = 0x0008
+UHCI_PORT_RESET: t.CDefine = 0x0200
+UHCI_PORT_LOW_SPEED: t.CDefine = 0x0100
+
+TD_CTRL_ACTIVE: t.CDefine = 0x00800000
+TD_CTRL_IOC: t.CDefine = 0x01000000
+TD_CTRL_LS: t.CDefine = 0x04000000
+TD_CTRL_SPD: t.CDefine = 0x20000000
+TD_CTRL_CERR_SHIFT: t.CDefine = 27
+TD_CTRL_CERR_MASK: t.CDefine = 0x18000000
+
+TD_TOKEN_SETUP: t.CDefine = 0x2D
+TD_TOKEN_IN: t.CDefine = 0x69
+TD_TOKEN_OUT: t.CDefine = 0xE1
+
+TD_TOKEN_DATA0: t.CDefine = 0
+TD_TOKEN_DATA1: t.CDefine = 1
+
+TD_LINK_TERMINATE: t.CDefine = 0x00000001
+TD_LINK_QH: t.CDefine = 0x00000002
+TD_LINK_DEPTH_FIRST: t.CDefine = 0x00000004
+
+UHCI_NUM_FRAMES: t.CDefine = 1024
+UHCI_INT_SLOTS: t.CDefine = 4
+
+class uhci_td(t.CStruct):
+    link: t.CUInt32T
+    ctrl_status: t.CUInt32T
+    token: t.CUInt32T
+    buffer: t.CUInt32T
+
+class uhci_qh(t.CStruct):
+    link: t.CUInt32T
+    element: t.CUInt32T
+
+class int_slot(t.CStruct):
+    td: uhci_td | t.CPtr
+    callback: t.CInt | t.CPtr
+    active: t.CInt
+    qh: uhci_qh | t.CPtr
+
+_io_base: t.CUInt16T = 0
+_frame_list: t.CUInt32T | t.CPtr = None
+_ctrl_qh: uhci_qh | t.CPtr = None
+_bulk_qh: uhci_qh | t.CPtr = None
+_irq: t.CInt = -1
+_int_slots: t.CArray[int_slot, UHCI_INT_SLOTS]
+_int_slot_count: t.CInt = 0
+
+def _reg_read16(offset: t.CUInt16T) -> t.CUInt16T:
+    return asm.inw(_io_base + offset)
+
+def _reg_write16(offset: t.CUInt16T, value: t.CUInt16T):
+    asm.outw(_io_base + offset, value)
+
+def _reg_read32(offset: t.CUInt16T) -> t.CUInt32T:
+    return asm.inl(_io_base + offset)
+
+def _reg_write32(offset: t.CUInt16T, value: t.CUInt32T):
+    asm.outl(_io_base + offset, value)
+
+def _uhci_irq_handler() -> t.CInt:
+    sts: t.CUInt16T = _reg_read16(UHCI_USBSTS)
+    _reg_write16(UHCI_USBSTS, sts)
+    if (sts & (UHCI_STS_USBINT | UHCI_STS_USBERRINT)) == 0:
+        return 0
+    for si in range(_int_slot_count):
+        slot: int_slot | t.CPtr = c.Addr(_int_slots[si])
+        if slot.active and slot.td is not None and slot.callback is not None:
+            status: t.CUInt32T = slot.td.ctrl_status
+            if (status & TD_CTRL_ACTIVE) == 0:
+                slot.active = 0
+                c.Asm(f"""mov rbp, rsp
+                          and rsp, -16
+                          call {c.AsmInp(slot.callback, t.ASM_DESCR.REG_ANY)}
+                          mov rsp, rbp""",
+                      op=[t.ASM_DESCR.CLOBBER_MEMORY, t.ASM_DESCR.CLOBBER_RAX,
+                          t.ASM_DESCR.CLOBBER_RBX,
+                          t.ASM_DESCR.CLOBBER_RCX, t.ASM_DESCR.CLOBBER_RDX,
+                          t.ASM_DESCR.CLOBBER_RSI, t.ASM_DESCR.CLOBBER_RDI,
+                          t.ASM_DESCR.CLOBBER_R8, t.ASM_DESCR.CLOBBER_R9,
+                          t.ASM_DESCR.CLOBBER_R10, t.ASM_DESCR.CLOBBER_R11,
+                          t.ASM_DESCR.CLOBBER_RBP])
+    return 0
+
+def register_int_callback(cb: t.CInt | t.CPtr) -> t.CInt:
+    global _int_slot_count
+    if _int_slot_count >= UHCI_INT_SLOTS:
+        return -1
+    si: t.CInt = _int_slot_count
+    qh: uhci_qh | t.CPtr = mm.malloc_direct(uhci_qh.__sizeof__())
+    if qh is None:
+        return -2
+    string.memset(c.Addr(qh), 0, uhci_qh.__sizeof__())
+    _qh_set_link(qh, 0, 0, 1)
+    _qh_set_element(qh, 0, 1)
+    td: uhci_td | t.CPtr = mm.malloc_direct(uhci_td.__sizeof__())
+    if td is None:
+        return -3
+    string.memset(c.Addr(td), 0, uhci_td.__sizeof__())
+    slot: int_slot | t.CPtr = c.Addr(_int_slots[si])
+    slot.td = td
+    slot.callback = cb
+    slot.active = 0
+    slot.qh = qh
+    _int_slot_count = si + 1
+    _rebuild_int_chain()
+    return si
+
+def schedule_int_transfer(slot_id: t.CInt, dev_addr: t.CUInt8T, endpoint: t.CUInt8T, ls: t.CInt, max_pkt: t.CUInt8T, toggle_ptr: t.CUInt8T | t.CPtr, buf: t.CVoid | t.CPtr):
+    if slot_id < 0 or slot_id >= _int_slot_count:
+        return
+    slot: int_slot | t.CPtr = c.Addr(_int_slots[slot_id])
+    td: uhci_td | t.CPtr = slot.td
+    qh: uhci_qh | t.CPtr = slot.qh
+    if td is None or qh is None:
+        return
+    string.memset(c.Addr(td), 0, uhci_td.__sizeof__())
+    _td_set_link(td, 0, 0, 1)
+    _td_set_ctrl(td, ls, max_pkt)
+    _td_set_token(td, TD_TOKEN_IN, dev_addr, endpoint, toggle_ptr, max_pkt)
+    td.ctrl_status = td.ctrl_status | TD_CTRL_IOC
+    td.buffer = t.CUInt32T(t.CUInt64T(buf))
+    _qh_set_element(qh, t.CUInt32T(t.CUInt64T(td)), 0)
+    slot.active = 1
+
+def _rebuild_int_chain():
+    if _int_slot_count == 0:
+        return
+    first_qh: uhci_qh | t.CPtr = None
+    prev_qh: uhci_qh | t.CPtr = None
+    for si in range(_int_slot_count):
+        cur_qh: uhci_qh | t.CPtr = _int_slots[si].qh
+        if cur_qh is not None:
+            if first_qh is None:
+                first_qh = cur_qh
+            if prev_qh is not None:
+                _qh_set_link(prev_qh, t.CUInt32T(t.CUInt64T(cur_qh)) | TD_LINK_QH, 1, 0)
+            prev_qh = cur_qh
+    if prev_qh is not None:
+        _qh_set_link(prev_qh, t.CUInt32T(t.CUInt64T(_ctrl_qh)) | TD_LINK_QH, 1, 0)
+    if first_qh is not None:
+        qh_addr: t.CUInt32T = t.CUInt32T(t.CUInt64T(first_qh)) | TD_LINK_QH
+        i: t.CInt
+        for i in range(UHCI_NUM_FRAMES):
+            entry_ptr: t.CUInt32T | t.CPtr = _frame_list + t.CUInt64T(i) * 4
+            c.Set(c.Deref(entry_ptr), qh_addr)
+
+def _td_set_link(td: uhci_td | t.CPtr, addr: t.CUInt32T, is_qh: t.CInt, terminate: t.CInt):
+    val: t.CUInt32T = (addr & 0xFFFFFFF0)
+    if is_qh: val = val | TD_LINK_QH
+    if terminate: val = val | TD_LINK_TERMINATE
+    td.link = val
+
+def _td_set_token(td: uhci_td | t.CPtr, pid: t.CUInt8T, dev_addr: t.CUInt8T, endpoint: t.CUInt8T, toggle: t.CUInt8T, max_len: t.CUInt16T):
+    len_bits: t.CUInt32T
+    if max_len == 0:
+        len_bits = 0x7FF
+    else:
+        len_bits = t.CUInt32T(max_len) - 1
+    td.token = (t.CUInt32T(pid) << 0) | (t.CUInt32T(dev_addr) << 8) | (t.CUInt32T(endpoint & 0x0F) << 15) | (t.CUInt32T(toggle & 1) << 19) | (len_bits << 21)
+
+def _td_set_ctrl(td: uhci_td | t.CPtr, ls: t.CInt, maxlen: t.CUInt16T):
+    td.ctrl_status = TD_CTRL_ACTIVE | (3 << TD_CTRL_CERR_SHIFT)
+    if ls: td.ctrl_status = td.ctrl_status | TD_CTRL_LS
+
+def _qh_set_link(qh: uhci_qh | t.CPtr, addr: t.CUInt32T, is_qh: t.CInt, terminate: t.CInt):
+    val: t.CUInt32T = (addr & 0xFFFFFFF0)
+    if is_qh: val = val | TD_LINK_QH
+    if terminate: val = val | TD_LINK_TERMINATE
+    qh.link = val
+
+def _qh_set_element(qh: uhci_qh | t.CPtr, addr: t.CUInt32T, terminate: t.CInt):
+    val: t.CUInt32T = (addr & 0xFFFFFFF0)
+    if terminate: val = val | TD_LINK_TERMINATE
+    qh.element = val
+
+def _wait_for_complete(td: uhci_td | t.CPtr, timeout_ms: t.CInt) -> t.CInt:
+    start: t.CUInt64T = timer.timer_get_ticks()
+    deadline: t.CUInt64T = start + t.CUInt64T(timeout_ms)
+    poll_cnt: t.CInt = 0
+    while timer.timer_get_ticks() < deadline:
+        status: t.CUInt32T = td.ctrl_status
+        if (status & TD_CTRL_ACTIVE) == 0:
+            if (status & 0x00600000) != 0:
+                return -1
+            return 0
+        poll_cnt += 1
+        if poll_cnt >= 100:
+            poll_cnt = 0
+            asm.sti()
+            asm.hlt()
+    return -2
+
+def reset(io_base: t.CUInt16T) -> t.CInt:
+    global _io_base
+    _io_base = io_base
+    _reg_write16(UHCI_USBCMD, UHCI_CMD_HCRESET)
+    i: t.CInt
+    for i in range(1000):
+        if (_reg_read16(UHCI_USBCMD) & UHCI_CMD_HCRESET) == 0:
+            break
+    _reg_write16(UHCI_USBSTS, 0xFFFF)
+    _reg_write16(UHCI_USBINTR, 0x0000)
+    return 0
+
+def init(io_base: t.CUInt16T) -> t.CInt:
+    global _io_base, _frame_list, _ctrl_qh, _bulk_qh, _int_slot_count
+    _io_base = io_base
+    _int_slot_count = 0
+
+    serial.puts("[uhci] resetting...\n")
+    if reset(io_base) != 0:
+        serial.puts("[uhci] reset failed\n")
+        return -1
+
+    serial.puts("[uhci] allocating frame list...\n")
+    _frame_list = mm.malloc(UHCI_NUM_FRAMES * 4)
+    if _frame_list is None:
+        serial.puts("[uhci] frame list alloc failed\n")
+        return -2
+    string.memset(_frame_list, 0, UHCI_NUM_FRAMES * 4)
+
+    _ctrl_qh = mm.malloc_direct(uhci_qh.__sizeof__())
+    if _ctrl_qh is None:
+        serial.puts("[uhci] ctrl_qh alloc failed\n")
+        return -3
+    string.memset(c.Addr(_ctrl_qh), 0, uhci_qh.__sizeof__())
+    _qh_set_link(_ctrl_qh, 0, 0, 1)
+    _qh_set_element(_ctrl_qh, 0, 1)
+
+    _bulk_qh = mm.malloc_direct(uhci_qh.__sizeof__())
+    if _bulk_qh is None:
+        serial.puts("[uhci] bulk_qh alloc failed\n")
+        return -4
+    string.memset(c.Addr(_bulk_qh), 0, uhci_qh.__sizeof__())
+    _qh_set_link(_bulk_qh, 0, 0, 1)
+    _qh_set_element(_bulk_qh, 0, 1)
+
+    serial.puts("[uhci] setting up frame list...\n")
+    qh_addr: t.CUInt32T = t.CUInt32T(c.Addr(_ctrl_qh)) | TD_LINK_QH
+    i: t.CInt
+    for i in range(UHCI_NUM_FRAMES):
+        entry_ptr: t.CUInt32T | t.CPtr = _frame_list + t.CUInt64T(i) * 4
+        c.Set(c.Deref(entry_ptr), qh_addr)
+
+    _reg_write32(UHCI_FLBASEADD, t.CUInt32T(t.CUInt64T(_frame_list)))
+    _reg_write16(UHCI_FRNUM, 0)
+    _reg_write16(UHCI_SOFMOD, 64)
+
+    _reg_write16(UHCI_USBCMD, UHCI_CMD_CF | UHCI_CMD_MAXPKT | UHCI_CMD_RUN)
+
+    timer.timer_msleep(10)
+
+    _reg_write16(UHCI_USBSTS, 0xFFFF)
+    _reg_write16(UHCI_USBINTR, UHCI_INTR_IOC | UHCI_INTR_SHORT)
+
+    _irq = t.CInt(pci._uhci_dev.irq)
+    if _irq > 0 and _irq < 16:
+        idt.irqInstallHandler(_irq, _uhci_irq_handler, "uhci")
+        pic.clearMask(t.CUInt8T(_irq))
+
+    serial.puts("[uhci] started\n")
+    return 0
+
+def port_reset(port: t.CInt) -> t.CInt:
+    sc: t.CUInt16T
+    if port == 0:
+        sc = _reg_read16(UHCI_PORTSC1)
+    else:
+        sc = _reg_read16(UHCI_PORTSC2)
+
+    if (sc & UHCI_PORT_CONNECT) == 0:
+        return -1
+
+    if port == 0:
+        _reg_write16(UHCI_PORTSC1, sc | UHCI_PORT_CONNECT_CHANGE | UHCI_PORT_ENABLE_CHANGE)
+    else:
+        _reg_write16(UHCI_PORTSC2, sc | UHCI_PORT_CONNECT_CHANGE | UHCI_PORT_ENABLE_CHANGE)
+
+    if port == 0:
+        _reg_write16(UHCI_PORTSC1, UHCI_PORT_RESET)
+    else:
+        _reg_write16(UHCI_PORTSC2, UHCI_PORT_RESET)
+
+    timer.timer_msleep(50)
+
+    if port == 0:
+        _reg_write16(UHCI_PORTSC1, 0x0000)
+    else:
+        _reg_write16(UHCI_PORTSC2, 0x0000)
+
+    timer.timer_msleep(10)
+
+    if port == 0:
+        sc = _reg_read16(UHCI_PORTSC1)
+        _reg_write16(UHCI_PORTSC1, sc | UHCI_PORT_ENABLE | UHCI_PORT_CONNECT_CHANGE | UHCI_PORT_ENABLE_CHANGE)
+    else:
+        sc = _reg_read16(UHCI_PORTSC2)
+        _reg_write16(UHCI_PORTSC2, sc | UHCI_PORT_ENABLE | UHCI_PORT_CONNECT_CHANGE | UHCI_PORT_ENABLE_CHANGE)
+
+    timer.timer_msleep(10)
+
+    if port == 0:
+        sc = _reg_read16(UHCI_PORTSC1)
+    else:
+        sc = _reg_read16(UHCI_PORTSC2)
+
+    if (sc & UHCI_PORT_ENABLE) == 0:
+        return -2
+
+    return 0
+
+def port_is_connected(port: t.CInt) -> t.CInt:
+    sc: t.CUInt16T
+    if port == 0:
+        sc = _reg_read16(UHCI_PORTSC1)
+    else:
+        sc = _reg_read16(UHCI_PORTSC2)
+    if sc & UHCI_PORT_CONNECT: return 1
+    return 0
+
+def port_is_low_speed(port: t.CInt) -> t.CInt:
+    sc: t.CUInt16T
+    if port == 0:
+        sc = _reg_read16(UHCI_PORTSC1)
+    else:
+        sc = _reg_read16(UHCI_PORTSC2)
+    if sc & UHCI_PORT_LOW_SPEED: return 1
+    return 0
+
+def control_transfer(dev_addr: t.CUInt8T, endpoint: t.CUInt8T, ls: t.CInt, max_pkt: t.CUInt8T, setup_buf: t.CVoid | t.CPtr, data_buf: t.CVoid | t.CPtr, data_len: t.CUInt16T, data_in: t.CInt) -> t.CInt:
+    td_count: t.CInt = 2
+    if data_len > 0:
+        td_count = td_count + 1
+    total: t.CUInt64T = t.CUInt64T(td_count) * uhci_td.__sizeof__()
+    tds: uhci_td | t.CPtr = mm.malloc_direct(total)
+    if tds is None: return -1
+    string.memset(c.Addr(tds), 0, total)
+
+    setup_td: uhci_td | t.CPtr = tds
+    _td_set_link(setup_td, t.CUInt32T(t.CUInt64T(tds) + uhci_td.__sizeof__()), 0, 0)
+    _td_set_ctrl(setup_td, ls, 8)
+    _td_set_token(setup_td, TD_TOKEN_SETUP, dev_addr, endpoint, TD_TOKEN_DATA0, 8)
+    setup_td.buffer = t.CUInt32T(t.CUInt64T(setup_buf))
+
+    if data_len > 0:
+        data_td: uhci_td | t.CPtr = t.CUInt64T(tds) + uhci_td.__sizeof__()
+        _td_set_link(data_td, t.CUInt32T(t.CUInt64T(data_td) + uhci_td.__sizeof__()), 0, 0)
+        _td_set_ctrl(data_td, ls, max_pkt)
+        if data_in:
+            _td_set_token(data_td, TD_TOKEN_IN, dev_addr, endpoint, TD_TOKEN_DATA1, data_len)
+        else:
+            _td_set_token(data_td, TD_TOKEN_OUT, dev_addr, endpoint, TD_TOKEN_DATA1, data_len)
+        data_td.buffer = t.CUInt32T(t.CUInt64T(data_buf))
+
+        status_td: uhci_td | t.CPtr = t.CUInt64T(data_td) + uhci_td.__sizeof__()
+        _td_set_link(status_td, 0, 0, 1)
+        _td_set_ctrl(status_td, ls, max_pkt)
+        if data_in:
+            _td_set_token(status_td, TD_TOKEN_OUT, dev_addr, endpoint, TD_TOKEN_DATA1, 0)
+        else:
+            _td_set_token(status_td, TD_TOKEN_IN, dev_addr, endpoint, TD_TOKEN_DATA1, 0)
+        status_td.buffer = 0
+    else:
+        status_td: uhci_td | t.CPtr = t.CUInt64T(tds) + uhci_td.__sizeof__()
+        _td_set_link(status_td, 0, 0, 1)
+        _td_set_ctrl(status_td, ls, max_pkt)
+        _td_set_token(status_td, TD_TOKEN_IN, dev_addr, endpoint, TD_TOKEN_DATA1, 0)
+        status_td.buffer = 0
+
+    _qh_set_element(_ctrl_qh, t.CUInt32T(t.CUInt64T(setup_td)), 0)
+
+    result: t.CInt = _wait_for_complete(status_td, 500)
+
+    _qh_set_element(_ctrl_qh, 0, 1)
+    mm.free(tds)
+    return result

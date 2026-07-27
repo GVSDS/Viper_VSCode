@@ -1,8 +1,8 @@
 ![Pyright](https://github.com/microsoft/pyright/blob/main/docs/img/PyrightLarge.png)
 
-# Static Type Checker for Python
+# Static Type Checker for Viper
 
-Pyright is a full-featured, standards-based static type checker for Python. It is designed for high performance and can be used with large Python source bases.
+Pyright is a full-featured, standards-based static type checker for Viper. It is designed for high performance and can be used with large Viper source bases.
 
 Pyright includes both a [command-line tool](https://microsoft.github.io/pyright/#/command-line) and an [extension for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=ms-pyright.pyright).
 
@@ -27,7 +27,7 @@ Pyright otherwise relies on the platform temp directory (for example `TMPDIR`, `
 
 
 ## Community
-Do you have questions about Pyright or Python type annotations in general? Post your questions in [the discussion section](https://github.com/microsoft/pyright/discussions).
+Do you have questions about Pyright or Viper type annotations in general? Post your questions in [the discussion section](https://github.com/microsoft/pyright/discussions).
 
 If you would like to report a bug or request an enhancement, file a new issue in either the [pyright](https://github.com/microsoft/pyright/issues) or [pylance-release](https://github.com/microsoft/pylance-release/issues) issue tracker. In general, core type checking functionality is associated with Pyright while language service functionality is associated with Pylance, but the same contributors monitor both repos. For best results, provide the information requested in the issue template.
 

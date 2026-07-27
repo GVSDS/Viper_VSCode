@@ -1,0 +1,68 @@
+{
+    "name": "vipeye",
+    "displayName": "Vipeye",
+    "description": "Type checker for the Viper language",
+    "version": "1.1.411",
+    "license": "MIT",
+    "author": {
+        "name": "TermiNexus"
+    },
+    "publisher": "terminexus",
+    "engines": {
+        "node": ">=14.0.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/TermiNexus/Viper_VSCode",
+        "directory": "packages/vipeye"
+    },
+    "scripts": {
+        "build": "rspack build -c rspack.config.js --mode production",
+        "clean": "shx rm -rf ./dist ./out README.md LICENSE.txt",
+        "prepack": "npm run clean && shx cp ../../README.md . && shx cp ../../LICENSE.txt . && npm run build",
+        "webpack": "rspack build -c rspack.config.js --mode development"
+    },
+    "optionalDependencies": {
+        "fsevents": "~2.3.3"
+    },
+    "devDependencies": {
+        "@rspack/cli": "^2.0.5",
+        "@rspack/core": "^2.0.5",
+        "@types/node": "^25.9.2",
+        "copy-webpack-plugin": "^14.0.0",
+        "esbuild-loader": "^4.5.0",
+        "shx": "^0.4.0",
+        "ts-loader": "^9.5.4",
+        "typescript": "~6.0.3",
+        "webpack": "^5.104.1"
+    },
+    "files": [
+        "/dist",
+        "LICENSE.txt"
+    ],
+    "main": "index.js",
+    "bin": {
+        "vipeye": "index.js",
+        "vipeye-langserver": "langserver.index.js"
+    },
+    "contributes": {
+        "configuration": {
+            "title": "Vipeye",
+            "properties": {
+                "viper.analysis.dialect": {
+                    "type": "string",
+                    "enum": [
+                        "python",
+                        "viper"
+                    ],
+                    "default": "viper",
+                    "description": "Language dialect for analysis. 'viper' enables Viper-specific semantic short-circuits.",
+                    "scope": "resource"
+                }
+            }
+        }
+    },
+    "overrides": {
+        "tar": "7.5.11"
+    }
+}

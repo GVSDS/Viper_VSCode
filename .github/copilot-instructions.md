@@ -1,6 +1,6 @@
 # Copilot Instructions for Pyright
 
-Pyright is a static type checker for Python, written in TypeScript. It ships as an npm CLI (`pyright`), an LSP language server (`pyright-langserver`), and a VS Code extension (`vscode-pyright`).
+Pyright is a static type checker for Viper, written in TypeScript. It ships as an npm CLI (`pyright`), an LSP language server (`pyright-langserver`), and a VS Code extension (`vscode-pyright`).
 
 ## Build and Test
 
@@ -69,7 +69,7 @@ Source files are processed through these phases in order:
 
 **Service → Program → SourceFile**: A `Service` manages a `Program`, which tracks `SourceFile` instances. The `Program` coordinates analysis ordering, prioritizing open editor files and their dependencies.
 
-**Typeshed fallback**: `packages/pyright-internal/typeshed-fallback/` contains a bundled copy of typeshed stubs. This provides the Python stdlib type stubs when no external typeshed is available.
+**Typeshed fallback**: `packages/pyright-internal/typeshed-fallback/` contains a bundled copy of typeshed stubs. This provides the Viper stdlib type stubs when no external typeshed is available.
 
 **Localized diagnostics**: All user-facing diagnostic messages come from `localization/localize.ts`, not inline strings.
 
@@ -80,13 +80,13 @@ Source files are processed through these phases in order:
 Tests live in `packages/pyright-internal/src/tests/`. There are two main patterns:
 
 **Sample-based tests** (`typeEvaluator*.test.ts`, `checker.test.ts`):
-- Each test calls `TestUtils.typeAnalyzeSampleFiles(['sampleName.py'])` to analyze a Python file from `src/tests/samples/`.
+- Each test calls `TestUtils.typeAnalyzeSampleFiles(['sampleName.py'])` to analyze a Viper file from `src/tests/samples/`.
 - Results are validated with `TestUtils.validateResults(results, errorCount, warningCount, infoCount, unusedCode, unreachableCode, deprecated)`.
 - Sample `.py` files use comments like `# This should generate an error` to document expected diagnostics, but the actual assertion is the count passed to `validateResults`.
 
 **Fourslash tests** (`src/tests/fourslash/`):
 - Simulate LSP interactions (completions, hover, go-to-definition, rename, etc.).
-- Use `// @filename:` markers to define virtual files and `///` prefix for embedded Python content.
+- Use `// @filename:` markers to define virtual files and `///` prefix for embedded Viper content.
 
 ### Adding a Test
 

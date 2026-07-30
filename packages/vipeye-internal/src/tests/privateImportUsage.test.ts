@@ -20,7 +20,7 @@ import { createServiceProvider } from '../common/serviceProviderExtensions';
 import { UriEx } from '../common/uri/uriUtils';
 import { TestAccessHost } from './harness/testAccessHost';
 import { TestFileSystem } from './harness/vfs/filesystem';
-import { PyrightFileSystem } from '../pyrightFileSystem';
+import { ViperFileSystem } from '../viperFileSystem';
 
 const libraryRoot = combinePaths(normalizeSlashes('/'), lib, sitePackages);
 
@@ -40,7 +40,7 @@ function createTestFileSystem(files: { path: string; content: string }[]): TestF
 
 function createServiceProviderFromFiles(files: { path: string; content: string }[]) {
     const testFS = createTestFileSystem(files);
-    const fs = new PyrightFileSystem(testFS);
+    const fs = new ViperFileSystem(testFS);
     return createServiceProvider(testFS, fs);
 }
 
@@ -168,8 +168,8 @@ describe('reportPrivateImportUsage with tracked library files', () => {
     });
 
     test('config file reportPrivateImportUsage override should apply when includeFileSpecsOverride is set', () => {
-        // This tests the scenario where pyright is run with positional directory arguments
-        // (e.g., pyright --project pyrightconfig.json dir1) and the config file has
+        // This tests the scenario where viper is run with positional directory arguments
+        // (e.g., viper --project viperconfig.json dir1) and the config file has
         // reportPrivateImportUsage: false. The override should still be respected.
 
         const files = [
@@ -285,7 +285,7 @@ describe('reportPrivateImportUsage with tracked library files', () => {
         }
 
         // Test 3: With reportPrivateImportUsage = 'none' AND positional arg include override
-        // This simulates: pyright --project config.json consumer/
+        // This simulates: viper --project config.json consumer/
         // where config.json has reportPrivateImportUsage: false
         {
             const configOptions = new ConfigOptions(UriEx.file('/'));

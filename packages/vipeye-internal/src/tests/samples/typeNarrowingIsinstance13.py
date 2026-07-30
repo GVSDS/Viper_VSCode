@@ -1,7 +1,7 @@
 # This sample tests the case where isinstance type narrowing is used
 # with a protocol class that supports runtime checking.
 
-# pyright: reportUnnecessaryIsInstance=true
+# viper: reportUnnecessaryIsInstance=true
 
 from typing import Any, Iterable, Sized
 

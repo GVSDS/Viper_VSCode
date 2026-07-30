@@ -5,7 +5,7 @@
 # We use "strict" here because we want to ensure that there are
 # no "unknown" types remaining in this file.
 
-# pyright: strict
+# viper: strict
 
 from typing import Generic, TypeVar
 from collections.abc import Generator

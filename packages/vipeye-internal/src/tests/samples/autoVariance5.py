@@ -2,7 +2,7 @@
 # that uses auto-variance and a decorator that uses a generic type alias.
 
 from typing import Any, Concatenate, Generic, ParamSpec, TypeAlias, Callable
-from typing_extensions import TypeVar  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypeVar  # viper: ignore[reportMissingModuleSource]
 
 T = TypeVar("T", infer_variance=True)
 P = ParamSpec("P")

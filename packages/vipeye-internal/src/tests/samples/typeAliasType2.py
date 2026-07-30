@@ -1,7 +1,7 @@
 # This sample tests the TypeAliasType constructor.
 
 from typing import Callable, Generic, ParamSpec, TypeVar, TypeVarTuple
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeAliasType,
 )
 

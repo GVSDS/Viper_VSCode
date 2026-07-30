@@ -1,4 +1,4 @@
-[tool.pyright]
+[tool.viper]
 include = ["test*.py"]
 
 reportMissingImports = true

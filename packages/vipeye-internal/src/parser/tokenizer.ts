@@ -416,9 +416,9 @@ function parseIgnoreBracketContent(
     return undefined;
 }
 
-// Manual replacement for typeIgnoreCommentRegEx / pyrightIgnoreCommentRegEx.
+// Manual replacement for typeIgnoreCommentRegEx / viperIgnoreCommentRegEx.
 // Scans `text` within [rangeStart, rangeEnd) for `<directive>: ignore [rules]`
-// where directive is 'type' or 'pyright'.
+// where directive is 'type' or 'viper'.
 // Returns a match object or undefined. Returned `index` is absolute within `text`.
 function matchIgnoreDirective(
     text: string,
@@ -429,7 +429,7 @@ function matchIgnoreDirective(
     // The directive can be preceded by optional `#` and whitespace, or
     // appear at the start of the range with optional whitespace.
     // type: ignore allows tool-namespaced codes (e.g. "ty:rule-name") in brackets;
-    // pyright: ignore does not.
+    // viper: ignore does not.
     const allowColonInBracket = directive === 'type';
     let searchFrom = rangeStart;
 
@@ -581,8 +581,8 @@ export interface TokenizerOutput {
     // Map of all line numbers that end in a "type: ignore" comment.
     typeIgnoreLines: Map<number, IgnoreComment>;
 
-    // Map of all line numbers that end in a "pyright: ignore" comment.
-    pyrightIgnoreLines: Map<number, IgnoreComment>;
+    // Map of all line numbers that end in a "viper: ignore" comment.
+    viperIgnoreLines: Map<number, IgnoreComment>;
 
     // Program starts with a "type: ignore" comment.
     typeIgnoreAll: IgnoreComment | undefined;
@@ -654,7 +654,7 @@ export class Tokenizer {
     // stream consists purely of NewLine / Indent tokens.
     private _hasTokenBeforeIgnoreAll = false;
     private _typeIgnoreLines = new Map<number, IgnoreComment>();
-    private _pyrightIgnoreLines = new Map<number, IgnoreComment>();
+    private _viperIgnoreLines = new Map<number, IgnoreComment>();
     private _comments: Comment[] | undefined;
     private _fStringStack: FStringContext[] = [];
     private _activeFString: FStringContext | undefined;
@@ -812,7 +812,7 @@ export class Tokenizer {
             lines: new TextRangeCollection(this._lineRanges),
             typeIgnoreLines: this._typeIgnoreLines,
             typeIgnoreAll: this._typeIgnoreAll,
-            pyrightIgnoreLines: this._pyrightIgnoreLines,
+            viperIgnoreLines: this._viperIgnoreLines,
             predominantEndOfLineSequence,
             hasPredominantTabSequence,
             predominantTabSequence,
@@ -1793,18 +1793,18 @@ export class Tokenizer {
                 }
             }
 
-            const pyrightIgnoreMatch = matchIgnoreDirective(sourceText, start, end, 'pyright');
-            if (pyrightIgnoreMatch) {
-                const commentStart = pyrightIgnoreMatch.index;
+            const legacyIgnoreMatch = matchIgnoreDirective(sourceText, start, end, 'pyright');
+            if (legacyIgnoreMatch) {
+                const commentStart = legacyIgnoreMatch.index;
                 const textRange: TextRange = {
-                    start: commentStart + pyrightIgnoreMatch.prefix.length,
-                    length: pyrightIgnoreMatch.fullMatch.length - pyrightIgnoreMatch.prefix.length,
+                    start: commentStart + legacyIgnoreMatch.prefix.length,
+                    length: legacyIgnoreMatch.fullMatch.length - legacyIgnoreMatch.prefix.length,
                 };
                 const ignoreComment: IgnoreComment = {
                     range: textRange,
-                    rulesList: this._getIgnoreCommentRulesList(commentStart, pyrightIgnoreMatch),
+                    rulesList: this._getIgnoreCommentRulesList(commentStart, legacyIgnoreMatch),
                 };
-                this._pyrightIgnoreLines.set(this._lineRanges.length, ignoreComment);
+                this._viperIgnoreLines.set(this._lineRanges.length, ignoreComment);
             }
 
             // 同时支持 "# viper: ignore" 注释指令（与 "# pyright: ignore" 等价）。
@@ -1819,7 +1819,7 @@ export class Tokenizer {
                     range: textRange,
                     rulesList: this._getIgnoreCommentRulesList(commentStart, viperIgnoreMatch),
                 };
-                this._pyrightIgnoreLines.set(this._lineRanges.length, ignoreComment);
+                this._viperIgnoreLines.set(this._lineRanges.length, ignoreComment);
             }
         }
 

@@ -1,6 +1,6 @@
 /// <reference path="typings/fourslash.d.ts" />
 
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "functionSignatureDisplay": "formatted"
 //// }

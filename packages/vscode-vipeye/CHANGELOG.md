@@ -1,1 +1,5 @@
-For a full change history, refer to the [releases page](https://github.com/Microsoft/pyright/releases) on the Pyright GitHub site.
+# Change Log
+
+## 0.1.0
+
+- Initial release of Vipeye (Viper language support for VS Code)

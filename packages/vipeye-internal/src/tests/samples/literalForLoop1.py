@@ -2,7 +2,7 @@
 # expressions are treated as executing at least once for definite assignment
 # analysis.
 
-# pyright: reportPossiblyUnboundVariable=true
+# viper: reportPossiblyUnboundVariable=true
 
 
 def test_non_empty_list_literal():

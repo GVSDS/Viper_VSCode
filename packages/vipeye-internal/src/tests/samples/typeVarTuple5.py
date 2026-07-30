@@ -2,7 +2,7 @@
 # within Callable types.
 
 from typing import Any, Callable, Protocol
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVarTuple,
     Unpack,
 )

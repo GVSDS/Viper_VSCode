@@ -1,7 +1,7 @@
 # This sample tests the case where a __call__ is marked deprecated.
 
 from typing import Callable, Generic, ParamSpec, TypeVar
-from typing_extensions import deprecated  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import deprecated  # viper: ignore[reportMissingModuleSource]
 
 
 class A:

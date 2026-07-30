@@ -132,7 +132,7 @@ export function getEffectiveCommandLineOptions(
     }
 
     if (serverSettings.typeshedPath) {
-        // Pyright supports only one typeshed path currently, whereas the
+        // Vipeye supports only one typeshed path currently, whereas the
         // official VS Code Python extension supports multiple typeshed paths.
         // We'll use the first one specified and ignore the rest.
         commandLineOptions.configSettings.typeshedPath = serverSettings.typeshedPath.getFilePath();

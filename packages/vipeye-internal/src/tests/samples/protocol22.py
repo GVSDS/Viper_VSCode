@@ -4,7 +4,7 @@
 
 from typing import Protocol, TypeVar
 
-# pyright: strict
+# viper: strict
 
 _T1 = TypeVar("_T1")
 _T1_co = TypeVar("_T1_co", covariant=True)

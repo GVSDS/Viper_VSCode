@@ -13,6 +13,12 @@
                     "include": "#line-comment"
                 },
                 {
+                    "include": "#type-annotation-string-single"
+                },
+                {
+                    "include": "#type-annotation-string-double"
+                },
+                {
                     "include": "#string-quoted-double-block"
                 },
                 {
@@ -346,6 +352,12 @@
                             "include": "#function-call"
                         },
                         {
+                            "include": "#string-quoted-single"
+                        },
+                        {
+                            "include": "#string-quoted-double"
+                        },
+                        {
                             "include": "#fstring-interpolation-punctuation"
                         },
                         {
@@ -357,6 +369,18 @@
         },
         "fstring-interpolation-punctuation": {
             "patterns": [
+                {
+                    "name": "keyword.operator.assignment.viper",
+                    "match": ":="
+                },
+                {
+                    "name": "keyword.other.conversion.viper",
+                    "match": "![rsa]"
+                },
+                {
+                    "name": "punctuation.separator.format-spec.viper",
+                    "match": ":"
+                },
                 {
                     "name": "meta.brace.round.viper",
                     "match": "[()]"
@@ -511,6 +535,12 @@
                     "include": "#builtin-constants"
                 },
                 {
+                    "include": "#type-annotation-string-single"
+                },
+                {
+                    "include": "#type-annotation-string-double"
+                },
+                {
                     "name": "variable.parameter.viper",
                     "match": "\\b[A-Za-z_][\\w]*\\b"
                 },
@@ -531,11 +561,20 @@
         "return-type": {
             "patterns": [
                 {
+                    "include": "#return-type-string-single"
+                },
+                {
+                    "include": "#return-type-string-double"
+                },
+                {
                     "name": "keyword.operator.arrow.viper",
                     "match": "->"
                 },
                 {
                     "include": "#builtin-types"
+                },
+                {
+                    "include": "#type-annotation-content"
                 }
             ]
         },
@@ -671,6 +710,113 @@
         "type-name": {
             "name": "entity.name.type.class.viper",
             "match": "\\b[A-Z][\\w]*\\b"
+        },
+        "type-annotation-string-single": {
+            "comment": "Viper 字符串注解（前向引用）：匹配 var: '...' 形式的类型注解字符串",
+            "begin": "([A-Za-z_][\\w]*)\\s*(:)\\s*(')",
+            "beginCaptures": {
+                "1": { "name": "variable.other.property.viper" },
+                "2": { "name": "keyword.operator.annotation.viper" },
+                "3": { "name": "punctuation.definition.string.begin.viper" }
+            },
+            "end": "(')",
+            "endCaptures": {
+                "1": { "name": "punctuation.definition.string.end.viper" }
+            },
+            "contentName": "meta.type-annotation.viper",
+            "patterns": [
+                { "include": "#type-annotation-content" }
+            ]
+        },
+        "type-annotation-string-double": {
+            "comment": "Viper 字符串注解（前向引用）：匹配 var: \"...\" 形式的类型注解字符串",
+            "begin": "([A-Za-z_][\\w]*)\\s*(:)\\s*(\")",
+            "beginCaptures": {
+                "1": { "name": "variable.other.property.viper" },
+                "2": { "name": "keyword.operator.annotation.viper" },
+                "3": { "name": "punctuation.definition.string.begin.viper" }
+            },
+            "end": "(\")",
+            "endCaptures": {
+                "1": { "name": "punctuation.definition.string.end.viper" }
+            },
+            "contentName": "meta.type-annotation.viper",
+            "patterns": [
+                { "include": "#type-annotation-content" }
+            ]
+        },
+        "type-annotation-content": {
+            "comment": "字符串注解内部的类型表达式（类型名、| 组合、None、t.CPtr 等模块限定类型）",
+            "patterns": [
+                {
+                    "name": "keyword.operator.bitwise.or.viper",
+                    "match": "\\|"
+                },
+                {
+                    "name": "variable.language.viper",
+                    "match": "\\bNone\\b"
+                },
+                {
+                    "include": "#builtin-types"
+                },
+                {
+                    "comment": "模块限定类型（如 t.CPtr, t.CInt）",
+                    "match": "(?x)\\b([A-Za-z_][\\w]*)(\\.)([A-Za-z_][\\w]*)\\b",
+                    "captures": {
+                        "1": { "name": "entity.name.namespace.viper" },
+                        "2": { "name": "punctuation.accessor.viper" },
+                        "3": { "name": "entity.name.type.class.viper" }
+                    }
+                },
+                {
+                    "name": "punctuation.definition.type-arguments.begin.viper",
+                    "match": "\\["
+                },
+                {
+                    "name": "punctuation.definition.type-arguments.end.viper",
+                    "match": "\\]"
+                },
+                {
+                    "name": "punctuation.separator.type-arguments.viper",
+                    "match": ","
+                },
+                {
+                    "name": "entity.name.type.class.viper",
+                    "match": "\\b[A-Za-z_][\\w]*\\b"
+                }
+            ]
+        },
+        "return-type-string-single": {
+            "comment": "Viper 返回类型字符串注解：匹配 -> '...' 形式",
+            "begin": "(->)\\s*(')",
+            "beginCaptures": {
+                "1": { "name": "keyword.operator.arrow.viper" },
+                "2": { "name": "punctuation.definition.string.begin.viper" }
+            },
+            "end": "(')",
+            "endCaptures": {
+                "1": { "name": "punctuation.definition.string.end.viper" }
+            },
+            "contentName": "meta.type-annotation.viper",
+            "patterns": [
+                { "include": "#type-annotation-content" }
+            ]
+        },
+        "return-type-string-double": {
+            "comment": "Viper 返回类型字符串注解：匹配 -> \"...\" 形式",
+            "begin": "(->)\\s*(\")",
+            "beginCaptures": {
+                "1": { "name": "keyword.operator.arrow.viper" },
+                "2": { "name": "punctuation.definition.string.begin.viper" }
+            },
+            "end": "(\")",
+            "endCaptures": {
+                "1": { "name": "punctuation.definition.string.end.viper" }
+            },
+            "contentName": "meta.type-annotation.viper",
+            "patterns": [
+                { "include": "#type-annotation-content" }
+            ]
         },
         "illegal": {
             "name": "invalid.illegal.viper",

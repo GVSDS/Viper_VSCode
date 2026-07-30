@@ -1,11 +1,11 @@
 # This sample validates that *P.args and **P.kwargs can be used as a
 # tuple and dict, respectively.
 
-# pyright: strict
+# viper: strict
 
 from collections.abc import Callable
 from typing import Any
-from typing_extensions import ParamSpec  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import ParamSpec  # viper: ignore[reportMissingModuleSource]
 
 P = ParamSpec("P")
 

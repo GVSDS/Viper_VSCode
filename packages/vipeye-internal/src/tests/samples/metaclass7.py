@@ -2,7 +2,7 @@
 # __call__ method, thus overriding the __new__ method on classes
 # that are created from it.
 
-# pyright: reportIncompatibleMethodOverride=false
+# viper: reportIncompatibleMethodOverride=false
 
 
 from typing import Any, Self

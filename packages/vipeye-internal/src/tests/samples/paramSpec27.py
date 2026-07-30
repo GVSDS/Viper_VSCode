@@ -2,7 +2,7 @@
 # a generic class parameterized by a ParamSpec.
 
 from typing import Callable, Generic, Protocol, assert_type
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     Concatenate,
     ParamSpec,
     TypeAlias,

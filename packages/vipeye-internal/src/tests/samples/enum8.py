@@ -1,7 +1,7 @@
 # This sample tests the case where an enum class is used as a bound
 # for a TypeVar and instantiated.
 
-# pyright: strict
+# viper: strict
 
 from enum import Enum
 from typing import TypeVar

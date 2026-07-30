@@ -1,4 +1,4 @@
-# pyright: reportInvalidStubStatement=none
+# viper: reportInvalidStubStatement=none
 
 import sys
 from _typeshed import StrPath, SupportsFlush, SupportsKeysAndGetItem, SupportsWrite

@@ -3246,6 +3246,43 @@ export function isViperIntegerType(type: Type): boolean {
     return ClassType.isBuiltIn(type, 'int');
 }
 
+// Viper 扩展：Viper C 整数类型名称白名单。
+// 这些类型在 vipershed-fallback/stdlib/t.vpi 中定义为 TypeAlias = int，
+// 但在 Viper 语义中它们是独立的 C 整数类型，构造调用应支持指针强转语义，
+// 而不是走 int.__new__ 的参数类型检查。
+const _viperCIntegerTypeNames = new Set<string>([
+    // 基本整数类型
+    'CChar', 'CShort', 'CInt', 'CLong', 'CLongLong',
+    'CSignedChar', 'CUnsignedChar', 'CUnsignedShort',
+    'CUnsignedInt', 'CUnsignedLong', 'CUnsignedLongLong',
+    // 固定宽度整数
+    'CInt8T', 'CInt16T', 'CInt32T', 'CInt64T',
+    'CUInt8T', 'CUInt16T', 'CUInt32T', 'CUInt64T',
+    // 最小/最快宽度整数
+    'CIntLeast8T', 'CIntLeast16T', 'CIntLeast32T', 'CIntLeast64T',
+    'CUIntLeast8T', 'CUIntLeast16T', 'CUIntLeast32T', 'CUIntLeast64T',
+    'CIntFast8T', 'CIntFast16T', 'CIntFast32T', 'CIntFast64T',
+    'CUIntFast8T', 'CUIntFast16T', 'CUIntFast32T', 'CUIntFast64T',
+    // 最大宽度整数
+    'CIntMaxT', 'CUIntMaxT',
+    // 平台相关整数
+    'CSizeT', 'CIntPtrT', 'CUIntPtrT', 'CPtrDiffT',
+    // 布尔
+    'CBool',
+    // 宽字符
+    'CWCharT', 'CChar8T', 'CChar16T', 'CChar32T',
+    // LLVM 简写
+    'i1', 'i8', 'i16', 'i32', 'i64',
+    'u1', 'u8', 'u16', 'u32', 'u64',
+]);
+
+// Viper 扩展：检测名称是否为 Viper C 整数类型名。
+// 用于在 getTypeOfCall 中识别 C 整数类型的构造调用（如 t.CUInt32T(addr, t.CPtr)），
+// 并跳过 int.__new__ 的参数类型检查，实现 Viper 的指针强转语义。
+export function isViperCIntegerTypeName(name: string): boolean {
+    return _viperCIntegerTypeNames.has(name);
+}
+
 export function isAny(type: Type): type is AnyType {
     return type.category === TypeCategory.Any;
 }

@@ -5,7 +5,7 @@
 # in the case where constraint is satisfied.
 
 from typing import AnyStr, Generic, ParamSpec, TypeVar
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVarTuple,
     Unpack,
 )

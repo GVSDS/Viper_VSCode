@@ -32,7 +32,6 @@ import {
     configFileName,
     defaultStubsDirectory,
     pyprojectTomlName,
-    viperConfigFileName,
     viperProjectFileExt,
     viperProjectFileName,
 } from '../common/pathConsts';
@@ -832,7 +831,7 @@ export class AnalyzerService {
             // project root directory contains the config file.
             configFilePath = findConfigFile(this.fs, projectRoot);
 
-            // If pyright is being executed from the command line, the working
+            // If viper is being executed from the command line, the working
             // directory may be deep within a project, and we need to walk up the
             // directory hierarchy to find the project root.
             if (!configFilePath && !commandLineOptions.fromLanguageServer) {
@@ -871,8 +870,8 @@ export class AnalyzerService {
             !configFilePath ? pyprojectFilePath?.getDirectory() : undefined
         );
         if (configs && configs.length > 0) {
-            // With a pyrightconfig.json set, we want the typeCheckingMode to always be standard
-            // as that's what the Pyright CLI will expect. Command line options (if not a language server) and
+            // With a viperconfig.json set, we want the typeCheckingMode to always be standard
+            // as that's what the Viper CLI will expect. Command line options (if not a language server) and
             // the config file can override this.
             configOptions.initializeTypeCheckingMode('standard');
 
@@ -913,7 +912,7 @@ export class AnalyzerService {
             // - *.vpj（Viper Project）命中 → 同样强制 'viper'
             // - pyproject.toml 含 [tool.viper] → 同样强制 'viper'
             // 后两类信号已由 _getExtendedConfigurations / _parsePyprojectTomlFile 写入 _pyprojectDialect。
-            if (primaryConfigFileName === viperConfigFileName) {
+            if (primaryConfigFileName === configFileName) {
                 configOptions.dialect = 'viper';
             } else if (primaryConfigFileName === viperProjectFileName) {
                 configOptions.dialect = 'viper';
@@ -1287,7 +1286,7 @@ export class AnalyzerService {
     // Loads the config JSON object from the specified config file along with any
     // chained config files specified in the "extends" property (recursively).
     // If pyprojectSearchDir is provided and the primary file is a pyproject.toml with no
-    // [tool.pyright] section, falls back to searching ancestor dirs from pyprojectSearchDir.
+    // [tool.viper] section, falls back to searching ancestor dirs from pyprojectSearchDir.
     private _getExtendedConfigurations(
         primaryConfigFileUri: Uri | undefined,
         pyprojectSearchDir?: Uri
@@ -1344,7 +1343,7 @@ export class AnalyzerService {
             curConfigFileUri = baseConfigUri;
         }
 
-        // If a pyproject.toml was found but had no [tool.pyright] section, fall back to
+        // If a pyproject.toml was found but had no [tool.viper] section, fall back to
         // searching ancestor directories as if that pyproject.toml didn't exist.
         if (configJsonObjs.length === 0 && pyprojectSearchDir) {
             const parentDir = pyprojectSearchDir.getDirectory();
@@ -1366,7 +1365,7 @@ export class AnalyzerService {
     }
 
     // 解析 TransPyC project.json（Viper 项目配置）。
-    // project.json 的 schema 与 viperconfig.json/pyrightconfig.json 不同：
+    // project.json 的 schema 与 viperconfig.json 不同：
     //   - source_dir：Viper 源码目录（main.py 所在），作为 import 搜索根
     //   - includes：  额外的 Viper 模块搜索路径（可相对，如 ../../includes）
     // compiler / linker / target / options 等编译器配置 LSP 不需要，忽略。
@@ -1453,15 +1452,11 @@ export class AnalyzerService {
                 const configObj = parse(fileContents);
                 if (configObj && 'tool' in configObj) {
                     const toolSection = configObj.tool as Record<string, object>;
-                    // Viper 优先：[tool.viper] 命中时强制 dialect = 'viper'。
-                    // 否则回退到 [tool.pyright]，保持原有 Python 行为（dialect = 'python' 默认）。
+                    // 只支持 [tool.viper]：命中时强制 dialect = 'viper'。
+                    // 完全切换后不再回退 [tool.pyright]。
                     if (toolSection.viper !== undefined) {
                         this._pyprojectDialect = 'viper';
                         return toolSection.viper as object;
-                    }
-                    if (toolSection.pyright !== undefined) {
-                        this._pyprojectDialect = 'python';
-                        return toolSection.pyright as object;
                     }
                 }
             } catch (e: any) {
@@ -1470,7 +1465,7 @@ export class AnalyzerService {
             }
 
             this._console.info(
-                `Pyproject file "${pyprojectPath.toUserVisibleString()}" has no "[tool.pyright]" or "[tool.viper]" section.`
+                `Pyproject file "${pyprojectPath.toUserVisibleString()}" has no "[tool.viper]" section.`
             );
             return undefined;
         });
@@ -2029,11 +2024,10 @@ export class AnalyzerService {
 
                 if (event === 'add' || event === 'change') {
                     const fileName = getFileName(path);
-                    // L10: 同时监听 viperconfig.json / project.json / *.vpj / pyrightconfig.json，
+                    // L10: 同时监听 viperconfig.json / project.json / *.vpj / pyproject.toml，
                     // 任一文件新增/变更都触发配置重载，从而在用户切换配置文件后自动应用对应 dialect。
                     if (
                         fileName === configFileName ||
-                        fileName === viperConfigFileName ||
                         fileName === viperProjectFileName ||
                         fileName === pyprojectTomlName ||
                         fileName.endsWith(viperProjectFileExt)

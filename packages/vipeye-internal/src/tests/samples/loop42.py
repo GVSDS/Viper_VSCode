@@ -2,7 +2,7 @@
 # a loop where the act of determining whether it's a supported type
 # guard results in a circular dependency between variables.
 
-# pyright: reportUnnecessaryComparison=true
+# viper: reportUnnecessaryComparison=true
 
 
 def func1():

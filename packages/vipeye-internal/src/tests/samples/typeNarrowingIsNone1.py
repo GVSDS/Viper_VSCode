@@ -2,7 +2,7 @@
 # conditions of the form "X is None", "X is not None",
 # "X == None" and "X != None".
 
-# pyright: strict, reportUnusedVariable=false
+# viper: strict, reportUnusedVariable=false
 
 from typing import Any, Literal, Protocol, Self, TypeVar
 

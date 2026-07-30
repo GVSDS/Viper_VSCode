@@ -1,7 +1,7 @@
 # This sample tests code that uses an augmented assignment to a subscript
 # within a loop.
 
-# pyright: strict
+# viper: strict
 
 from typing import Any
 

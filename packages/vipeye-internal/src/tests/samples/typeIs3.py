@@ -1,6 +1,6 @@
 # This sample tests the handling of tuple types when used with TypeIs.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing_extensions import TypeIs
 

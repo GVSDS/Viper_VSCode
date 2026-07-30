@@ -9,11 +9,11 @@
 import { BackgroundAnalysisRunner } from './backgroundAnalysis';
 import { ServiceProvider } from './common/serviceProvider';
 import { run } from './nodeServer';
-import { PyrightServer } from './server';
+import { ViperServer } from './server';
 
 export async function main(maxWorkers: number) {
     await run(
-        (conn) => new PyrightServer(conn, maxWorkers),
+        (conn) => new ViperServer(conn, maxWorkers),
         () => {
             const runner = new BackgroundAnalysisRunner(new ServiceProvider());
             runner.start();

@@ -14,7 +14,7 @@
  * The protocol is designed to be extensible, allowing for future additions of new requests and notifications.
  *
  * Single source of truth:
- * - Within Pyright, this `.ts` file is authoritative. The sibling `tsp.json` and
+ * - Within Vipeye, this `.ts` file is authoritative. The sibling `tsp.json` and
  *   `tsp.schema.json` are GENERATED from it by `generate_json.py` (run that script
  *   after editing this file); do not hand-edit the JSON artifacts.
  * - Across repos, this file is a synchronized copy of the canonical shared Type Server
@@ -171,7 +171,7 @@ export namespace TypeServerProtocol {
      * - Controlling access to private/hidden module members
      * - Optimizing resolution by skipping file checks
      *
-     * TODO: See if we can remove this as these are pretty specific to Pyright at the moment.
+     * TODO: See if we can remove this as these are pretty specific to Vipeye at the moment.
      *
      * Examples:
      * ```python

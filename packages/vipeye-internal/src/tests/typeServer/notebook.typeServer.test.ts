@@ -6,7 +6,7 @@
  * Tests for the type server's notebook cell-chain maintenance (NotebookUriMapper +
  * createNotebookData / openNotebookCellChain / updateNotebookStructure).
  *
- * This is a Pyright-native port of Pylance's `notebook.common.ts`. It exercises only the
+ * This is a Vipeye-native port of Pylance's `notebook.common.ts`. It exercises only the
  * cell-chain core functions against a real AnalyzerService; it does not drive the notebook
  * document handler (which just sequences calls to these same functions).
  */
@@ -28,7 +28,7 @@ import { normalizeSlashes } from '../../common/pathUtils';
 import { ServiceKeys } from '../../common/serviceKeys';
 import { createServiceProvider } from '../../common/serviceProviderExtensions';
 import { Uri } from '../../common/uri/uri';
-import { PyrightFileSystem } from '../../pyrightFileSystem';
+import { ViperFileSystem } from '../../viperFileSystem';
 import { createNotebookData, openNotebookCellChain, updateNotebookStructure } from '../../typeServer/notebookCellChain';
 import { NotebookUriMapper } from '../../typeServer/notebookUriMapper';
 import { createInitStatus, WellKnownWorkspaceKinds, Workspace } from '../../workspaceFactory';
@@ -39,7 +39,7 @@ describe('updateNotebookStructure Tests (typeServer mode)', () => {
     const testFileSystem = createFromFileSystem(host.HOST, /* ignoreCase */ false, {
         cwd: normalizeSlashes('/'),
     });
-    const fileSystem = new PyrightFileSystem(testFileSystem);
+    const fileSystem = new ViperFileSystem(testFileSystem);
     const serviceProvider = createServiceProvider(testFileSystem, fileSystem);
     let uriMapper: NotebookUriMapper;
     let analyzerService: AnalyzerService;

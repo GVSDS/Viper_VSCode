@@ -1,6 +1,6 @@
 # This sample tests interleaved for and if clauses in a list comprehension.
 
-# pyright: strict, reportUnnecessaryComparison=false
+# viper: strict, reportUnnecessaryComparison=false
 
 from typing import Union, List, Tuple
 

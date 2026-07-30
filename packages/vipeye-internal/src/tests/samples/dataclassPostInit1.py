@@ -1,6 +1,6 @@
 # This sample tests the __post_init__ validation logic.
 
-# pyright: reportIncompatibleMethodOverride=false
+# viper: reportIncompatibleMethodOverride=false
 
 from dataclasses import InitVar, dataclass, field
 from typing import Iterable

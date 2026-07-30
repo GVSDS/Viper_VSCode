@@ -4,7 +4,7 @@
 
 from typing import Generic, Self, assert_type
 
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     ParamSpec,
     TypeVar,
     TypeVarTuple,

@@ -1,2 +1,2 @@
-[tool.pyright]
+[tool.viper]
 pythonVersion = "3.9"

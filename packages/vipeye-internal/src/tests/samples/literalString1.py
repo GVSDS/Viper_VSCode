@@ -2,7 +2,7 @@
 # in PEP 675.
 
 from typing import Iterable
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     Literal,
     LiteralString,
 )

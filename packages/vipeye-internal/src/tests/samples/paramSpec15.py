@@ -2,7 +2,7 @@
 # with a ParamSpec.
 
 from typing import Callable, Generic, TypeVar
-from typing_extensions import ParamSpec  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import ParamSpec  # viper: ignore[reportMissingModuleSource]
 
 P = ParamSpec("P")
 T = TypeVar("T")

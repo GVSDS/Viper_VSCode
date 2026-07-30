@@ -2,12 +2,12 @@
 # using bidirectional type inference in the case where the expected
 # type is `Self`.
 
-# pyright: strict
+# viper: strict
 
 from __future__ import annotations
 
 from typing import Any, Generic, Protocol, TypeVar
-from typing_extensions import Self  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import Self  # viper: ignore[reportMissingModuleSource]
 
 T_contra = TypeVar("T_contra", contravariant=True)
 ThingT = TypeVar("ThingT", bound="Thing[Any]")

@@ -24,7 +24,7 @@ import { createServiceProvider } from '../common/serviceProviderExtensions';
 import { Uri } from '../common/uri/uri';
 import { UriEx } from '../common/uri/uriUtils';
 import { PartialStubService } from '../partialStubService';
-import { PyrightFileSystem } from '../pyrightFileSystem';
+import { ViperFileSystem } from '../viperFileSystem';
 import { TestAccessHost } from './harness/testAccessHost';
 import { TestFileSystem } from './harness/vfs/filesystem';
 
@@ -87,7 +87,7 @@ describe('Import tests with fake venv', () => {
 
                 const testFS = createTestFileSystem(files);
                 testFS.symlinkSync(stubSource, combinePaths(libraryRoot, 'myLib-stubs', 'partialStub.pyi'));
-                const fs = new PyrightFileSystem(testFS);
+                const fs = new ViperFileSystem(testFS);
                 const partialStubService = new PartialStubService(fs);
                 const sp = createServiceProvider(testFS, fs, partialStubService);
                 const configOptions = new ConfigOptions(UriEx.file('/'));
@@ -527,7 +527,7 @@ describe('Import tests with fake venv', () => {
                     c.defaultExtraPaths = [UriEx.file(combinePaths('/', 'external_symlinked'))];
                 },
                 (importResolver, uri, configOptions) => {
-                    const fs = importResolver.serviceProvider.fs() as PyrightFileSystem;
+                    const fs = importResolver.serviceProvider.fs() as ViperFileSystem;
                     const testFs = (fs as any).realFS as TestFileSystem;
                     testFs.mkdirSync(UriEx.file(combinePaths('/', 'external_symlinked')));
                     testFs.symlinkSync(
@@ -1131,14 +1131,14 @@ function createTestFileSystem(files: { path: string; content: string }[]): TestF
 
 function createServiceProviderFromFiles(files: { path: string; content: string }[]): ServiceProvider {
     const testFS = createTestFileSystem(files);
-    const fs = new PyrightFileSystem(testFS);
+    const fs = new ViperFileSystem(testFS);
     const partialStubService = new PartialStubService(fs);
     return createServiceProvider(testFS, fs, partialStubService);
 }
 
 function createServiceProviderWithCombinedFs(files: { path: string; content: string }[]): ServiceProvider {
     const testFS = createTestFileSystem(files);
-    const fs = new PyrightFileSystem(new CombinedFileSystem(testFS));
+    const fs = new ViperFileSystem(new CombinedFileSystem(testFS));
     const partialStubService = new PartialStubService(fs);
     return createServiceProvider(testFS, fs, partialStubService);
 }

@@ -1,6 +1,6 @@
 /// <reference path="typings/fourslash.d.ts" />
 
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "typeCheckingMode": "basic"
 //// }
@@ -24,7 +24,7 @@
 //// __all__ = _components + ["other_symbol"]
 
 // @filename: .src/test1.py
-//// # pyright: reportPrivateUsage=true, reportPrivateImportUsage=true
+//// # viper: reportPrivateUsage=true, reportPrivateImportUsage=true
 //// # This should NOT show an error because __all__ uses an unsupported form,
 //// # so we can't determine if GraphClass is actually in __all__ or not.
 //// # Since the module uses a dynamic __all__, we should be permissive.

@@ -1,6 +1,6 @@
 # This sample tests the isinstance type narrowing involving TypeForm types.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from types import UnionType
 from typing import Any

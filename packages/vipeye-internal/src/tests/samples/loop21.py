@@ -1,7 +1,7 @@
 # This sample tests a loop where some of the variables within the loop
 # depend on each other.
 
-# pyright: strict
+# viper: strict
 
 
 def find_min(nums: list[int]) -> int:

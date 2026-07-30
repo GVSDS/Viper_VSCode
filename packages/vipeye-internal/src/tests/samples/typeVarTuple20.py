@@ -2,10 +2,10 @@
 # to a non-variadic TypeVar during constraint solving.
 
 # Enable experimental features to support Union[*Ts].
-# pyright: enableExperimentalFeatures=true
+# viper: enableExperimentalFeatures=true
 
 from typing import TypeVar, Tuple, Union
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     reveal_type,
     TypeVarTuple,
 )

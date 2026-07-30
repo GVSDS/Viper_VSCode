@@ -1,7 +1,7 @@
 # This sample tests the case where bidirectional type inference is required
 # for the extra_items in a closed TypedDict.
 
-from typing_extensions import TypedDict  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypedDict  # viper: ignore[reportMissingModuleSource]
 
 
 class Typed(TypedDict, extra_items=str | int):

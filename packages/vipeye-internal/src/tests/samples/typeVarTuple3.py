@@ -2,7 +2,7 @@
 # variadic type variables.
 
 from typing import Any, Generic, Literal, TypeAlias, TypeVar, overload
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVarTuple,
     Unpack,
 )

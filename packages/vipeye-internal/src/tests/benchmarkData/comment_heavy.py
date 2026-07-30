@@ -23,20 +23,20 @@ x13 = yet_another  # type: ignore[name-defined]
 
 # --- pyright: ignore variants ---
 
-y1: int = "not_int"  # pyright: ignore
-y2: str = 42  # pyright: ignore
-y3: float = "nope"  # pyright: ignore
-y4: bool = 123  # pyright: ignore
-y5: bytes = 456  # pyright: ignore
+y1: int = "not_int"  # viper: ignore
+y2: str = 42  # viper: ignore
+y3: float = "nope"  # viper: ignore
+y4: bool = 123  # viper: ignore
+y5: bytes = 456  # viper: ignore
 
-y6: int = "a"  # pyright: ignore[reportAssignmentType]
-y7: str = 1  # pyright: ignore[reportAssignmentType]
-y8: float = True  # pyright: ignore[reportAssignmentType]
-y9: bool = None  # pyright: ignore[reportAssignmentType]
-y10: bytes = []  # pyright: ignore[reportAssignmentType]
+y6: int = "a"  # viper: ignore[reportAssignmentType]
+y7: str = 1  # viper: ignore[reportAssignmentType]
+y8: float = True  # viper: ignore[reportAssignmentType]
+y9: bool = None  # viper: ignore[reportAssignmentType]
+y10: bytes = []  # viper: ignore[reportAssignmentType]
 
-y11: int = "str"  # pyright: ignore[reportAssignmentType, reportGeneralClassIssues]
-y12: str = 42  # pyright: ignore[reportAssignmentType, reportGeneralClassIssues]
+y11: int = "str"  # viper: ignore[reportAssignmentType, reportGeneralClassIssues]
+y12: str = 42  # viper: ignore[reportAssignmentType, reportGeneralClassIssues]
 
 # --- noqa comments ---
 
@@ -52,8 +52,8 @@ import io  # noqa
 z1: int = "str"  # type: ignore  # noqa: F841
 z2: str = 42  # type: ignore[assignment]  # noqa
 z3 = undefined  # type: ignore[name-defined]  # noqa: F821
-z4: int = "nope"  # pyright: ignore  # noqa: F841
-z5: int = "nope"  # pyright: ignore[reportAssignmentType]  # noqa
+z4: int = "nope"  # viper: ignore  # noqa: F841
+z5: int = "nope"  # viper: ignore[reportAssignmentType]  # noqa
 
 # --- Regular comments (should be fast-rejected by directive scanner) ---
 
@@ -64,7 +64,7 @@ z5: int = "nope"  # pyright: ignore[reportAssignmentType]  # noqa
 # Regular comment mentioning ignore but not as a directive
 # A comment that says "type" but is not a type: ignore
 # type: This looks similar but is not a valid directive
-# pyright: This also looks similar but is not valid
+# viper: This also looks similar but is not valid
 
 # --- Doc comments (hash-prefixed) ---
 
@@ -110,14 +110,14 @@ def another_poorly_typed(x, y, z):  # type: ignore
 
 
 class IgnoredClass:
-    x: int = "not_int"  # pyright: ignore[reportAssignmentType]
-    y: str = 42  # pyright: ignore[reportAssignmentType]
+    x: int = "not_int"  # viper: ignore[reportAssignmentType]
+    y: str = 42  # viper: ignore[reportAssignmentType]
 
     def __init__(self) -> None:
-        self.a: int = "str"  # pyright: ignore[reportAssignmentType]
-        self.b: str = 42  # pyright: ignore[reportAssignmentType]
-        self.c: float = "3.14"  # pyright: ignore[reportAssignmentType]
-        self.d: bool = "True"  # pyright: ignore[reportAssignmentType]
+        self.a: int = "str"  # viper: ignore[reportAssignmentType]
+        self.b: str = 42  # viper: ignore[reportAssignmentType]
+        self.c: float = "3.14"  # viper: ignore[reportAssignmentType]
+        self.d: bool = "True"  # viper: ignore[reportAssignmentType]
 
     def method1(self) -> int:  # type: ignore
         return "not_int"  # type: ignore
@@ -164,16 +164,16 @@ def bulk_ignores_1():
     v8 = undefined_8  # type: ignore[name-defined]
     v9 = undefined_9  # type: ignore[name-defined]
     v10 = undefined_10  # type: ignore[name-defined]
-    v11 = undefined_11  # pyright: ignore[reportUndefinedVariable]
-    v12 = undefined_12  # pyright: ignore[reportUndefinedVariable]
-    v13 = undefined_13  # pyright: ignore[reportUndefinedVariable]
-    v14 = undefined_14  # pyright: ignore[reportUndefinedVariable]
-    v15 = undefined_15  # pyright: ignore[reportUndefinedVariable]
-    v16 = undefined_16  # pyright: ignore[reportUndefinedVariable]
-    v17 = undefined_17  # pyright: ignore[reportUndefinedVariable]
-    v18 = undefined_18  # pyright: ignore[reportUndefinedVariable]
-    v19 = undefined_19  # pyright: ignore[reportUndefinedVariable]
-    v20 = undefined_20  # pyright: ignore[reportUndefinedVariable]
+    v11 = undefined_11  # viper: ignore[reportUndefinedVariable]
+    v12 = undefined_12  # viper: ignore[reportUndefinedVariable]
+    v13 = undefined_13  # viper: ignore[reportUndefinedVariable]
+    v14 = undefined_14  # viper: ignore[reportUndefinedVariable]
+    v15 = undefined_15  # viper: ignore[reportUndefinedVariable]
+    v16 = undefined_16  # viper: ignore[reportUndefinedVariable]
+    v17 = undefined_17  # viper: ignore[reportUndefinedVariable]
+    v18 = undefined_18  # viper: ignore[reportUndefinedVariable]
+    v19 = undefined_19  # viper: ignore[reportUndefinedVariable]
+    v20 = undefined_20  # viper: ignore[reportUndefinedVariable]
     return None
 
 
@@ -189,16 +189,16 @@ def bulk_ignores_2():
     a8: tuple = False  # type: ignore[assignment]
     a9: set = 3.14  # type: ignore[assignment]
     a10: int = None  # type: ignore[assignment]
-    b1: int = "wrong"  # pyright: ignore[reportAssignmentType]
-    b2: str = 42  # pyright: ignore[reportAssignmentType]
-    b3: float = True  # pyright: ignore[reportAssignmentType]
-    b4: bool = 3.14  # pyright: ignore[reportAssignmentType]
-    b5: bytes = None  # pyright: ignore[reportAssignmentType]
-    b6: list = 42  # pyright: ignore[reportAssignmentType]
-    b7: dict = "str"  # pyright: ignore[reportAssignmentType]
-    b8: tuple = False  # pyright: ignore[reportAssignmentType]
-    b9: set = 3.14  # pyright: ignore[reportAssignmentType]
-    b10: int = None  # pyright: ignore[reportAssignmentType]
+    b1: int = "wrong"  # viper: ignore[reportAssignmentType]
+    b2: str = 42  # viper: ignore[reportAssignmentType]
+    b3: float = True  # viper: ignore[reportAssignmentType]
+    b4: bool = 3.14  # viper: ignore[reportAssignmentType]
+    b5: bytes = None  # viper: ignore[reportAssignmentType]
+    b6: list = 42  # viper: ignore[reportAssignmentType]
+    b7: dict = "str"  # viper: ignore[reportAssignmentType]
+    b8: tuple = False  # viper: ignore[reportAssignmentType]
+    b9: set = 3.14  # viper: ignore[reportAssignmentType]
+    b10: int = None  # viper: ignore[reportAssignmentType]
     return None
 
 

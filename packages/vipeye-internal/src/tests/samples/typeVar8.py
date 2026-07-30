@@ -2,7 +2,7 @@
 # used as a runtime object rather than a special form.
 
 import typing as t
-import typing_extensions as te  # pyright: ignore[reportMissingModuleSource]
+import typing_extensions as te  # viper: ignore[reportMissingModuleSource]
 
 
 T1 = t.TypeVar("T1")

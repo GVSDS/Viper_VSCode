@@ -1,7 +1,7 @@
 # This sample tests the case where an annotated variable in a loop
 # is used as an index, an implicit argument for __getitem__.
 
-# pyright: strict
+# viper: strict
 
 
 def func1(nums: list[int], target: int) -> None:

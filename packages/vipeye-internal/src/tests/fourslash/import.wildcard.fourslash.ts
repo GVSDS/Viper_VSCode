@@ -16,7 +16,7 @@
 ////     print("hi")
 
 // @filename: .src/test.py
-//// # pyright: reportWildcardImportFromLibrary=false
+//// # viper: reportWildcardImportFromLibrary=false
 //// from testpkg import *
 //// submod.test_func()
 //// [|/*marker*/foo|]()

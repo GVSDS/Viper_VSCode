@@ -1,7 +1,7 @@
 # This sample tests a special case for the reportUninitializedInstanceVariable
 # test involving NamedTuple classes.
 
-# pyright: reportUninitializedInstanceVariable=true
+# viper: reportUninitializedInstanceVariable=true
 
 from typing import final, NamedTuple
 

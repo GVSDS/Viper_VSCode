@@ -1,7 +1,7 @@
 # This sample tests that __all__ manipulations in a stub file are not
 # flagged as invalid stub statements.
 
-# pyright: reportInvalidStubStatement=true
+# viper: reportInvalidStubStatement=true
 
 import typing
 

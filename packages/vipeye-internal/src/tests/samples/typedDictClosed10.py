@@ -1,7 +1,7 @@
 # This sample tests the case where a type variable is used to define
 # the extra_items in a TypedDict.
 
-from typing_extensions import TypedDict  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypedDict  # viper: ignore[reportMissingModuleSource]
 
 
 class TD1[T](TypedDict, extra_items=T):

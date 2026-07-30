@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 from typing import Any, Generic, NewType, TypeVar
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVarTuple,
     Unpack,
 )

@@ -1,6 +1,6 @@
 # This sample tests TypeIs when used with a Callable type.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Callable
 from typing_extensions import TypeIs

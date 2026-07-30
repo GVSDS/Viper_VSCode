@@ -3,7 +3,7 @@
 import os
 from typing import Any, Callable, Never
 
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVarTuple,
     Unpack,
 )

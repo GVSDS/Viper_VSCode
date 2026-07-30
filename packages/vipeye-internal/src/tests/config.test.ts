@@ -4,7 +4,7 @@
  * Licensed under the MIT license.
  * Author: Eric Traut
  *
- * Unit tests for parsing of pyrightconfig.json files.
+ * Unit tests for parsing of viperconfig.json files.
  */
 
 import assert from 'assert';
@@ -267,7 +267,7 @@ describe(`config test'}`, () => {
         const nullConsole = new NullConsole();
         const service = createAnalyzer(nullConsole);
         const commandLineOptions = new CommandLineOptions(cwd, /* fromLanguageServer */ false);
-        commandLineOptions.configFilePath = combinePaths(cwd, 'pyrightconfig.json');
+        commandLineOptions.configFilePath = combinePaths(cwd, 'viperconfig.json');
         commandLineOptions.configSettings.autoSearchPaths = true;
         service.setOptions(commandLineOptions);
 
@@ -382,7 +382,7 @@ describe(`config test'}`, () => {
             assert.equal(service.getConfigOptions().effectiveTypeCheckingMode, 'off');
 
             const pyprojectFileUri = projectRootUri.combinePaths('pyproject.toml');
-            fs.writeFileSync(pyprojectFileUri, '[tool.pyright]\ntypeCheckingMode = "strict"\n');
+            fs.writeFileSync(pyprojectFileUri, '[tool.viper]\ntypeCheckingMode = "strict"\n');
             fs.fireFileWatcherEvent(pyprojectFileUri.getFilePath(), 'add');
 
             assert.equal(service.getConfigOptions().effectiveTypeCheckingMode, 'strict');
@@ -725,7 +725,7 @@ describe(`config test'}`, () => {
         assert.deepStrictEqual(config.defaultPythonVersion, pythonVersion3_13);
     });
 
-    test('PyprojectTomlWithoutPyrightSectionFallsBackToAncestorConfig', () => {
+    test('PyprojectTomlWithoutViperSectionFallsBackToAncestorConfig', () => {
         const cwd = normalizePath(process.cwd());
         const service = createAnalyzer();
         const commandLineOptions = new CommandLineOptions(cwd, /* fromLanguageServer */ false);
@@ -742,7 +742,7 @@ describe(`config test'}`, () => {
         );
     });
 
-    test('PyprojectTomlWithoutPyrightSectionFallsBackThroughMultipleAncestors', () => {
+    test('PyprojectTomlWithoutViperSectionFallsBackThroughMultipleAncestors', () => {
         const cwd = normalizePath(process.cwd());
         const service = createAnalyzer();
         const commandLineOptions = new CommandLineOptions(cwd, /* fromLanguageServer */ false);
@@ -751,7 +751,7 @@ describe(`config test'}`, () => {
 
         const configOptions = service.test_getConfigOptions(commandLineOptions);
 
-        // Should skip the empty pyproject.tomls and fall back to the root's [tool.pyright].
+        // Should skip the empty pyproject.tomls and fall back to the root's [tool.viper].
         assert.strictEqual(configOptions.defaultPythonVersion!.toString(), pythonVersion3_9.toString());
         assert.ok(
             configOptions.configFileSource
@@ -775,7 +775,7 @@ describe(`config test'}`, () => {
         const basicDefaults = getBasicDiagnosticRuleSet();
         assert.equal(basicDefaults.reportPrivateImportUsage, 'error');
 
-        // Now simulate positional args overriding include (like `pyright --project config.json subdir`).
+        // Now simulate positional args overriding include (like `viper --project config.json subdir`).
         const commandLineOptionsWithOverride = new CommandLineOptions(cwd, /* fromLanguageServer */ false);
         commandLineOptionsWithOverride.configSettings.includeFileSpecsOverride = [combinePaths(cwd, 'subdir')];
         service.setOptions(commandLineOptionsWithOverride);

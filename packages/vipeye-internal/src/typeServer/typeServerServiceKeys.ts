@@ -16,6 +16,6 @@ export namespace TypeServerServiceKeys {
     export const uriMapper = new ServiceKey<INotebookUriMapper>('INotebookUriMapper');
 
     // Profiling is a Pylance-only feature and is never registered in the standalone
-    // Pyright type server, so `tryGet` returns undefined and profiling becomes a no-op.
+    // Viper type server, so `tryGet` returns undefined and profiling becomes a no-op.
     export const profilingService = new ServiceKey<IProfilingService>('IProfilingService');
 }

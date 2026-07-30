@@ -2,7 +2,7 @@
 # by a TypeVarTuple.
 
 from typing import Any, Generic
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVarTuple,
     Unpack,
 )

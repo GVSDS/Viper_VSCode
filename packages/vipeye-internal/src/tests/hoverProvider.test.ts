@@ -12,7 +12,7 @@ import { parseAndGetTestState, TestState } from './harness/fourslash/testState';
 
 test('import tooltip - import statement', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -41,7 +41,7 @@ test('import tooltip - import statement', async () => {
 
 test('import tooltip - import reference', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -71,7 +71,7 @@ test('import tooltip - import reference', async () => {
 
 test('import tooltip - import statement with stubs', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -108,7 +108,7 @@ test('import tooltip - import statement with stubs', async () => {
 
 test('method tooltip - docstring from implementation when stub uses non-exported name', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -150,7 +150,7 @@ test('method tooltip - docstring from implementation when stub uses non-exported
 
 test('function hover shows source default values for stub ellipsis defaults', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -179,7 +179,7 @@ test('function hover shows source default values for stub ellipsis defaults', as
 
 test('function hover substitutes multiple stub ellipsis defaults from source', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -208,7 +208,7 @@ test('function hover substitutes multiple stub ellipsis defaults from source', a
 
 test('function hover shows concrete default values when provided by stub', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -233,7 +233,7 @@ test('function hover shows concrete default values when provided by stub', async
 
 test('function hover substitutes multiple stub ellipsis defaults for selected overload', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -271,7 +271,7 @@ test('function hover substitutes multiple stub ellipsis defaults for selected ov
 test('function hover does not substitute unsafe long defaults for stub ellipsis defaults', async () => {
     const longNumber = '9'.repeat(150);
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -300,7 +300,7 @@ test('function hover does not substitute unsafe long defaults for stub ellipsis 
 
 test('function hover does not substitute unsafe multiline defaults for stub ellipsis defaults', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -330,7 +330,7 @@ test('function hover does not substitute unsafe multiline defaults for stub elli
 
 test('import tooltip - import reference - stub files', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -368,7 +368,7 @@ test('import tooltip - import reference - stub files', async () => {
 
 test('import tooltip - import submodules statement', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -398,7 +398,7 @@ test('import tooltip - import submodules statement', async () => {
 
 test('import tooltip - import submodules reference', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -429,7 +429,7 @@ test('import tooltip - import submodules reference', async () => {
 
 test('import tooltip - from import statement with stubs', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -466,7 +466,7 @@ test('import tooltip - from import statement with stubs', async () => {
 
 test('import tooltip - from import submodules statement', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -526,7 +526,7 @@ test('import tooltip - check duplicate property', async () => {
 
 test('import symbol tooltip - useLibraryCodeForTypes false', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": false
 //// }
@@ -560,7 +560,7 @@ test('import symbol tooltip - useLibraryCodeForTypes false', async () => {
 
 test('import symbol tooltip - useLibraryCodeForTypes true', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }

@@ -4,15 +4,15 @@
  *
  * programWrapper.ts
  *
- * Wraps Pyright's `Program` in the `IProgram` interface the type server consumes.
+ * Wraps Vipeye's `Program` in the `IProgram` interface the type server consumes.
  *
  * The wrapper is thin: every method delegates synchronously to the underlying `Program`.
  * It exists to (a) present the `IProgram` contract the conversion layer is written against,
- * (b) reshape Pyright types (`SourceFileInfo`, `ParseFileResults`, `SourceMapper`) into the
+ * (b) reshape Vipeye types (`SourceFileInfo`, `ParseFileResults`, `SourceMapper`) into the
  * type-server-facing shapes, and (c) maintain a monotonic `snapshot` content-version counter
  * (on the shared `ITypeCache`) that the server exposes to clients for cache coherence.
  *
- * Cancellation is handled the same way as everywhere else in Pyright: work runs inside
+ * Cancellation is handled the same way as everywhere else in Vipeye: work runs inside
  * `runWithCancellationToken`, and the evaluator polls the token, so long-running synchronous
  * queries can be interrupted mid-request.
  */
@@ -61,7 +61,7 @@ import { ParserOutput } from '../parser/parser';
 
 import { createTypeServerEvaluator, ITypeServerEvaluator } from './typeServerEvaluator';
 import { getEffectiveTypeOfDeclaration, getSymbolFromScope, isDeclaration } from './typeEvalUtils';
-import { convertFromPyrightDiagnostic } from './diagnosticUtils';
+import { convertFromViperDiagnostic } from './diagnosticUtils';
 import { INotebookUriMapper } from './notebookUriMapper';
 import { getProtocolDeclKey } from './typeServerConversionTypes';
 
@@ -73,12 +73,12 @@ import { IProgram, ISourceFileInfo, ISourceMapper, ISymbolLookup, ParseResults }
 import { ITypeCache, TypeCache } from './typeCache';
 
 /**
- * Adapter that lets the in-proc Pyright `Program` (which is mutable and has no
+ * Adapter that lets the in-proc Vipeye `Program` (which is mutable and has no
  * native snapshot concept) satisfy the `IProgram` contract the type server's
  * conversion layer is written against.
  *
  *   - `run` runs the callback over the live `Program` via `_program.run(...)`.
- *     Because Pyright's evaluator is synchronous the callback executes atomically,
+ *     Because Vipeye's evaluator is synchronous the callback executes atomically,
  *     so it simply receives `this` — there is no copy-on-write snapshot view.
  *   - A monotonic `snapshot` counter (on the shared `ITypeCache`) is bumped by the
  *     mutating methods below. It is a protocol-level content version: the server
@@ -169,7 +169,7 @@ export class ProgramWrapper implements IProgram {
         return true;
     }
 
-    get isPyright(): boolean {
+    get isVipeye(): boolean {
         return true;
     }
 
@@ -626,7 +626,7 @@ export class ProgramWrapper implements IProgram {
             };
             diagnostics = this._program
                 .getDiagnosticsForRange(uri, range)
-                .map((d) => convertFromPyrightDiagnostic(d, this._program.fileSystem, true, true) || d);
+                .map((d) => convertFromViperDiagnostic(d, this._program.fileSystem, true, true) || d);
             versionStr = sourceFile.getDiagnosticVersion().toString();
         }
         return { kind: 'full', resultId: versionStr, items: diagnostics };
@@ -671,7 +671,7 @@ export class ProgramWrapper implements IProgram {
         }
 
         // Temporary problem. If this is a class, the protocol compatibility
-        // map stores Pyright types in it. Remove it.
+        // map stores Vipeye types in it. Remove it.
         if (result && isClass(result) && result.shared.protocolCompatibility) {
             result = { ...result, shared: { ...result.shared, protocolCompatibility: undefined } };
         }
@@ -820,7 +820,7 @@ export class ProgramWrapper implements IProgram {
         // Drop the declaration→Type cache; entries are tied to parse-tree
         // nodes that may be replaced by re-parsed source files.
         this._declTypeCache = new WeakMap();
-        // Drop the protocol-declaration cache; the resolved Pyright Declaration
+        // Drop the protocol-declaration cache; the resolved Vipeye Declaration
         // it points to may reference parse nodes that no longer exist.
         this._protocolDeclCache = new Map();
 

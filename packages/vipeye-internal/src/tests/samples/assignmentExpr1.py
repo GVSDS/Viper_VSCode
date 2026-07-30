@@ -1,6 +1,6 @@
 # This sample tests the Python 3.8 assignment expressions.
 
-# pyright: reportUnusedExpression=false
+# viper: reportUnusedExpression=false
 
 def func1():
     b = 'a'

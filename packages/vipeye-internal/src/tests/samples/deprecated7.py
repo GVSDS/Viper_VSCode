@@ -1,7 +1,7 @@
 # This sample tests the case where a "deprecated" instance is instantiated
 # prior to being used as a decorator.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing_extensions import deprecated
 

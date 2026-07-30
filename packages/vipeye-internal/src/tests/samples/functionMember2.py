@@ -1,7 +1,7 @@
 # This sample tests the special-case handling of the __self__
 # attribute for a function when it is bound to a class or object.
 
-# pyright: reportFunctionMemberAccess=error
+# viper: reportFunctionMemberAccess=error
 
 
 from typing import Protocol

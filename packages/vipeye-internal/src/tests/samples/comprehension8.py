@@ -1,7 +1,7 @@
 # This sample tests the evaluation of a list comprehension where
 # there are interdependencies between some of the variables.
 
-# pyright: strict
+# viper: strict
 
 
 class ClassA:

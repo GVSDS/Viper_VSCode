@@ -867,16 +867,16 @@ export namespace Localizer {
             new ParameterizedString<{ variable: string; class: string }>(
                 getRawString('Diagnostic.protocolVarianceInvariant')
             );
-        export const pyrightCommentInvalidDiagnosticBoolValue = () =>
-            getRawString('Diagnostic.pyrightCommentInvalidDiagnosticBoolValue');
-        export const pyrightCommentInvalidDiagnosticSeverityValue = () =>
-            getRawString('Diagnostic.pyrightCommentInvalidDiagnosticSeverityValue');
-        export const pyrightCommentMissingDirective = () => getRawString('Diagnostic.pyrightCommentMissingDirective');
-        export const pyrightCommentNotOnOwnLine = () => getRawString('Diagnostic.pyrightCommentNotOnOwnLine');
-        export const pyrightCommentUnknownDirective = () =>
-            new ParameterizedString<{ directive: string }>(getRawString('Diagnostic.pyrightCommentUnknownDirective'));
-        export const pyrightCommentUnknownDiagnosticRule = () =>
-            new ParameterizedString<{ rule: string }>(getRawString('Diagnostic.pyrightCommentUnknownDiagnosticRule'));
+        export const viperCommentInvalidDiagnosticBoolValue = () =>
+            getRawString('Diagnostic.viperCommentInvalidDiagnosticBoolValue');
+        export const viperCommentInvalidDiagnosticSeverityValue = () =>
+            getRawString('Diagnostic.viperCommentInvalidDiagnosticSeverityValue');
+        export const viperCommentMissingDirective = () => getRawString('Diagnostic.viperCommentMissingDirective');
+        export const viperCommentNotOnOwnLine = () => getRawString('Diagnostic.viperCommentNotOnOwnLine');
+        export const viperCommentUnknownDirective = () =>
+            new ParameterizedString<{ directive: string }>(getRawString('Diagnostic.viperCommentUnknownDirective'));
+        export const viperCommentUnknownDiagnosticRule = () =>
+            new ParameterizedString<{ rule: string }>(getRawString('Diagnostic.viperCommentUnknownDiagnosticRule'));
         export const readOnlyArgCount = () => getRawString('Diagnostic.readOnlyArgCount');
         export const readOnlyNotInTypedDict = () => getRawString('Diagnostic.readOnlyNotInTypedDict');
         export const recursiveDefinition = () =>
@@ -1190,9 +1190,9 @@ export namespace Localizer {
             new ParameterizedString<{ testType: string; classType: string }>(
                 getRawString('Diagnostic.unnecessaryIsSubclassNever')
             );
-        export const unnecessaryPyrightIgnore = () => getRawString('Diagnostic.unnecessaryPyrightIgnore');
-        export const unnecessaryPyrightIgnoreRule = () =>
-            new ParameterizedString<{ name: string }>(getRawString('Diagnostic.unnecessaryPyrightIgnoreRule'));
+        export const unnecessaryViperIgnore = () => getRawString('Diagnostic.unnecessaryViperIgnore');
+        export const unnecessaryViperIgnoreRule = () =>
+            new ParameterizedString<{ name: string }>(getRawString('Diagnostic.unnecessaryViperIgnoreRule'));
         export const unnecessaryTypeIgnore = () => getRawString('Diagnostic.unnecessaryTypeIgnore');
         export const unpackArgCount = () => getRawString('Diagnostic.unpackArgCount');
         export const unpackedArgInTypeArgument = () => getRawString('Diagnostic.unpackedArgInTypeArgument');
@@ -1503,7 +1503,7 @@ export namespace Localizer {
             );
         export const protocolUnsafeOverlap = () =>
             new ParameterizedString<{ name: string }>(getRawString('DiagnosticAddendum.protocolUnsafeOverlap'));
-        export const pyrightCommentIgnoreTip = () => getRawString('DiagnosticAddendum.pyrightCommentIgnoreTip');
+        export const viperCommentIgnoreTip = () => getRawString('DiagnosticAddendum.viperCommentIgnoreTip');
         export const readOnlyAttribute = () =>
             new ParameterizedString<{ name: string }>(getRawString('DiagnosticAddendum.readOnlyAttribute'));
         export const seeDeclaration = () => getRawString('DiagnosticAddendum.seeDeclaration');

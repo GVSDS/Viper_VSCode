@@ -1,6 +1,6 @@
 # This sample tests the handling of dictionary expansion for TypedDicts.
 
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     NotRequired,
     Required,
     TypedDict,

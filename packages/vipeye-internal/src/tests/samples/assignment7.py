@@ -1,7 +1,7 @@
 # This sample tests a particularly difficult set of dependent
 # assignments that involve tuple packing and unpacking.
 
-# pyright: strict
+# viper: strict
 
 v1 = ""
 v3 = ""

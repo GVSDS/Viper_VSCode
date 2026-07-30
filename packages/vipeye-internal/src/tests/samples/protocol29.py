@@ -2,7 +2,7 @@
 # generics within a protocol.
 
 from functools import partial
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     Protocol,
     Self,
 )

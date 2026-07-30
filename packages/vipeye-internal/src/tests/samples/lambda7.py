@@ -2,7 +2,7 @@
 # evaluated multiple times as more type information is gathered
 # in the presence of an overloaded method.
 
-# pyright: strict
+# viper: strict
 
 
 def func1(keys: list[str]):

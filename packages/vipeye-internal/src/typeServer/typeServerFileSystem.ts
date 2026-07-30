@@ -3,13 +3,13 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * The file system used by the Pyright type server. It wraps the real file system in a
+ * The file system used by the Viper type server. It wraps the real file system in a
  * VirtualFileOverlayFileSystem so that individual files can be transparently redirected to
  * alternate on-disk locations (e.g. merged Django stubs produced by an external client), and
  * exposes that overlay via the `virtualOverlay` getter so the server's virtual-file-redirect
  * handlers (TspSupplemental) can register and remove redirects.
  *
- * This is the Pyright-native counterpart to Pylance's `PylanceFileSystem`. Notebook cell URI
+ * This is the Vipeye-native counterpart to Pylance's `PylanceFileSystem`. Notebook cell URI
  * mapping is optional here (supplied in the notebook phase); when no mapper is provided the
  * notebook branches simply delegate to the underlying file system.
  */
@@ -20,22 +20,22 @@ import { Disposable } from 'vscode-jsonrpc';
 import { FileSystem, MkDirOptions, Stats } from '../common/fileSystem';
 import { FileWatcher, FileWatcherEventHandler } from '../common/fileWatcher';
 import { Uri } from '../common/uri/uri';
-import { IPyrightFileSystem, PyrightFileSystem } from '../pyrightFileSystem';
+import { IViperFileSystem, ViperFileSystem } from '../viperFileSystem';
 
 import { INotebookUriMapper, NotebookUriMapper } from './notebookUriMapper';
 import { VirtualFileOverlayFileSystem } from './virtualFileOverlayFileSystem';
 
-export class TypeServerFileSystem implements IPyrightFileSystem {
-    private readonly _fs: IPyrightFileSystem;
+export class TypeServerFileSystem implements IViperFileSystem {
+    private readonly _fs: IViperFileSystem;
     private readonly _virtualOverlay: VirtualFileOverlayFileSystem;
 
     constructor(realFileSystem: FileSystem, private readonly _uriMapper?: INotebookUriMapper) {
         // Wrap the real FS in a virtual file overlay so that individual files can be
         // transparently redirected to alternate on-disk locations. The overlay is a no-op
-        // pass-through when no redirects are registered. Then wrap that in a PyrightFileSystem
+        // pass-through when no redirects are registered. Then wrap that in a ViperFileSystem
         // so partial-stub augmentation continues to work.
         this._virtualOverlay = new VirtualFileOverlayFileSystem(realFileSystem);
-        this._fs = new PyrightFileSystem(this._virtualOverlay);
+        this._fs = new ViperFileSystem(this._virtualOverlay);
     }
 
     /**

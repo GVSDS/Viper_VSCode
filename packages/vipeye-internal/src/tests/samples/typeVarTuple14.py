@@ -2,7 +2,7 @@
 # and a *args unpacked Tuple to a *args TypeVarTuple.
 
 from typing import Callable, TypeVar
-from typing_extensions import TypeVarTuple  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypeVarTuple  # viper: ignore[reportMissingModuleSource]
 
 Ts = TypeVarTuple("Ts")
 R = TypeVar("R")

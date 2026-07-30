@@ -1316,7 +1316,7 @@ function assignParamSpec(
 // only a strictly nested reference (`T := F[T]`) has no finite solution.
 function typeVarOccursIn(typeVar: TypeVarType, type: Type): boolean {
     // A bare top-level TypeVar reference is not a cycle. Compare by name +
-    // scope id rather than identity since pyright sometimes clones TypeVars.
+    // scope id rather than identity since vipeye sometimes clones TypeVars.
     if (isTypeVar(type) && type.shared.name === typeVar.shared.name && type.priv.scopeId === typeVar.priv.scopeId) {
         return false;
     }

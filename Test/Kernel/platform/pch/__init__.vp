@@ -1,4 +1,0 @@
-from . import pic
-from . import pit
-from . import timer
-from . import rtc

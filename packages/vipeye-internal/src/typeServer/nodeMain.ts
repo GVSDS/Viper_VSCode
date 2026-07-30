@@ -3,10 +3,10 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * Provides the main entrypoint to the Pyright type server when running in Node.
+ * Provides the main entrypoint to the Viper type server when running in Node.
  *
- * This lives in vipeye-internal (rather than the pyright-typeserver package) so that all
- * vscode-languageserver usage resolves to a single copy, matching how the `pyright`
+ * This lives in vipeye-internal (rather than the vipeye-typeserver package) so that all
+ * vscode-languageserver usage resolves to a single copy, matching how the `vipeye`
  * package keeps its own entry points as thin shims over vipeye-internal.
  */
 
@@ -67,7 +67,7 @@ export async function main() {
 
     new TypeServer(
         {
-            productName: 'PyrightTypeServer',
+            productName: 'VipeyeTypeServer',
             rootDirectory: realPathRoot,
             version,
             serviceProvider,

@@ -1,7 +1,7 @@
 # This sample tests a case of bidirectional type inference for calls
 # that involves a union in the expected type.
 
-# pyright: strict
+# viper: strict
 
 from __future__ import annotations
 

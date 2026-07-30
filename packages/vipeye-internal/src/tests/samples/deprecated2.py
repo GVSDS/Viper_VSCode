@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 from typing import Any, Callable, Self, TypeVar
 
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     deprecated,
     overload,
 )

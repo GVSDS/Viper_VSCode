@@ -3,7 +3,7 @@
 # TypeVarTuple parameter.
 
 # Enable experimental features to support Union[*Ts].
-# pyright: enableExperimentalFeatures=true
+# viper: enableExperimentalFeatures=true
 
 from typing import TypeVar, TypeVarTuple, Union, Unpack
 

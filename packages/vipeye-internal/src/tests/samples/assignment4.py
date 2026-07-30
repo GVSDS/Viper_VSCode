@@ -2,7 +2,7 @@
 # there is an expected type, so bidirectional type
 # inference is used.
 
-# pyright: strict
+# viper: strict
 
 from typing import Callable, Sequence
 

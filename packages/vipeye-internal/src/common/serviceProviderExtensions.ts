@@ -12,7 +12,7 @@ import { PartialStubService, SupportPartialStubs } from '../partialStubService';
 import { CancellationProvider, DefaultCancellationProvider } from './cancellationUtils';
 import { CaseSensitivityDetector } from './caseSensitivityDetector';
 import { ConsoleInterface, NullConsole } from './console';
-import { DocStringService, PyrightDocStringService } from './docStringService';
+import { DocStringService, ViperDocStringService } from './docStringService';
 import { FileSystem, TempFile } from './fileSystem';
 import { CommandService, WindowService } from './languageServerInterface';
 import { LogTracker } from './logTracker';
@@ -110,7 +110,7 @@ ServiceProvider.prototype.sourceFileFactory = function () {
 
 ServiceProvider.prototype.docStringService = function () {
     const result = this.tryGet(ServiceKeys.docStringService);
-    return result || new PyrightDocStringService();
+    return result || new ViperDocStringService();
 };
 
 ServiceProvider.prototype.cacheManager = function () {

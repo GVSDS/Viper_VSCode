@@ -1,7 +1,7 @@
 # This sample tests member access "set" operations when the target
 # member is an object that doesn't provide a __set__ method.
 
-# pyright: strict
+# viper: strict
 
 from typing import Any, Generic, TypeVar, overload
 

@@ -364,7 +364,7 @@ test('LazyImport - wildcard import rejected at 3.15', () => {
 
 test('LazyImport - AliasDeclaration.isLazy is propagated', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "executionEnvironments": [
 ////     { "root": ".", "pythonVersion": "3.15" }
@@ -421,7 +421,7 @@ test('LazyImport - submoduleFallback AliasDeclaration carries isLazy', () => {
     // the isLazy flag too (otherwise downstream consumers reading
     // submoduleFallback.isLazy would silently lose the lazy bit).
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "executionEnvironments": [
 ////     { "root": ".", "pythonVersion": "3.15" }

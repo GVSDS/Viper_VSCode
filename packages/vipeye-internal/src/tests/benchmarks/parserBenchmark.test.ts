@@ -6,7 +6,7 @@
  * Measures nodes/sec, parse time, AST node count across representative corpora.
  *
  * Run with:
- *   cd packages/pyright/packages/vipeye-internal
+ *   cd packages/vipeye/packages/vipeye-internal
  *   node node_modules\jest\bin\jest parserBenchmark.test --runInBand --detectOpenHandles --forceExit --testTimeout=300000
  *
  * Results are written as JSON to:
@@ -139,7 +139,7 @@ function printResultTable(results: ReadonlyArray<BenchmarkResult>): void {
 
 /**
  * Count all AST nodes by walking the tree recursively.
- * Pyright parse nodes have: { nodeType, d: { ...children }, ... }
+ * Vipeye parse nodes have: { nodeType, d: { ...children }, ... }
  */
 function countNodes(node: any): number {
     if (!node || typeof node !== 'object' || !('nodeType' in node)) {

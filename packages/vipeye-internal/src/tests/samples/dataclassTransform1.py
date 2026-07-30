@@ -2,7 +2,7 @@
 # when applied to a decorator function.
 
 from typing import Any, Callable, TypeVar, overload
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     dataclass_transform,
 )
 

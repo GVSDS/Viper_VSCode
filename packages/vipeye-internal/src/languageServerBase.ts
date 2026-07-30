@@ -407,7 +407,7 @@ export abstract class LanguageServerBase implements LanguageServerInterface, Dis
         this.workspaceFactory.items().forEach((workspace) => {
             // Updating settings can change workspace's file ownership. Make workspace uninitialized so that
             // features can wait until workspace gets new settings.
-            // the file's ownership can also changed by `pyrightconfig.json` changes, but those are synchronous
+            // the file's ownership can also changed by `viperconfig.json` changes, but those are synchronous
             // operation, so it won't affect this.
             workspace.isInitialized = workspace.isInitialized.reset();
             tasks.push(this.updateSettingsForWorkspace(workspace, workspace.isInitialized));
@@ -1578,7 +1578,7 @@ export abstract class LanguageServerBase implements LanguageServerInterface, Dis
         const rule = diag.getRule();
         if (rule) {
             // Configuration.md is configured to have a link for every rule name.
-            return `https://github.com/microsoft/pyright/blob/main/docs/configuration.md#${rule}`;
+            return `https://github.com/TermiNexus/TransPyC/wiki/viper-configuration#${rule}`;
         }
         return undefined;
     }

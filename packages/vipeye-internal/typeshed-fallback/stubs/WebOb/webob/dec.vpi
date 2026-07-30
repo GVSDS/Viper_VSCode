@@ -46,7 +46,7 @@ class wsgify(Generic[_P, _RequestT_contra]):
     ) -> None: ...
     @overload
     def __init__(
-        self: wsgify[[], _RequestT_contra],  # pyright: ignore[reportInvalidTypeVarUse]  #11780
+        self: wsgify[[], _RequestT_contra],  # viper: ignore[reportInvalidTypeVarUse]  #11780
         func: _RequestHandler[_RequestT_contra, []] | None,
         RequestClass: type[_RequestT_contra],
         args: tuple[()] = (),
@@ -55,7 +55,7 @@ class wsgify(Generic[_P, _RequestT_contra]):
     ) -> None: ...
     @overload
     def __init__(
-        self: wsgify[[], _RequestT_contra],  # pyright: ignore[reportInvalidTypeVarUse]  #11780
+        self: wsgify[[], _RequestT_contra],  # viper: ignore[reportInvalidTypeVarUse]  #11780
         func: _RequestHandler[_RequestT_contra, []] | None = None,
         *,
         RequestClass: type[_RequestT_contra],
@@ -75,7 +75,7 @@ class wsgify(Generic[_P, _RequestT_contra]):
     ) -> None: ...
     @overload
     def __init__(
-        self: wsgify[[_AppT_contra], _RequestT_contra],  # pyright: ignore[reportInvalidTypeVarUse]  #11780
+        self: wsgify[[_AppT_contra], _RequestT_contra],  # viper: ignore[reportInvalidTypeVarUse]  #11780
         func: _Middleware[_RequestT_contra, _AppT_contra, []] | None,
         RequestClass: type[_RequestT_contra],
         args: tuple[()] = (),
@@ -85,7 +85,7 @@ class wsgify(Generic[_P, _RequestT_contra]):
     ) -> None: ...
     @overload
     def __init__(
-        self: wsgify[[_AppT_contra], _RequestT_contra],  # pyright: ignore[reportInvalidTypeVarUse]  #11780
+        self: wsgify[[_AppT_contra], _RequestT_contra],  # viper: ignore[reportInvalidTypeVarUse]  #11780
         func: _Middleware[_RequestT_contra, _AppT_contra, []] | None = None,
         *,
         RequestClass: type[_RequestT_contra],

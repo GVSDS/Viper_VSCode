@@ -1,7 +1,7 @@
 # This sample tests type checking for match statements (as
 # described in PEP 634) that contain sequence patterns.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from enum import Enum
 from typing import (

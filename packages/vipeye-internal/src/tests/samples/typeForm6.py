@@ -1,6 +1,6 @@
 # This sample tests the handling of assert_type with TypeForm types.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from types import UnionType
 from typing import assert_type

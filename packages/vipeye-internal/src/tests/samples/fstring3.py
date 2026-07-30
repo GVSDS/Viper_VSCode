@@ -1,7 +1,7 @@
 # This sample tests f-strings where expressions contain
 # other string literals.
 
-# pyright: strict
+# viper: strict
 
 a1 = f"[{{name}}{'}' if True else ''}]"
 

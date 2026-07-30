@@ -3,7 +3,7 @@
 
 # This test is heavily derived from deprecatedAlias1.py.
 
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     ChainMap as CM1,
     Counter as CT1,
     DefaultDict,

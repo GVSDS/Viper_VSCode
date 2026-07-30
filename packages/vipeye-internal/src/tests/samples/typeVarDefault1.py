@@ -1,7 +1,7 @@
 # This sample tests basic support for PEP 696 -- default types for TypeVars.
 
 from typing import Any
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVar,
     TypeVarTuple,
     ParamSpec,

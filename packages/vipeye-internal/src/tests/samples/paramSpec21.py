@@ -2,7 +2,7 @@
 # and destination callback protocol.
 
 from typing import Callable, Protocol
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     Concatenate,
     ParamSpec,
 )

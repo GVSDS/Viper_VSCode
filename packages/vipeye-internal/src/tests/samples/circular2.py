@@ -1,7 +1,7 @@
 # This sample tests the handling of circular dependencies between
 # class declarations.
 
-# pyright: strict
+# viper: strict
 
 from typing import Generic, TypeVar
 

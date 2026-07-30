@@ -1,6 +1,6 @@
 # This sample tests the handling of immediately-called lambdas.
 
-# pyright: strict
+# viper: strict
 
 from typing import Callable
 

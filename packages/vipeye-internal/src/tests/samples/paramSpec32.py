@@ -2,7 +2,7 @@
 # parameters are used within a constructor.
 
 from typing import Callable, Generic, TypeVar
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     Concatenate,
     ParamSpec,
 )

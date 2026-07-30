@@ -3,7 +3,7 @@
 # and functions defined in the protocol. Specifically, this tests
 # the case where the parent protocol class is implemented in a stub file.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from abc import ABC
 from typing import final

@@ -3,7 +3,7 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * helpers shared between multiple packages such as vipeye-internal and pyright
+ * helpers shared between multiple packages such as vipeye-internal and vipeye
  */
 
 import { ensureTomlModuleLoaded } from './tomlUtils';

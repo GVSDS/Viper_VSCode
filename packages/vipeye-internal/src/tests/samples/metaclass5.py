@@ -1,7 +1,7 @@
 # This sample tests the handling of metaclass magic methods for
 # binary operators.
 
-# pyright: reportIncompatibleMethodOverride=false
+# viper: reportIncompatibleMethodOverride=false
 
 
 class MetaA(type):

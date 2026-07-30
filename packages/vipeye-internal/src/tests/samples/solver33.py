@@ -1,6 +1,6 @@
 # This sample tests a case that resulted in a false positive in the past.
 
-# pyright: strict
+# viper: strict
 
 import operator
 

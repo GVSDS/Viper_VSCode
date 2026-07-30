@@ -2,7 +2,7 @@
 # of several overloads but not in others.
 
 from typing import Callable, Concatenate, overload, Any
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     ParamSpec,
     Self,
 )

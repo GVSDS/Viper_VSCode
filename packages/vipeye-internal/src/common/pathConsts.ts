@@ -23,10 +23,9 @@ export const defaultStubsDirectory = 'typings';
 export const requirementsFileName = 'requirements.txt';
 export const pyprojectTomlName = 'pyproject.toml';
 export const dotPythonVersionName = '.python-version';
-export const configFileName = 'pyrightconfig.json';
-
-// Viper 模式下的配置文件名（替代 pyrightconfig.json）。
-export const viperConfigFileName = 'viperconfig.json';
+// 配置文件名。完全切换后只认 viperconfig.json（原 pyrightconfig.json 已废弃）。
+// viperConfigFileName 已合并到 configFileName，外部引用请统一使用 configFileName。
+export const configFileName = 'viperconfig.json';
 
 // Viper 项目配置文件名（TransPyC 编译器使用）。
 // schema 与 viperconfig.json 不同：含 source_dir / includes / compiler / linker 等字段。

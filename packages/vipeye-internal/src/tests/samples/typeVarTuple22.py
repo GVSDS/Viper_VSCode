@@ -2,7 +2,7 @@
 # a tuple with literal values.
 
 # Enable experimental features to support Union[*Ts].
-# pyright: enableExperimentalFeatures=true
+# viper: enableExperimentalFeatures=true
 
 from typing import Callable, Literal, TypeVarTuple, Union, Unpack
 

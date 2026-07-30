@@ -2,7 +2,7 @@
 # on an assignment to a not-required key.
 
 from typing import TypedDict
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     NotRequired,
     Required,
     Unpack,

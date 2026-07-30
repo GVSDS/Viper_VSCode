@@ -28,8 +28,8 @@ const BENCHMARK_ITERATIONS = 10;
 const BENCHMARK_OUTPUT_DIR = path.join(__dirname, '.generated', 'benchmark-results', 'tokenizer');
 const JEST_BIN_PATH = path.resolve(__dirname, '..', '..', '..', 'node_modules', 'jest', 'bin', 'jest.js');
 const CHILD_RESULT_PREFIX = '__TOKENIZER_BENCHMARK_RESULT__';
-const CHILD_MODE_ENV = 'PYRIGHT_TOKENIZER_BENCH_CHILD';
-const RUN_BENCHMARKS_ENV = 'PYRIGHT_RUN_BENCHMARKS';
+const CHILD_MODE_ENV = 'VIPER_TOKENIZER_BENCH_CHILD';
+const RUN_BENCHMARKS_ENV = 'VIPER_RUN_BENCHMARKS';
 
 // --- Types ---
 

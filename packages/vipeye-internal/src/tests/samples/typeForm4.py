@@ -1,6 +1,6 @@
 # This sample tests assignability rules for TypeForm types.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import (
     Annotated,

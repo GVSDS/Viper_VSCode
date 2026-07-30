@@ -3,7 +3,7 @@
  * 语言方言开关：区分 Python 与 Viper 语义。
  *
  * Viper 是基于 CPython 语法但语义不同的 AOT 编译型语言。
- * 在 TPV --lsp 实现前，Pyright（Vipeye）作为姑息 LSP 充当分析器。
+ * 在 TPV --lsp 实现前，Vipeye 作为姑息 LSP 充当分析器。
  * 通过 dialect 字段在 Python 语义与 Viper 语义之间切换。
  */
 

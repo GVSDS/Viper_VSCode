@@ -1,6 +1,6 @@
 # This sample tests a complicated combination of ParamSpec usage.
 
-# pyright: strict
+# viper: strict
 
 from typing import Any, Callable, Concatenate, ParamSpec, Protocol, TypeVar
 

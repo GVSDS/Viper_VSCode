@@ -2,7 +2,7 @@
 # type alias with a Callable.
 
 from typing import Any, Callable, Generic, Protocol
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     Concatenate,
     ParamSpec,
 )

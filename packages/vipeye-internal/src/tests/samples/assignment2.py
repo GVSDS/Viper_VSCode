@@ -4,7 +4,7 @@
 # Enable the reportUnknownArgumentType check so we can verify that it
 # doesn't generate an error when assigning an empty list to an indexed
 # expression.
-# pyright: reportUnknownArgumentType=true
+# viper: reportUnknownArgumentType=true
 
 
 v1: list[int] = [1, 2, 3, 4, 5]

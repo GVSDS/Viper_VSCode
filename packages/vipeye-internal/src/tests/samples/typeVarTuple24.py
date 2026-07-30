@@ -1,7 +1,7 @@
 # This sample tests the handling of `Union[*Ts]` in certain cases.
 
 # Enable experimental features to support Union[*Ts].
-# pyright: enableExperimentalFeatures=true
+# viper: enableExperimentalFeatures=true
 
 from typing import Generic, TypeVarTuple, Union
 

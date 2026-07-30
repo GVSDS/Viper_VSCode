@@ -1,7 +1,7 @@
 # This sample tests the case where bidirectional type inference is used
 # in a nested manner with list comprehensions.
 
-# pyright: strict
+# viper: strict
 
 from itertools import chain
 

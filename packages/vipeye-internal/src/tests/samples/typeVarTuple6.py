@@ -1,7 +1,7 @@
 # This sample tests the handling of generic type aliases with
 # variadic type variables.
 
-# pyright: reportMissingTypeArgument=true, reportMissingModuleSource=false
+# viper: reportMissingTypeArgument=true, reportMissingModuleSource=false
 
 from typing import Callable, Generic, TypeVar
 

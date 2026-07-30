@@ -1,7 +1,7 @@
 # This sample tests the handling of calls with unpacked TypedDicts.
 
 
-from typing_extensions import TypedDict  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypedDict  # viper: ignore[reportMissingModuleSource]
 
 
 class ClosedTD1(TypedDict, closed=True):

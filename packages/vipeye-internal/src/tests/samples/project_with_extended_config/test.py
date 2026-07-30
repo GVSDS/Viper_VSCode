@@ -1,4 +1,4 @@
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import assert_type
 from sample import x

@@ -1,7 +1,7 @@
 # This sample tests the handling of magic methods on
 # the tuple class.
 
-# pyright: strict
+# viper: strict
 
 
 def func1(t1: tuple[int, ...], t2: tuple[int, ...]) -> bool:
@@ -18,7 +18,7 @@ def func3(t1: tuple[int, int], t2: tuple[int, ...]) -> bool:
 
 def func4(t1: tuple[int, ...], t2: tuple[str, ...]) -> bool:
     # This should generate an error
-    return t1 <= t2  # pyright: ignore[reportUnknownVariableType]
+    return t1 <= t2  # viper: ignore[reportUnknownVariableType]
 
 
 def func5(t1: tuple[str | int, ...]) -> tuple[str | int, ...]:

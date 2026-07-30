@@ -564,7 +564,7 @@ export class RealTempFile implements TempFile, CaseSensitivityDetector {
         }
 
         const osTempRoot = os.tmpdir();
-        const configuredTmpRoot = process.env.PYRIGHT_TMPDIR?.trim();
+        const configuredTmpRoot = process.env.VIPER_TMPDIR?.trim();
 
         type TmpDirOutcome = {
             tmpdir?: tmp.DirResult;
@@ -586,7 +586,7 @@ export class RealTempFile implements TempFile, CaseSensitivityDetector {
                 return { error: e };
             }
 
-            return createTmpDir({ prefix: 'pyright', tmpdir: root });
+            return createTmpDir({ prefix: 'viper', tmpdir: root });
         };
 
         // Highest priority: explicit override.
@@ -599,7 +599,7 @@ export class RealTempFile implements TempFile, CaseSensitivityDetector {
         }
 
         // Default behavior: let tmp/os decide.
-        const defaultOutcome = createTmpDir({ prefix: 'pyright' });
+        const defaultOutcome = createTmpDir({ prefix: 'viper' });
         if (defaultOutcome.tmpdir) {
             this._tmpdir = defaultOutcome.tmpdir;
             return this._tmpdir;
@@ -610,8 +610,8 @@ export class RealTempFile implements TempFile, CaseSensitivityDetector {
         const details = defaultError?.message ?? String(defaultOutcome.error);
 
         throw new Error(
-            `Failed to create a temporary directory for Pyright. The OS temp directory root is "${osTempRoot}". ` +
-                `If that path doesn't exist or isn't writable, set PYRIGHT_TMPDIR or TMPDIR/TMP/TEMP for the VS Code server/extension host process ` +
+            `Failed to create a temporary directory for Viper. The OS temp directory root is "${osTempRoot}". ` +
+                `If that path doesn't exist or isn't writable, set VIPER_TMPDIR or TMPDIR/TMP/TEMP for the VS Code server/extension host process ` +
                 `or ensure the env vars are inherited by the remote/server process. ` +
                 `Original error: ${details}`
         );

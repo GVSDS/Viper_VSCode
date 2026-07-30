@@ -1,7 +1,7 @@
 # This sample verifies that unknown types are properly eliminated from
 # a loop.
 
-# pyright: strict
+# viper: strict
 
 
 def func1(a: int, b: str, c: str):

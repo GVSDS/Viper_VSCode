@@ -2,7 +2,7 @@
 # classes where the protocol is partially specialized with a
 # type variable.
 
-# pyright: strict
+# viper: strict
 
 from typing import Callable, Iterator, Protocol, TypeVar
 

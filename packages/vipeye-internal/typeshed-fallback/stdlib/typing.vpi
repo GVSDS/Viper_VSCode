@@ -1,7 +1,7 @@
 # Since this module defines "overload" it is not recognized by Ruff as typing.overload
 # TODO: The collections import is required, otherwise mypy crashes.
 # https://github.com/python/mypy/issues/16744
-import collections  # noqa: F401  # pyright: ignore[reportUnusedImport]
+import collections  # noqa: F401  # viper: ignore[reportUnusedImport]
 import sys
 import typing_extensions
 from _collections_abc import dict_items, dict_keys, dict_values
@@ -814,7 +814,7 @@ class Mapping(Collection[_KT], Generic[_KT, _VT_co]):
     @overload
     def get(self, key: _KT, /) -> _VT_co | None: ...
     @overload
-    def get(self, key: _KT, default: _VT_co, /) -> _VT_co: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues] # Covariant type as parameter
+    def get(self, key: _KT, default: _VT_co, /) -> _VT_co: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues] # Covariant type as parameter
     @overload
     def get(self, key: _KT, default: _T, /) -> _VT_co | _T: ...
 
@@ -1096,7 +1096,7 @@ class _TypedDict(Mapping[str, object], metaclass=ABCMeta):
     # can go through.
     def setdefault(self, k: _Never, default: object) -> object: ...
     # Mypy plugin hook for 'pop' expects that 'default' has a type variable type.
-    def pop(self, k: _Never, default: _T = ...) -> object: ...  # pyright: ignore[reportInvalidTypeVarUse]
+    def pop(self, k: _Never, default: _T = ...) -> object: ...  # viper: ignore[reportInvalidTypeVarUse]
     def update(self, m: typing_extensions.Self, /) -> None: ...
     def __delitem__(self, k: _Never) -> None: ...
     def items(self) -> dict_items[str, object]: ...

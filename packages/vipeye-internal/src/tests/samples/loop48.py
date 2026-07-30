@@ -1,7 +1,7 @@
 # This sample tests a case where an instance variable is assigned within
 # a loop using its own value.
 
-# pyright: strict
+# viper: strict
 
 
 class ClassA:

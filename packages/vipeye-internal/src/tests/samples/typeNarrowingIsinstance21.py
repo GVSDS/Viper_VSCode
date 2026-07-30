@@ -1,6 +1,6 @@
 # This sample tests the case where the filter type is a class object.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Any
 from typing_extensions import TypeIs

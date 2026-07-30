@@ -2,7 +2,7 @@
 # pop, __delitem__, clear, and popitem for a TypedDict.
 
 from typing import TypedDict, final
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     NotRequired,
     Required,
 )

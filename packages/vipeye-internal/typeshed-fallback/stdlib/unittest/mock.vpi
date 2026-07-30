@@ -245,7 +245,7 @@ class _patch(Generic[_T]):
     # If new==DEFAULT, self is _patch[Any]. Ideally we'd be able to add an overload for it so that self is _patch[MagicMock],
     # but that's impossible with the current type system.
     def __init__(
-        self: _patch[_T],  # pyright: ignore[reportInvalidTypeVarUse]  #11780
+        self: _patch[_T],  # viper: ignore[reportInvalidTypeVarUse]  #11780
         getter: Callable[[], Any],
         attribute: str,
         new: _T,

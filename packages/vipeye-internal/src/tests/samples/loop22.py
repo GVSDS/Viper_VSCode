@@ -1,7 +1,7 @@
 # This sample tests a case where a loop contains multiple conditional
 # checks.
 
-# pyright: strict
+# viper: strict
 
 from __future__ import annotations
 

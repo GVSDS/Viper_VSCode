@@ -17,7 +17,7 @@ import { ExpectedTypeResult } from '../analyzer/typeEvaluatorTypes';
 import { ClassType, Type } from '../analyzer/types';
 import { ConfigOptions } from '../common/configOptions';
 import { ConsoleInterface } from '../common/console';
-import { Diagnostic as PyrightDiagnostic } from '../common/diagnostic';
+import { Diagnostic as ViperDiagnostic } from '../common/diagnostic';
 import { FileEditAction } from '../common/editAction';
 import { SourceFileInfo } from '../common/extensibility';
 import { ReadOnlyFileSystem } from '../common/fileSystem';
@@ -82,7 +82,7 @@ export interface IProgramBase extends IParserOutputProvider {
     readonly fileSystem: ReadOnlyFileSystem;
     readonly serviceProvider: ServiceProvider;
     readonly isAlive: boolean;
-    readonly isPyright: boolean;
+    readonly isVipeye: boolean;
     readonly performsAnalysis: boolean;
     readonly supportsPullDiagnostics: boolean;
     owns(uri: Uri): boolean;
@@ -125,7 +125,7 @@ export interface IProgram extends IProgramBase, ITypeProvider, Disposable {
     // notify clients (SnapshotChangedNotification) when it changes.
     getSnapshot(token: CancellationToken): number;
 
-    // Runs the callback against the live program. Because Pyright's evaluator is
+    // Runs the callback against the live program. Because Vipeye's evaluator is
     // synchronous, the callback executes atomically: the program cannot be mutated
     // mid-run, so the callback simply receives `this`.
     run<T>(callback: (p: IProgram) => T, token: CancellationToken): T;
@@ -151,15 +151,15 @@ export interface IProgram extends IProgramBase, ITypeProvider, Disposable {
         previousResultId: string | undefined,
         token: CancellationToken
     ): DocumentDiagnosticReport;
-    getDiagnosticsForRangeWithoutFileIgnore?(fileUri: Uri, range: Range): readonly PyrightDiagnostic[];
+    getDiagnosticsForRangeWithoutFileIgnore?(fileUri: Uri, range: Range): readonly ViperDiagnostic[];
 
-    // Cache of `getTypeForDeclaration` results, used by the TSP→Pyright type-shell
+    // Cache of `getTypeForDeclaration` results, used by the TSP→Vipeye type-shell
     // factory to avoid re-evaluating the same declaration repeatedly during a
     // conversion session. Dropped whenever the snapshot increments.
     getCachedTypeForDeclaration(decl: Declaration): Type | undefined;
     setCachedTypeForDeclaration(decl: Declaration, type: Type): void;
 
-    // Cache of TSP `Declaration` → Pyright `Declaration` resolutions. Used by the
+    // Cache of TSP `Declaration` → Vipeye `Declaration` resolutions. Used by the
     // type-shell factory to avoid re-running `lookupSymbol` for the same TSP
     // declaration on every conversion call. Dropped whenever the snapshot increments.
     getCachedProtocolDecl(tspDecl: TypeServerProtocol.Declaration): Declaration | undefined;

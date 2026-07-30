@@ -3,11 +3,11 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * Pyright-specific supplemental extensions to the Type Server Protocol (TSP).
+ * Vipeye-specific supplemental extensions to the Type Server Protocol (TSP).
  *
  * These notifications are NOT part of the base TSP (defined in typeServerProtocol.ts),
  * which is shared by all TSP implementers (e.g., ty-tsp). This file defines
- * Pyright-only extensions that require Pyright-specific knowledge (e.g., the
+ * Vipeye-only extensions that require Vipeye-specific knowledge (e.g., the
  * VirtualFileOverlayFileSystem in PylanceFileSystem).
  *
  * All the types in this file should be JSON serializable, as they are sent over the wire.
@@ -40,10 +40,10 @@ export namespace TspSupplemental {
      *
      * This is used by the Django stub generation feature: Pylance's Rust sidecar writes
      * merged virtual `.py` files to disk, and this notification tells the type server's
-     * VirtualFileOverlayFileSystem to redirect reads so Pyright analyzes the virtual content.
+     * VirtualFileOverlayFileSystem to redirect reads so Vipeye analyzes the virtual content.
      */
     export namespace SetVirtualFileRedirectNotification {
-        export const method = 'pyright/setVirtualFileRedirect' as const;
+        export const method = 'viper/setVirtualFileRedirect' as const;
         export const messageDirection = MessageDirection.clientToServer;
         export const type = new ProtocolNotificationType<SetVirtualFileRedirectParams, void>(method);
     }
@@ -54,7 +54,7 @@ export namespace TspSupplemental {
      * file system should read the real file again for the given URI.
      */
     export namespace RemoveVirtualFileRedirectNotification {
-        export const method = 'pyright/removeVirtualFileRedirect' as const;
+        export const method = 'viper/removeVirtualFileRedirect' as const;
         export const messageDirection = MessageDirection.clientToServer;
         export const type = new ProtocolNotificationType<RemoveVirtualFileRedirectParams, void>(method);
     }

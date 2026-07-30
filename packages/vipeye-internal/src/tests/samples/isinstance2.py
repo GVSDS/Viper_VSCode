@@ -2,7 +2,7 @@
 # an unknown type and the type is used in an
 # isinstance check.
 
-# pyright: reportUnnecessaryIsInstance=true
+# viper: reportUnnecessaryIsInstance=true
 
 from typing import TypeVar, Union
 

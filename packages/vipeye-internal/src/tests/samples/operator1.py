@@ -1,7 +1,7 @@
 # This sample tests the type checker's ability to check
 # custom operator overrides.
 
-# pyright: reportIncompatibleMethodOverride=false
+# viper: reportIncompatibleMethodOverride=false
 
 from typing import NoReturn, Self
 

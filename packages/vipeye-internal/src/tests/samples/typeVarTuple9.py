@@ -2,7 +2,7 @@
 # in generic type aliases and with suffixes.
 
 from typing import Callable, Generic, TypeVar
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVarTuple,
     Unpack,
 )

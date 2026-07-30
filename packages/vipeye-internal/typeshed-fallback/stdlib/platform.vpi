@@ -40,7 +40,7 @@ class _uname_result_base(NamedTuple):
 # is lazily evaluated rather than being passed in to the constructor.
 if sys.version_info >= (3, 12):
     class uname_result(_uname_result_base):
-        __match_args__ = ("system", "node", "release", "version", "machine")  # pyright: ignore[reportAssignmentType]
+        __match_args__ = ("system", "node", "release", "version", "machine")  # viper: ignore[reportAssignmentType]
 
         def __new__(_cls, system: str, node: str, release: str, version: str, machine: str) -> Self: ...
         @property
@@ -49,7 +49,7 @@ if sys.version_info >= (3, 12):
 else:
     @disjoint_base
     class uname_result(_uname_result_base):
-        __match_args__ = ("system", "node", "release", "version", "machine")  # pyright: ignore[reportAssignmentType]
+        __match_args__ = ("system", "node", "release", "version", "machine")  # viper: ignore[reportAssignmentType]
         def __new__(_cls, system: str, node: str, release: str, version: str, machine: str) -> Self: ...
         @property
         def processor(self) -> str: ...

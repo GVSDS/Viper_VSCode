@@ -3,7 +3,7 @@
 # where the override symbol is type compatible with the overridden.
 
 
-# pyright: reportIncompatibleVariableOverride=true
+# viper: reportIncompatibleVariableOverride=true
 
 
 from typing import NotRequired, Required, TypedDict

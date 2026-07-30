@@ -1,7 +1,7 @@
 # This sample tests the detection of duplicate (overwritten)
 # properties.
 
-# pyright: strict
+# viper: strict
 
 
 class MyClass:

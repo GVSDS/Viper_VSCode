@@ -16,6 +16,7 @@
 
 import { Declaration, DeclarationType, VariableDeclaration } from '../analyzer/declaration';
 import { ParseTreeWalker } from '../analyzer/parseTreeWalker';
+import { isWithinTypeAnnotation } from '../analyzer/parseTreeUtils';
 import { TypeCategory } from '../analyzer/types';
 import { TypeEvaluator } from '../analyzer/typeEvaluatorTypes';
 import { LogTracker } from '../common/logTracker';
@@ -436,8 +437,13 @@ class SemanticTokenWalker extends ParseTreeWalker {
         return false;
     }
 
-    /** 访问 StringNode：字符串字面量 → string */
+    /** 访问 StringNode：字符串字面量 → string。
+     *  Viper 扩展：在类型注解上下文中的字符串（前向引用）不生成 string token，
+     *  让 TextMate 语法规则处理高亮（显示为类型颜色而非字符串颜色）。 */
     override visitString(node: StringNode): boolean {
+        if (isWithinTypeAnnotation(node, /* requireQuotedAnnotation */ false)) {
+            return true;
+        }
         this._pushLiteralToken(node.start, node.length, SemanticTokenTypes.string);
         return true;
     }

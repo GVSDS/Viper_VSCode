@@ -4,7 +4,7 @@
 # keyword parameters (both for display and for call argument checking).
 
 from typing import Generic, TypeVar
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypedDict,
     Unpack,
 )

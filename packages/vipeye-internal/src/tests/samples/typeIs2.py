@@ -1,7 +1,7 @@
 # This sample tests the subtyping relationships between TypeIs, TypeGuard,
 # and bool.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Callable
 

@@ -2,7 +2,7 @@
 # introduced in PEP 728.
 
 from typing import NotRequired, Required, TypedDict
-from typing_extensions import ReadOnly  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import ReadOnly  # viper: ignore[reportMissingModuleSource]
 
 
 class Movie(TypedDict, extra_items=bool):

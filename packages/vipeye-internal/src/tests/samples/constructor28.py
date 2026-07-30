@@ -1,7 +1,7 @@
 # This sample tests the case where a constructor for a class is invoked
 # multiple times as separate arguments for a call.
 
-# pyright: strict
+# viper: strict
 
 from __future__ import annotations
 from typing import Any, Callable, Generic, Iterable, TypeVar, overload

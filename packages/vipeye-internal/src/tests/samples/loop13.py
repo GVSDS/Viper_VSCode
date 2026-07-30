@@ -1,7 +1,7 @@
 # This sample tests the case where a loop uses tuple assignments. It verifies
 # that no "unknown" values are evaluated for variables assigned in the loop.
 
-# pyright: strict
+# viper: strict
 
 nums: list[int] = [1, 2, 3]
 max_product, min_product = nums[0], nums[0]

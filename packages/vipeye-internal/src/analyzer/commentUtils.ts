@@ -66,7 +66,7 @@ export function getFileLevelDirectives(
                     return curTokenLineOffset <= 1;
                 };
 
-                ruleSet = _parsePyrightComment(value, textRange, isCommentOnOwnLine, ruleSet, diagnostics);
+                ruleSet = _parseViperComment(value, textRange, isCommentOnOwnLine, ruleSet, diagnostics);
                 isModified = true;
             }
         }
@@ -139,16 +139,16 @@ function _overwriteRules(ruleSet: DiagnosticRuleSet, overrideRuleSet: Diagnostic
     }
 }
 
-function _parsePyrightComment(
+function _parseViperComment(
     commentValue: string,
     commentRange: TextRange,
     isCommentOnOwnLine: () => boolean,
     ruleSet: DiagnosticRuleSet,
     diagnostics: CommentDiagnostic[]
 ) {
-    // 支持 "pyright:" 和 "viper:" 两种注释指令前缀。
-    // "viper:" 是 Viper 语言的官方指令，"pyright:" 保留向后兼容。
-    const commentPrefix = 'pyright:';
+    // 主要支持 "viper:" 注释指令前缀，"pyright:" 保留作为兼容别名。
+    // "viper:" 是 Viper 语言的官方指令。
+    const commentPrefix = 'viper:';
     const viperCommentPrefix = 'viper:';
     let operands: string;
     let prefixLength: number;
@@ -170,9 +170,9 @@ function _parsePyrightComment(
 
         if (!isCommentOnOwnLine()) {
             const diagAddendum = new DiagnosticAddendum();
-            diagAddendum.addMessage(LocAddendum.pyrightCommentIgnoreTip());
+            diagAddendum.addMessage(LocAddendum.viperCommentIgnoreTip());
             const diag: CommentDiagnostic = {
-                message: LocMessage.pyrightCommentNotOnOwnLine() + diagAddendum.getString(),
+                message: LocMessage.viperCommentNotOnOwnLine() + diagAddendum.getString(),
                 range: commentRange,
             };
 
@@ -198,7 +198,7 @@ function _parsePyrightComment(
                 length: operand.length,
             });
 
-            ruleSet = _parsePyrightOperand(trimmedOperand, operandRange, ruleSet, diagnostics);
+            ruleSet = _parseViperOperand(trimmedOperand, operandRange, ruleSet, diagnostics);
             rangeOffset += operand.length + 1;
         }
     }
@@ -206,7 +206,7 @@ function _parsePyrightComment(
     return ruleSet;
 }
 
-function _parsePyrightOperand(
+function _parseViperOperand(
     operand: string,
     operandRange: TextRange,
     ruleSet: DiagnosticRuleSet,
@@ -240,7 +240,7 @@ function _parsePyrightOperand(
             (ruleSet as any)[trimmedRule] = diagLevelValue;
         } else {
             const diag: CommentDiagnostic = {
-                message: LocMessage.pyrightCommentInvalidDiagnosticSeverityValue(),
+                message: LocMessage.viperCommentInvalidDiagnosticSeverityValue(),
                 range: trimmedRuleValue ? ruleValueRange : ruleRange,
             };
             diagnostics.push(diag);
@@ -251,7 +251,7 @@ function _parsePyrightOperand(
             (ruleSet as any)[trimmedRule] = boolValue;
         } else {
             const diag: CommentDiagnostic = {
-                message: LocMessage.pyrightCommentInvalidDiagnosticBoolValue(),
+                message: LocMessage.viperCommentInvalidDiagnosticBoolValue(),
                 range: trimmedRuleValue ? ruleValueRange : ruleRange,
             };
             diagnostics.push(diag);
@@ -259,14 +259,14 @@ function _parsePyrightOperand(
     } else if (trimmedRule) {
         const diag: CommentDiagnostic = {
             message: trimmedRuleValue
-                ? LocMessage.pyrightCommentUnknownDiagnosticRule().format({ rule: trimmedRule })
-                : LocMessage.pyrightCommentUnknownDirective().format({ directive: trimmedRule }),
+                ? LocMessage.viperCommentUnknownDiagnosticRule().format({ rule: trimmedRule })
+                : LocMessage.viperCommentUnknownDirective().format({ directive: trimmedRule }),
             range: ruleRange,
         };
         diagnostics.push(diag);
     } else {
         const diag: CommentDiagnostic = {
-            message: LocMessage.pyrightCommentMissingDirective(),
+            message: LocMessage.viperCommentMissingDirective(),
             range: ruleRange,
         };
         diagnostics.push(diag);

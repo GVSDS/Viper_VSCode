@@ -37,7 +37,7 @@ export function getTypeShedFallbackPath(fs: Pick<FileSystem, 'getModulePath' | '
         return fs.realCasePath(typeshedPath);
     }
 
-    // In the debug version of Pyright, the code is one level
+    // In the debug version of Vipeye, the code is one level
     // deeper, so we need to look one level up for the typeshed fallback.
     const debugTypeshedPath = moduleDirectory.getDirectory().combinePaths(pathConsts.typeshedFallback);
     if (fs.existsSync(debugTypeshedPath)) {

@@ -4,7 +4,7 @@
  * Licensed under the MIT license.
  * Author: Eric Traut
  *
- * Unit tests for pyright type evaluator. Tests are split
+ * Unit tests for viper type evaluator. Tests are split
  * arbitrarily among multiple files so they can run in parallel.
  */
 

@@ -1,6 +1,6 @@
 # This sample tests the TypeIs form.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import (
     Any,

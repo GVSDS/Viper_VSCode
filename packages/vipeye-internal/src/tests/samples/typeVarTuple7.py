@@ -1,10 +1,10 @@
 # This sample tests error handling for variadic type var usage.
 
 # Enable experimental features to support Union[*Ts].
-# pyright: enableExperimentalFeatures=true
+# viper: enableExperimentalFeatures=true
 
 from typing import Any, Callable, Generic, TypeVar, Union
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVarTuple,
     Unpack,
 )

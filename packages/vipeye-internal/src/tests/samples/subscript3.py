@@ -1,7 +1,7 @@
 # This sample tests the handling of a subscript in a loop that includes
 # a del statement.
 
-# pyright: strict
+# viper: strict
 
 
 def func1(lst: list[tuple[int, int]]):

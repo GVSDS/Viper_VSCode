@@ -4,7 +4,7 @@
 //// __version__: str
 
 // @filename: importnotresolved.py
-//// #pyright: strict
+//// #viper: strict
 ////
 //// # verify that reportMissingModuleSource can be disabled via config
 //// # even when in strict mode
@@ -12,7 +12,7 @@
 //// import pkg1234
 //// print(pkg1234.__version__)
 
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "reportMissingModuleSource": false
 //// }

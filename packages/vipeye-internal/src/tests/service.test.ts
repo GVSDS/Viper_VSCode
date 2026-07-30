@@ -183,7 +183,7 @@ test('temp file', () => {
 
 test('excluded file', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "exclude": ["**/excluded.py"]
 //// }
@@ -200,7 +200,7 @@ test('excluded file', () => {
 
 test('excluded but still part of program', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "exclude": ["**/excluded.py"]
 //// }
@@ -345,7 +345,7 @@ test('random folder changed', () => {
 
 test('excluded folder changed', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "exclude": ["**/.*"]
 //// }
@@ -359,7 +359,7 @@ test('excluded folder changed', () => {
 
 test('file under excluded folder changed', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "exclude": ["**/.*"]
 //// }
@@ -376,7 +376,7 @@ test('file under excluded folder changed', () => {
 
 test('folder under excluded folder changed', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "exclude": ["**/.*"]
 //// }
@@ -390,7 +390,7 @@ test('folder under excluded folder changed', () => {
 
 test('folder that contains no file has changed', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "exclude": ["**/excluded.py"]
 //// }
@@ -416,7 +416,7 @@ test('folder that contains a file has changed', () => {
 
 test('folder that contains no file but whose parent has __init__ has changed', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "exclude": ["**/excluded.py"]
 //// }

@@ -1,7 +1,7 @@
 # This sample tests whether a decorator that contains an unknown
 # type is ignored and treated as though it wasn't applied.
 
-# pyright: reportMissingImports=false
+# viper: reportMissingImports=false
 
 import my_module
 

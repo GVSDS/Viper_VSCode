@@ -2,7 +2,7 @@
 # expression is matched to an `*args` parameter that has a declared type
 # that includes an unpacked TypeVarTuple.
 
-from typing_extensions import TypeVarTuple  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypeVarTuple  # viper: ignore[reportMissingModuleSource]
 
 Ts = TypeVarTuple("Ts")
 

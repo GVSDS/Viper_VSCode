@@ -1,6 +1,6 @@
 # This sample tests the TypeForm special form when used with type variables.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Literal, LiteralString, TypeGuard, Optional
 from typing_extensions import TypeForm, TypeIs

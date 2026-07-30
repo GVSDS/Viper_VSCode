@@ -2,7 +2,7 @@
 # is supported for classes that have a custom metaclass
 # with a __or__ or __ror__ method defined.
 
-# pyright: reportIncompatibleMethodOverride=false
+# viper: reportIncompatibleMethodOverride=false
 
 from typing import Type, TypeVar
 

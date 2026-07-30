@@ -1,6 +1,6 @@
 # This sample tests reporting of deprecated magic methods.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Self, overload
 

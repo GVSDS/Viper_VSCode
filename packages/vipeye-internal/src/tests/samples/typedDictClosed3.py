@@ -1,7 +1,7 @@
 # This sample tests inheritance rules for closed TypedDicts.
 
 from typing import Any, Never, NotRequired, Required, TypedDict
-from typing_extensions import ReadOnly  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import ReadOnly  # viper: ignore[reportMissingModuleSource]
 
 
 class Parent1(TypedDict, extra_items=int | None):

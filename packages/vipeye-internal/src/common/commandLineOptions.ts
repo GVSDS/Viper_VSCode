@@ -34,7 +34,7 @@ export type DiagnosticSeverityOverridesMap = { [ruleName: string]: DiagnosticSev
 export type DiagnosticBooleanOverridesMap = { [ruleName: string]: boolean };
 
 // Options that can be specified in a JSON config file. This list should match what is
-// defined in the pyrightconfig.schema.json file.
+// defined in the vipeyeconfig.schema.json file.
 export class CommandLineConfigOptions {
     // A list of file specs to include in the analysis. Can contain
     // directories, in which case all "*.py" files within those directories
@@ -156,7 +156,7 @@ export class CommandLineLanguageServerOptions {
     venvPath?: string | undefined;
 }
 
-// Some options can be specified from a source other than the pyright config file.
+// Some options can be specified from a source other than the viper config file.
 // This can be from command-line parameters or some other settings mechanism, like
 // that provided through a language client like the VS Code editor. These options
 // are later combined with those from the config file to produce the final configuration.

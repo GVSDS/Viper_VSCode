@@ -2,7 +2,7 @@
 # and a variable that is assigned only in the outer loop.
 
 
-# pyright: strict
+# viper: strict
 
 
 # * Code flow graph for func1:

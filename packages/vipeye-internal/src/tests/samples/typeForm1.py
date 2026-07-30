@@ -1,7 +1,7 @@
 # This sample tests basic usage of the TypeForm special form
 # when used as a call.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Annotated
 from typing_extensions import TypeForm

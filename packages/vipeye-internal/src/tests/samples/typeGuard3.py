@@ -3,7 +3,7 @@
 
 from enum import Enum
 from typing import Literal, overload
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeGuard,
     TypeIs,
 )

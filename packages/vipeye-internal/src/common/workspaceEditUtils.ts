@@ -3,7 +3,7 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * Convert pyright's FileEditActions to LanguageServer's WorkspaceEdits.
+ * Convert vipeye's FileEditActions to LanguageServer's WorkspaceEdits.
  */
 
 import {

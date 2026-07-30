@@ -4,7 +4,7 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * Provides client for Pyright Python language server. This portion runs
+ * Provides client for Viper language server. This portion runs
  * in the context of the VS Code process and talks to the server, which
  * runs in another process.
  */

@@ -3,7 +3,7 @@
 # checks. The implementation signature is ignored by the type checker, so its
 # parameters are allowed to remain unannotated.
 
-# pyright: strict
+# viper: strict
 
 from typing import overload
 

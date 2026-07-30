@@ -51,7 +51,7 @@ _JWKKeyTypeSupported: TypeAlias = Literal["oct", "RSA", "EC", "OKP"]
 JWKTypesRegistry: dict[_JWKKeyTypeSupported, str]
 
 class ParmType(Enum):
-    name = "A string with a name"  # pyright: ignore[reportAssignmentType]
+    name = "A string with a name"  # viper: ignore[reportAssignmentType]
     b64 = "Base64url Encoded"
     b64u = "Base64urlUint Encoded"
     unsupported = "Unsupported Parameter"

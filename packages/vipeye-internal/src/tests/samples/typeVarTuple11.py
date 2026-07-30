@@ -3,10 +3,10 @@
 # except that it uses the * operator rather than Unpack.
 
 # Enable experimental features to support Union[*Ts].
-# pyright: enableExperimentalFeatures=true
+# viper: enableExperimentalFeatures=true
 
 from typing import Generic, NewType, Union
-from typing_extensions import TypeVarTuple  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypeVarTuple  # viper: ignore[reportMissingModuleSource]
 
 
 Shape = TypeVarTuple("Shape")

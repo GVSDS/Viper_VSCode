@@ -2,7 +2,7 @@
 # where both __new__ and __init__ methods are present and have different
 # types.
 
-# pyright: strict
+# viper: strict
 
 from typing import Any, TypeVar, Callable
 

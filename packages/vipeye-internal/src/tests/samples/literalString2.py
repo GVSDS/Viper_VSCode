@@ -2,7 +2,7 @@
 # type variable.
 
 from typing import TypeVar, Generic
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     LiteralString,
 )
 

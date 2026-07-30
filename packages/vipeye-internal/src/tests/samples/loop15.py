@@ -1,7 +1,7 @@
 # This sample tests loops that contain nested comprehensions and
 # variables that depend on each other.
 
-# pyright: strict
+# viper: strict
 
 
 def func1(boards: list[list[list[int]]]):

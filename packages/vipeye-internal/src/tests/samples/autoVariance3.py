@@ -1,7 +1,7 @@
 # This sample tests variance inference for traditional type variables.
 
 from typing import Generic, Iterator, Sequence, overload
-from typing_extensions import TypeVar  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypeVar  # viper: ignore[reportMissingModuleSource]
 from dataclasses import dataclass
 
 T = TypeVar("T", infer_variance=True)

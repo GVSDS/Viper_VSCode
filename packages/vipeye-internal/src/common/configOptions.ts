@@ -392,7 +392,7 @@ export interface DiagnosticRuleSet {
     // Report cases where a simple expression result is not used in any way.
     reportUnusedExpression: DiagnosticLevel;
 
-    // Report cases where the removal of a "# type: ignore" or "# pyright: ignore"
+    // Report cases where the removal of a "# type: ignore" or "# viper: ignore"
     // comment would have no effect.
     reportUnnecessaryTypeIgnoreComment: DiagnosticLevel;
 
@@ -429,7 +429,7 @@ export function getBooleanDiagnosticRules(includeNonOverridable = false) {
     if (includeNonOverridable) {
         // Do not include these because we don't
         // want to override it in strict mode or support
-        // it within pyright comments.
+        // it within viper comments.
         boolRules.push(DiagnosticRule.enableTypeIgnoreComments);
         boolRules.push(DiagnosticRule.enableReachabilityAnalysis);
     }
@@ -1095,7 +1095,7 @@ export class ConfigOptions {
     // Minimum threshold for type eval logging
     typeEvaluationTimeThreshold = 50;
 
-    // Was this config initialized from JSON (pyrightconfig/pyproject)?
+    // Was this config initialized from JSON (viperconfig/pyproject)?
     initializedFromJson = false;
 
     // Filter out any hint diagnostics with tags?
@@ -1155,7 +1155,7 @@ export class ConfigOptions {
     // Controls how hover and completion function signatures are displayed.
     functionSignatureDisplay: SignatureDisplayType;
 
-    // Determines if has a config file (pyrightconfig.json or pyproject.toml) or not.
+    // Determines if has a config file (viperconfig.json or pyproject.toml) or not.
     configFileSource?: Uri | undefined;
 
     // Determines the effective default type checking mode.

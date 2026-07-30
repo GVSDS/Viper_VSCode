@@ -2,7 +2,7 @@
 # partially-specialized classes that can be further
 # specialized.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Callable, Generic, Optional
 from typing_extensions import ParamSpec, TypeVar

@@ -1,9 +1,9 @@
 # This sample tests for generic protocol variance consistency.
 
 from typing import Protocol, TypeVar
-from typing_extensions import ParamSpec  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import ParamSpec  # viper: ignore[reportMissingModuleSource]
 
-# pyright: strict
+# viper: strict
 
 _T1 = TypeVar("_T1")
 _T2 = TypeVar("_T2", bound=int)

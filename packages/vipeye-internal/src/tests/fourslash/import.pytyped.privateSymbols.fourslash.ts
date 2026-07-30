@@ -1,6 +1,6 @@
 /// <reference path="typings/fourslash.d.ts" />
 
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "typeCheckingMode": "basic"
 //// }
@@ -24,7 +24,7 @@
 //// three: int = 3
 
 // @filename: .src/test1.py
-//// # pyright: reportPrivateUsage=true, reportPrivateImportUsage=true
+//// # viper: reportPrivateUsage=true, reportPrivateImportUsage=true
 //// from testLib import one
 //// from testLib import [|/*marker1*/two|] as two_alias
 //// from testLib import [|/*marker2*/three|]

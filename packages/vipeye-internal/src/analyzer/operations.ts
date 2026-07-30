@@ -58,7 +58,9 @@ import {
     isAnyOrUnknown,
     isClass,
     isClassInstance,
+    isCConstType,
     isCPtrType,
+    isCStaticType,
     isCVoidType,
     isFunctionOrOverloaded,
     isInstantiableClass,
@@ -1309,6 +1311,18 @@ function validateArithmeticOperation(
                 (rightSubtypeExpanded, rightSubtypeUnexpanded) => {
                     if (isAnyOrUnknown(leftSubtypeUnexpanded) || isAnyOrUnknown(rightSubtypeUnexpanded)) {
                         return preserveUnknown(leftSubtypeUnexpanded, rightSubtypeUnexpanded);
+                    }
+
+                    // Viper 扩展：跳过 Viper 修饰类型（CStatic, CConst 等类型修饰符）。
+                    // 这些修饰类型只是类型修饰符（如 static, const），不参与运算。
+                    // 运算时只处理基础类型（如 CInt, str 等）。
+                    if (isViperDialect) {
+                        if (
+                            isCStaticType(leftSubtypeUnexpanded) || isCStaticType(rightSubtypeUnexpanded) ||
+                            isCConstType(leftSubtypeUnexpanded) || isCConstType(rightSubtypeUnexpanded)
+                        ) {
+                            return UnknownType.create(isIncomplete);
+                        }
                     }
 
                     const tupleClassType = evaluator.getTupleClassType();

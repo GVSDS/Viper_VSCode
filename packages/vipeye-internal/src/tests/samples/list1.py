@@ -1,6 +1,6 @@
 # This sample tests type inference for list expressions.
 
-# pyright: strict, reportUnknownVariableType=false
+# viper: strict, reportUnknownVariableType=false
 
 from typing import Any, Collection, Generic, Literal, MutableSequence, Sequence, TypeVar
 

@@ -622,7 +622,7 @@ test('getRelativeModuleName - target in stub path', () => {
 
 test('getRelativeModuleName - target in typeshed path', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "typeshedPath": "my_typeshed"
 //// }
@@ -639,7 +639,7 @@ test('getRelativeModuleName - target in typeshed path', () => {
 
 test('resolve alias of not needed file', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }

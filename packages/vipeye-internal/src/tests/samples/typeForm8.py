@@ -2,7 +2,7 @@
 # is interpreted as a stringified TypeForm when the expected element
 # type is a TypeForm.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Union
 from typing_extensions import TypeForm

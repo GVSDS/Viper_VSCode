@@ -1,7 +1,7 @@
 # This sample tests the case where a member is accessed from a "type"
 # instance or a Type[T].
 
-# pyright: strict
+# viper: strict
 
 from typing import TypeVar
 

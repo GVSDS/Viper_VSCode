@@ -1,7 +1,7 @@
 # This sample tests a loop where there are multiple symbols
 # that depend on each other.
 
-# pyright: strict
+# viper: strict
 
 
 def func1() -> str | None: ...

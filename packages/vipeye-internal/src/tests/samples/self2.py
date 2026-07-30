@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Callable, Generic, ParamSpec, Protocol, TypeVar
 
-from typing_extensions import Self  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import Self  # viper: ignore[reportMissingModuleSource]
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")

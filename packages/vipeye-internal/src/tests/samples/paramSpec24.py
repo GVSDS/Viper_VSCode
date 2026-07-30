@@ -2,10 +2,10 @@
 # is used as an input parameter to a function that returns a generic
 # type parameterized by a ParamSpec and specialized with a Concatenate.
 
-# pyright: reportOverlappingOverload=false
+# viper: reportOverlappingOverload=false
 
 from __future__ import annotations
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     Self,
     Concatenate,
     ParamSpec,

@@ -2,12 +2,12 @@
 # that allows user-defined functions to perform
 # conditional type narrowing.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 import os
 from typing import Any, Callable, TypeVar
 
-from typing_extensions import TypeGuard  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypeGuard  # viper: ignore[reportMissingModuleSource]
 
 _T = TypeVar("_T")
 

@@ -14,7 +14,7 @@ import { parseAndGetTestState } from './harness/fourslash/testState';
 
 test('completion import statement tooltip', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -46,7 +46,7 @@ test('completion import statement tooltip', async () => {
 
 test('completion import statement tooltip - stub file', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -82,7 +82,7 @@ test('completion import statement tooltip - stub file', async () => {
 
 test('completion import statement tooltip - doc in stub file', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -118,7 +118,7 @@ test('completion import statement tooltip - doc in stub file', async () => {
 
 test('completion import statement tooltip - sub modules', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -154,7 +154,7 @@ test('completion import statement tooltip - sub modules', async () => {
 
 test('completion import reference tooltip', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -187,7 +187,7 @@ test('completion import reference tooltip', async () => {
 
 test('completion import reference tooltip - first module', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -224,7 +224,7 @@ test('completion import reference tooltip - first module', async () => {
 
 test('completion import reference tooltip - child module', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -261,7 +261,7 @@ test('completion import reference tooltip - child module', async () => {
 
 test('completion from import statement tooltip - first module', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -293,7 +293,7 @@ test('completion from import statement tooltip - first module', async () => {
 
 test('completion from import statement tooltip - child module', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -329,7 +329,7 @@ test('completion from import statement tooltip - child module', async () => {
 
 test('completion from import statement tooltip - implicit module', async () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }

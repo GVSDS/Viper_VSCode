@@ -1,6 +1,6 @@
 # This sample tests inference behaviors related to TypeForm.
 
-# pyright: strict
+# viper: strict
 
 
 def func1():

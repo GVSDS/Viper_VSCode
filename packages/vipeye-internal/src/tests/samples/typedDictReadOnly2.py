@@ -1,7 +1,7 @@
 # This sample tests various uses of ReadOnly fields in TypedDict classes
 # as specified in PEP 705.
 
-# pyright: reportIncompatibleVariableOverride=true
+# viper: reportIncompatibleVariableOverride=true
 
 from typing import (
     Generic,
@@ -14,7 +14,7 @@ from typing import (
     TypedDict,
     Unpack,
 )
-from typing_extensions import ReadOnly  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import ReadOnly  # viper: ignore[reportMissingModuleSource]
 
 _T = TypeVar("_T")
 

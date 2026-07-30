@@ -3,7 +3,7 @@
 # the class bound to the `__new__` method.
 
 import enum
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     Self,
     reveal_type,
 )

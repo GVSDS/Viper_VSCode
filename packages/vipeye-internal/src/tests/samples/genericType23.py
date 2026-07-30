@@ -1,7 +1,7 @@
 # This sample tests that a recursive call to a generic function
 # evaluates correctly.
 
-# pyright: strict
+# viper: strict
 
 from typing import TypeVar
 

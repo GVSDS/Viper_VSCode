@@ -3,7 +3,7 @@
 // @filename: test.py
 //// from submodule.[|/*marker1*/|]
 
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "extraPaths": ["submodule"]
 //// }

@@ -3,10 +3,10 @@
 # invariance validation when a TypeVarTuple is used in the protocol
 # along with a non-variadic TypeVar.
 
-# pyright: strict
+# viper: strict
 
 from typing import Protocol, TypeVar
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVarTuple,
     Unpack,
 )

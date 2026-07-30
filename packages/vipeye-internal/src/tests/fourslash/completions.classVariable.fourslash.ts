@@ -1,5 +1,5 @@
 /// <reference path="typings/fourslash.d.ts" />
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "pythonVersion": "3.11"
 //// }

@@ -2,7 +2,7 @@
 # TypedDict under certain circumstances.
 
 from typing import NotRequired, Required, TypedDict
-from typing_extensions import ReadOnly  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import ReadOnly  # viper: ignore[reportMissingModuleSource]
 
 
 class TD1(TypedDict, total=False, extra_items=int):

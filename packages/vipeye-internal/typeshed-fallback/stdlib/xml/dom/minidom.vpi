@@ -128,12 +128,12 @@ class Node(xml.dom.Node):
 
     def hasChildNodes(self) -> bool: ...
     def insertBefore(  # type: ignore[misc]
-        self: _NodesWithChildren,  # pyright: ignore[reportGeneralTypeIssues]
+        self: _NodesWithChildren,  # viper: ignore[reportGeneralTypeIssues]
         newChild: _ChildNodePlusFragmentVar,
         refChild: _NodesThatAreChildren | None,
     ) -> _ChildNodePlusFragmentVar: ...
     def appendChild(  # type: ignore[misc]
-        self: _NodesWithChildren, node: _ChildNodePlusFragmentVar  # pyright: ignore[reportGeneralTypeIssues]
+        self: _NodesWithChildren, node: _ChildNodePlusFragmentVar  # viper: ignore[reportGeneralTypeIssues]
     ) -> _ChildNodePlusFragmentVar: ...
 
     @overload
@@ -145,8 +145,8 @@ class Node(xml.dom.Node):
         self: _NodesWithChildren, newChild: _NodesThatAreChildren, oldChild: _ChildNodeVar
     ) -> _ChildNodeVar | None: ...
 
-    def removeChild(self: _NodesWithChildren, oldChild: _ChildNodeVar) -> _ChildNodeVar: ...  # type: ignore[misc]  # pyright: ignore[reportGeneralTypeIssues]
-    def normalize(self: _NodesWithChildren) -> None: ...  # type: ignore[misc]  # pyright: ignore[reportGeneralTypeIssues]
+    def removeChild(self: _NodesWithChildren, oldChild: _ChildNodeVar) -> _ChildNodeVar: ...  # type: ignore[misc]  # viper: ignore[reportGeneralTypeIssues]
+    def normalize(self: _NodesWithChildren) -> None: ...  # type: ignore[misc]  # viper: ignore[reportGeneralTypeIssues]
     def cloneNode(self, deep: bool) -> Self | None: ...
     def isSupported(self, feature: str, version: str | None) -> bool: ...
     def isSameNode(self, other: Node) -> bool: ...

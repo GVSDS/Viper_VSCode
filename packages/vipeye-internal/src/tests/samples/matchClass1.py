@@ -11,7 +11,7 @@ from typing import (
     TypedDict,
     runtime_checkable,
 )
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     LiteralString,
 )
 from dataclasses import dataclass, field

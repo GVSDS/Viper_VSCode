@@ -1,5 +1,5 @@
 /**
- * Functions used for running pyright with pprof.
+ * Functions used for running viper with pprof.
  * 
  * Steps taken to get this to work:
  * 	- Install VC++ Desktop C++ workload with at least one Windows SDK
@@ -16,7 +16,7 @@
 		○ It should be named something like bin\win32-x64-110\pprof-nodejs.node
 		○ Copy it to the node_modules\@datadog\pprof\prebuilds\win32-x64
 		○ Rename it to electron-110.node (or whatever ABI version it is using)
-	- Modify pylance to use pprof around problem location using the pyright\packages\vipeye-internal\pprof\profiler.ts
+	- Modify pylance to use pprof around problem location using the viper\packages\vipeye-internal\pprof\profiler.ts
 		○ startProfile before
 		○ finishProfile after, passing it a file name
 	- Rebuild Pylance

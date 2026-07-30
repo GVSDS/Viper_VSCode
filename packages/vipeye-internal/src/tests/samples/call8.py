@@ -2,7 +2,7 @@
 # within each other.
 
 from typing import Any, Iterable, TypeVar, Protocol, overload
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     LiteralString,
 )
 

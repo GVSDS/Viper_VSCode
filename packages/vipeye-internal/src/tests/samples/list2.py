@@ -2,7 +2,7 @@
 # reported up for correct overload selection.
 
 import random
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     LiteralString,
 )
 

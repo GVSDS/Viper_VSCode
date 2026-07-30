@@ -4,7 +4,7 @@
 # to another.
 
 from typing import Callable, Generic, Unpack
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     ParamSpec,
     TypeVar,
     TypeVarTuple,

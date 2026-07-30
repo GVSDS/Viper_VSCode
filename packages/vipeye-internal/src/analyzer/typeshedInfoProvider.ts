@@ -274,7 +274,7 @@ class DefaultTypeshedInfoProvider implements TypeshedInfoProvider {
         }
 
         // Viper 模式仍使用 typeshed-fallback 作为 typeshed root，
-        // 确保 builtins/typing 等基础模块可被 Pyright 隐式加载。
+        // 确保 builtins/typing 等基础模块可被 Vipeye 隐式加载。
         // Viper 特有模块（t/c/stdio 等）通过 importResolver.getImportRoots()
         // 额外添加 vipershed-fallback/stdlib 作为优先搜索路径。
         const fallback = PythonPathUtils.getTypeShedFallbackPath(this._fileSystem) ?? Uri.empty();

@@ -2,7 +2,7 @@
 # for "chain") when the expected type is provided by another
 # constructor (in this case "list").
 
-# pyright: strict
+# viper: strict
 
 from concurrent.futures import Future, wait
 from itertools import chain

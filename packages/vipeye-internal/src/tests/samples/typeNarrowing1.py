@@ -1,7 +1,7 @@
 # This file validates type narrowing that involve
 # conditional binary expressions.
 
-# pyright: reportOptionalMemberAccess=false
+# viper: reportOptionalMemberAccess=false
 
 from random import random
 

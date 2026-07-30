@@ -3,7 +3,7 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * Tests to verify Pyright works as the backend for a language server.
+ * Tests to verify Vipeye works as the backend for a language server.
  */
 
 import assert from 'assert';
@@ -32,13 +32,13 @@ import {
     getParseResults,
     hover,
     openFile,
-    PyrightServerInfo,
-    runPyrightServer,
+    ViperServerInfo,
+    runViperServer,
     waitForDiagnostics,
 } from './lsp/languageServerTestUtils';
 
 describe(`Basic language server tests`, () => {
-    let serverInfo: PyrightServerInfo | undefined;
+    let serverInfo: ViperServerInfo | undefined;
     async function runLanguageServer(
         projectRoots: string[] | string,
         code: string,
@@ -48,7 +48,7 @@ describe(`Basic language server tests`, () => {
         supportsBackgroundThread?: boolean,
         supportsPullDiagnostics?: boolean
     ) {
-        const result = await runPyrightServer(
+        const result = await runViperServer(
             projectRoots,
             code,
             callInitialize,

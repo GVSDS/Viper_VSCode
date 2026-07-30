@@ -2,7 +2,7 @@
 # a **kwargs parameter in a function signature.
 
 from typing import Protocol, TypedDict
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     NotRequired,
     Required,
     Unpack,

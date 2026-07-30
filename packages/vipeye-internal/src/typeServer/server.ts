@@ -7,15 +7,15 @@
  * to initialize and manage documents; the type-server parts answer Type Server Protocol
  * (TSP) requests with type information for those documents.
  *
- * This is the Pyright-native port of Pylance's `type-server/src/server/typeServer.ts`. It
- * is rebased onto Pyright's own infrastructure (`LanguageServerBase`, `WorkspaceFactory`,
+ * This is the Vipeye-native port of Pylance's `type-server/src/server/typeServer.ts`. It
+ * is rebased onto Vipeye's own infrastructure (`LanguageServerBase`, `WorkspaceFactory`,
  * `ImportResolver`, `BackgroundAnalysisProgram`) instead of the Pylance subclasses. Type
- * queries are answered synchronously by Pyright's evaluator through the `ProgramWrapper`;
- * cancellation is file/token based like the rest of Pyright, so long-running queries can
+ * queries are answered synchronously by Vipeye's evaluator through the `ProgramWrapper`;
+ * cancellation is file/token based like the rest of Vipeye, so long-running queries can
  * still be interrupted mid-request.
  *
  * Feature notes:
- *   - Telemetry and profiling are intentionally omitted (Pyright has no telemetry).
+ *   - Telemetry and profiling are intentionally omitted (Vipeye has no telemetry).
  *   - Notebook support and the virtual-file-redirect supplemental are layered in by later
  *     phases; the seams (`_notebookManager`, overlay file system) are left in place.
  */
@@ -60,7 +60,7 @@ import { ParseNode } from '../parser/parseNodes';
 import { WellKnownWorkspaceKinds, Workspace } from '../workspaceFactory';
 
 import { ServerCanceledException } from './cancellation';
-import { convertFromPyrightDiagnostic } from './diagnosticUtils';
+import { convertFromViperDiagnostic } from './diagnosticUtils';
 import { AnyNotebookDocumentSelector } from './notebookCellChain';
 import { NotebookDocumentHandler } from './notebookDocumentHandler';
 import { INotebookUriMapper, NotebookUriMapper } from './notebookUriMapper';
@@ -274,7 +274,7 @@ export class TypeServer extends LanguageServerBase {
                         })
                         .catch(() => {});
                 } else {
-                    void this.connection.sendNotification('pyright/beginProgress');
+                    void this.connection.sendNotification('viper/beginProgress');
                 }
             },
             report: (message: string) => {
@@ -285,7 +285,7 @@ export class TypeServer extends LanguageServerBase {
                         })
                         .catch(() => {});
                 } else {
-                    void this.connection.sendNotification('pyright/reportProgress', message);
+                    void this.connection.sendNotification('viper/reportProgress', message);
                 }
             },
             end: () => {
@@ -298,7 +298,7 @@ export class TypeServer extends LanguageServerBase {
                         .catch(() => {});
                     workDoneProgress = undefined;
                 } else {
-                    void this.connection.sendNotification('pyright/endProgress');
+                    void this.connection.sendNotification('viper/endProgress');
                 }
             },
         };
@@ -339,7 +339,7 @@ export class TypeServer extends LanguageServerBase {
             this._onGetPythonSearchPaths.bind(this)
         );
 
-        // Register virtual file redirect notifications (Pyright-specific TSP supplemental).
+        // Register virtual file redirect notifications (Vipeye-specific TSP supplemental).
         // These are sent by a client (e.g. Pylance's Django stub generator) when it produces
         // merged virtual files on disk that the type server should analyze in place of the real
         // ones.
@@ -405,7 +405,7 @@ export class TypeServer extends LanguageServerBase {
     protected override onInitialized() {
         super.onInitialized();
 
-        // The base Pyright server skips updateSettingsForAllWorkspaces() when the client
+        // The base Vipeye server skips updateSettingsForAllWorkspaces() when the client
         // advertises workspace-folders support (it expects a didChangeWorkspaceFolders event
         // instead). A TSP client may advertise workspaceFolders: true but never send that
         // event, so trigger the settings update here when workspaces already exist. Without
@@ -492,7 +492,7 @@ export class TypeServer extends LanguageServerBase {
                 // these diagnostics directly and the original client does support them.
                 const lspDiagnostics = serverDiagnostics
                     .map((d) =>
-                        convertFromPyrightDiagnostic(
+                        convertFromViperDiagnostic(
                             d,
                             workspace.service.fs,
                             /* supportsUnnecessaryDiagnosticTag */ true,
@@ -680,8 +680,8 @@ export class TypeServer extends LanguageServerBase {
         const virtualUri = this.convertLspUriStringToUri(params.virtualUri);
         fs.virtualOverlay.addFileRedirect(realUri, virtualUri);
 
-        // If the file is currently open, read the virtual content and update Pyright's in-memory
-        // buffer. For closed files, the FS overlay redirect is sufficient — Pyright reads from
+        // If the file is currently open, read the virtual content and update Vipeye's in-memory
+        // buffer. For closed files, the FS overlay redirect is sufficient — Vipeye reads from
         // the FS.
         let virtualContent: string | undefined;
         if (this.openFileMap.has(realUri.key)) {

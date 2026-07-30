@@ -2,7 +2,7 @@
 # dict and MutableMapping types.
 
 from typing import MutableMapping, NotRequired, TypedDict
-from typing_extensions import ReadOnly  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import ReadOnly  # viper: ignore[reportMissingModuleSource]
 
 
 class IntDict1(TypedDict, extra_items=int):

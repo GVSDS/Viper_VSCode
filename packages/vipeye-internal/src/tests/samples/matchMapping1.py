@@ -3,7 +3,7 @@
 
 from typing import Literal, TypedDict
 
-from typing_extensions import NotRequired  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import NotRequired  # viper: ignore[reportMissingModuleSource]
 
 
 def test_unknown(value_to_match):

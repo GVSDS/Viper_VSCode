@@ -2,7 +2,7 @@
 # as one or more type arguments for a tuple.
 
 # Enable experimental features to support Union[*Ts].
-# pyright: enableExperimentalFeatures=true
+# viper: enableExperimentalFeatures=true
 
 from typing import Generator, Iterable, TypeVar, TypeVarTuple, Union
 

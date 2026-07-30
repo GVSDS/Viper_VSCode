@@ -3,7 +3,7 @@
 # would be expected from the constructor, we actually
 # generate "tuple[T, ...]".
 
-# pyright: strict
+# viper: strict
 
 str_list = ["1", "2", "3"]
 left, right = tuple(str_list)

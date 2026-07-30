@@ -2,10 +2,10 @@
 # a generic function. A TypeVar must appear at least twice to be
 # considered legitimate.
 
-# pyright: reportInvalidTypeVarUse=true
+# viper: reportInvalidTypeVarUse=true
 
 from typing import AnyStr, Callable, Generic, overload
-from typing_extensions import TypeVar  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypeVar  # viper: ignore[reportMissingModuleSource]
 
 
 _T = TypeVar("_T")

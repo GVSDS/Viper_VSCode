@@ -108,11 +108,11 @@
         "binaryOperationNotAllowed": "Binary operator not allowed in type expression",
         "bindParamMissing": {
             "message": "Could not bind method \"{methodName}\" because it is missing a \"self\" or \"cls\" parameter",
-            "comment": "Binding is the process through which Pyright determines what object a name refers to"
+            "comment": "Binding is the process through which Viper determines what object a name refers to"
         },
         "bindTypeMismatch": {
             "message": "Could not bind method \"{methodName}\" because \"{type}\" is not assignable to parameter \"{paramName}\"",
-            "comment": "Binding is the process through which Pyright determines what object a name refers to"
+            "comment": "Binding is the process through which Viper determines what object a name refers to"
         },
         "breakInExceptionGroup": {
             "message": "\"break\" is not allowed in an \"except*\" block",
@@ -677,7 +677,7 @@
         },
         "internalBindError": {
             "message": "An internal error occurred while binding file \"{file}\": {message}",
-            "comment": "Binding is the process through which Pyright determines what object a name refers to"
+            "comment": "Binding is the process through which Viper determines what object a name refers to"
         },
         "internalParseError": "An internal error occurred while parsing file \"{file}\": {message}",
         "internalTypeCheckingError": "An internal error occurred while type checking file \"{file}\": {message}",
@@ -866,7 +866,7 @@
         },
         "nonLocalNoBinding": {
             "message": "No binding for nonlocal \"{name}\" found",
-            "comment": ["{Locked='nonlocal'}", "'No binding found' means that Pyright couldn't resolve the variable name to an object"]
+            "comment": ["{Locked='nonlocal'}", "'No binding found' means that Viper couldn't resolve the variable name to an object"]
         },
         "nonLocalReassignment": {
             "message": "\"{name}\" is assigned before nonlocal declaration",
@@ -1095,33 +1095,33 @@
             "message": "Type variable \"{variable}\" used in generic Protocol \"{class}\" should be invariant",
             "comment": ["{Locked='Protocol'}", "A generic type is a parameterized type, for example a container where the generic type parameter specifies the type of elements in the container"]
         },
-        "pyrightCommentInvalidDiagnosticBoolValue": {
-            "message": "Pyright comment directive must be followed by \"=\" and a value of true or false",
-            "comment": "{Locked='Pyright','true','false'}"
+        "viperCommentInvalidDiagnosticBoolValue": {
+            "message": "Viper comment directive must be followed by \"=\" and a value of true or false",
+            "comment": "{Locked='Viper','true','false'}"
         },
-        "pyrightCommentInvalidDiagnosticSeverityValue": {
-            "message": "Pyright comment directive must be followed by \"=\" and a value of true, false, error, warning, information, or none",
-            "comment": "{Locked='Pyright','true','false','error','warning','information','none'}"
+        "viperCommentInvalidDiagnosticSeverityValue": {
+            "message": "Viper comment directive must be followed by \"=\" and a value of true, false, error, warning, information, or none",
+            "comment": "{Locked='Viper','true','false','error','warning','information','none'}"
         },
-        "pyrightCommentMissingDirective": {
-            "message": "Pyright comment must be followed by a directive (basic or strict) or a diagnostic rule",
-            "comment": "{Locked='Pyright','basic','strict'}"
+        "viperCommentMissingDirective": {
+            "message": "Viper comment must be followed by a directive (basic or strict) or a diagnostic rule",
+            "comment": "{Locked='Viper','basic','strict'}"
         },
-        "pyrightCommentNotOnOwnLine": {
-            "message": "Pyright comments used to control file-level settings must appear on their own line",
-            "comment": "{Locked='Pyright'}"
+        "viperCommentNotOnOwnLine": {
+            "message": "Viper comments used to control file-level settings must appear on their own line",
+            "comment": "{Locked='Viper'}"
         },
-        "pyrightCommentUnknownDiagnosticRule": {
-            "message": "\"{rule}\" is an unknown diagnostic rule for pyright comment",
-            "comment": "{Locked='pyright'}"
+        "viperCommentUnknownDiagnosticRule": {
+            "message": "\"{rule}\" is an unknown diagnostic rule for viper comment",
+            "comment": "{Locked='viper'}"
         },
-        "pyrightCommentUnknownDiagnosticSeverityValue": {
-            "message": "\"{value}\" is invalid value for pyright comment; expected true, false, error, warning, information, or none",
-            "comment": "{Locked='pyright','true','false','error','warning','information','none'}"
+        "viperCommentUnknownDiagnosticSeverityValue": {
+            "message": "\"{value}\" is invalid value for viper comment; expected true, false, error, warning, information, or none",
+            "comment": "{Locked='viper','true','false','error','warning','information','none'}"
         },
-        "pyrightCommentUnknownDirective": {
-            "message": "\"{directive}\" is an unknown directive for pyright comment; expected \"strict\", \"standard\", or \"basic\"",
-            "comment": "{Locked='pyright','strict','standard','basic'}"
+        "viperCommentUnknownDirective": {
+            "message": "\"{directive}\" is an unknown directive for viper comment; expected \"strict\", \"standard\", or \"basic\"",
+            "comment": "{Locked='viper','strict','standard','basic'}"
         },
         "readOnlyArgCount": {
             "message": "Expected a single type argument after \"ReadOnly\"",
@@ -1663,13 +1663,13 @@
             "message": "Unnecessary issubclass call; \"{testType}\" is never a subclass of \"{classType}\"",
             "comment": "{Locked='issubclass'}"
         },
-        "unnecessaryPyrightIgnore": {
-            "message": "Unnecessary \"# pyright: ignore\" comment",
-            "comment": "{Locked='# pyright: ignore'}"
+        "unnecessaryViperIgnore": {
+            "message": "Unnecessary \"# viper: ignore\" comment",
+            "comment": "{Locked='# viper: ignore'}"
         },
-        "unnecessaryPyrightIgnoreRule": {
-            "message": "Unnecessary \"# pyright: ignore\" rule: \"{name}\"",
-            "comment": "{Locked='# pyright: ignore'}"
+        "unnecessaryViperIgnoreRule": {
+            "message": "Unnecessary \"# viper: ignore\" rule: \"{name}\"",
+            "comment": "{Locked='# viper: ignore'}"
         },
         "unnecessaryTypeIgnore": {
             "message": "Unnecessary \"# type: ignore\" comment",
@@ -1835,7 +1835,7 @@
         "dataProtocolUnsupported": "\"{name}\" is a data protocol",
         "descriptorAccessBindingFailed": {
             "message": "Failed to bind method \"{name}\" for descriptor class \"{className}\"",
-            "comment": "Binding is the process through which Pyright determines what object a name refers to"
+            "comment": "Binding is the process through which Viper determines what object a name refers to"
         },
         "descriptorAccessCallFailed": "Failed to call method \"{name}\" for descriptor class \"{className}\"",
         "finalMethod": {
@@ -2040,9 +2040,9 @@
         },
         "protocolSourceIsNotConcrete": "\"{sourceType}\" is not a concrete class type and cannot be assigned to type \"{destType}\"",
         "protocolUnsafeOverlap": "Attributes of \"{name}\" have the same names as the protocol",
-        "pyrightCommentIgnoreTip": {
-            "message": "Use \"# pyright: ignore[<diagnostic rules>]\" to suppress diagnostics for a single line",
-            "comment": "{Locked='# pyright: ignore[<diagnostic rules>]'}"
+        "viperCommentIgnoreTip": {
+            "message": "Use \"# viper: ignore[<diagnostic rules>]\" to suppress diagnostics for a single line",
+            "comment": "{Locked='# viper: ignore[<diagnostic rules>]'}"
         },
         "readOnlyAttribute": "Attribute \"{name}\" is read-only",
         "seeClassDeclaration": "See class declaration",

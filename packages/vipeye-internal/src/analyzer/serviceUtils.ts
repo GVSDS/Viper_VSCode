@@ -1,5 +1,5 @@
 import { ReadOnlyFileSystem } from '../common/fileSystem';
-import { configFileName, pyprojectTomlName, viperConfigFileName, viperProjectFileExt, viperProjectFileName } from '../common/pathConsts';
+import { configFileName, pyprojectTomlName, viperProjectFileExt, viperProjectFileName } from '../common/pathConsts';
 import { Uri } from '../common/uri/uri';
 import { forEachAncestorDirectory } from '../common/uri/uriUtils';
 
@@ -20,9 +20,9 @@ export function findConfigFileHereOrUp(fs: ReadOnlyFileSystem, searchPath: Uri):
 }
 
 export function findConfigFile(fs: ReadOnlyFileSystem, searchPath: Uri): Uri | undefined {
-    // Viper 模式优先：先查找 viperconfig.json，未找到时回退到 pyrightconfig.json。
+    // 只查找 viperconfig.json（完全切换后不再回退 pyrightconfig.json）。
     // 调用方（service.ts）依据返回文件名决定是否将 dialect 设为 'viper'。
-    const viperFileName = searchPath.resolvePaths(viperConfigFileName);
+    const viperFileName = searchPath.resolvePaths(configFileName);
     if (fs.existsSync(viperFileName)) {
         return fs.realCasePath(viperFileName);
     }
@@ -36,15 +36,10 @@ export function findConfigFile(fs: ReadOnlyFileSystem, searchPath: Uri): Uri | u
     }
 
     // TransPyC project.json：仅当 schema 匹配（含 source_dir / compiler / linker 之一）时才返回，
-    // 否则跳过到 pyrightconfig.json，避免误判其他工具的 project.json。
+    // 避免误判其他工具的 project.json。
     const projectFileName = searchPath.resolvePaths(viperProjectFileName);
     if (fs.existsSync(projectFileName) && isViperProjectConfig(fs, projectFileName)) {
         return fs.realCasePath(projectFileName);
-    }
-
-    const pyrightFileName = searchPath.resolvePaths(configFileName);
-    if (fs.existsSync(pyrightFileName)) {
-        return fs.realCasePath(pyrightFileName);
     }
 
     return undefined;

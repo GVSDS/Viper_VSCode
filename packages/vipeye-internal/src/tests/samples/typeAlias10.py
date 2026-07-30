@@ -1,7 +1,7 @@
 # This sample tests the handling of generic type alias where a type
 # argument is not provided.
 
-# pyright: reportMissingTypeArgument=true
+# viper: reportMissingTypeArgument=true
 
 from typing import Any, Generic, TypeAlias, TypeVar
 

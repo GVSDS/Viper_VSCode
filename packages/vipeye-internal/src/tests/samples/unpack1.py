@@ -1,6 +1,6 @@
 # This sample tests the type checker's handling of the unpack operator.
 
-# pyright: strictListInference=true
+# viper: strictListInference=true
 
 
 class Class1: ...

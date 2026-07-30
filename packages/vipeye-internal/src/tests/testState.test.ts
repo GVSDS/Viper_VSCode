@@ -54,7 +54,7 @@ test('Multiple files', () => {
 
 test('Configuration', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "include": [
 ////     "src"
@@ -132,7 +132,7 @@ test('Configuration', () => {
 
 test('stubPath configuration', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "stubPath": "src/typestubs"
 //// }
@@ -142,11 +142,11 @@ test('stubPath configuration', () => {
     assert.equal(state.configOptions.stubPath?.getFilePath(), normalizeSlashes('/src/typestubs'));
 });
 
-test('pyrightconfig.json exists in VFS', () => {
-    // Regression test: pyrightconfig.json should be written to the virtual file system,
+test('viperconfig.json exists in VFS', () => {
+    // Regression test: viperconfig.json should be written to the virtual file system,
     // not just parsed for config options.
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "stubPath": "my_stubs"
 //// }
@@ -157,12 +157,12 @@ test('pyrightconfig.json exists in VFS', () => {
 
     const state = parseAndGetTestState(code, factory.srcFolder).state;
 
-    // The pyrightconfig.json file should exist in the VFS
+    // The viperconfig.json file should exist in the VFS
     const configUri = Uri.file(
-        normalizeSlashes(combinePaths(factory.srcFolder, 'pyrightconfig.json')),
+        normalizeSlashes(combinePaths(factory.srcFolder, 'viperconfig.json')),
         state.serviceProvider
     );
-    assert(state.fs.existsSync(configUri), `pyrightconfig.json should exist in VFS at ${configUri.toString()}`);
+    assert(state.fs.existsSync(configUri), `viperconfig.json should exist in VFS at ${configUri.toString()}`);
 
     // The config should also be parsed correctly
     assert.equal(state.configOptions.stubPath?.getFilePath(), normalizeSlashes('/my_stubs'));
@@ -170,7 +170,7 @@ test('pyrightconfig.json exists in VFS', () => {
 
 test('Duplicated stubPath configuration', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "typingsPath": "src/typestubs1",
 ////   "stubPath": "src/typestubs2"

@@ -17,7 +17,7 @@ export class PullDiagnosticsDynamicFeature extends DynamicFeature {
     private _workspaceSupport = false;
     private _registered = false;
 
-    constructor(private readonly _connection: Connection, private readonly _id: string = 'pyright') {
+    constructor(private readonly _connection: Connection, private readonly _id: string = 'viper') {
         super('pull diagnostics');
     }
 

@@ -3,14 +3,14 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * In-process test harness for the Pyright type server (TSP).
+ * In-process test harness for the Viper type server (TSP).
  *
  * Boots a `TypeServer` over a pair of in-memory duplex streams so tests can drive the
  * protocol requests directly (initialize, open documents, query types). This exercises the
  * full server-side conversion path (fromProtocolNode -> evaluate -> ProtocolTypeFactory)
  * without needing any client-side consumer stack.
  *
- * This is a Pyright-native adaptation of Pylance's `inProcTypeServerTestUtils`. It omits the
+ * This is a Vipeye-native adaptation of Pylance's `inProcTypeServerTestUtils`. It omits the
  * client-side `ExternalProgram`/`snapshotSync` machinery (which stays in Pylance) and asserts
  * on the protocol-level responses instead.
  */
@@ -265,10 +265,10 @@ async function createInProcTypeServer(code: string): Promise<InProcTypeServer> {
     const fourslash = parseTestData(DEFAULT_WORKSPACE_ROOT, code, 'main.py');
     const testFS = createFileSystem(DEFAULT_WORKSPACE_ROOT, fourslash);
     const uriMapper = new NotebookUriMapper(testFS);
-    const pyrightFs = new TypeServerFileSystem(testFS, uriMapper);
+    const viperFs = new TypeServerFileSystem(testFS, uriMapper);
     const serverConsole = new ConsoleWithLogLevel(new NullConsole(), 'typeServer.inProc');
-    const partialStubs = new PartialStubService(pyrightFs);
-    const serviceProvider = createServiceProvider(testFS, pyrightFs, serverConsole, partialStubs);
+    const partialStubs = new PartialStubService(viperFs);
+    const serviceProvider = createServiceProvider(testFS, viperFs, serverConsole, partialStubs);
     serviceProvider.add(TypeServerServiceKeys.uriMapper, uriMapper);
 
     const fileWatcherProvider = new WorkspaceFileWatcherProvider();
@@ -276,7 +276,7 @@ async function createInProcTypeServer(code: string): Promise<InProcTypeServer> {
 
     const server = new TypeServer(
         {
-            productName: 'PyrightInProcTypeServer',
+            productName: 'VipeyeInProcTypeServer',
             rootDirectory: rootUri,
             version: '1.0.0-test',
             serviceProvider,

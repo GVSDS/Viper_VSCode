@@ -1,7 +1,7 @@
 # This sample tests the handling of Callable fields within a
 # dataclass definition.
 
-# pyright: strict
+# viper: strict
 
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar

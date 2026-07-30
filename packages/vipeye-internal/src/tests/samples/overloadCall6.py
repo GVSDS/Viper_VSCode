@@ -1,7 +1,7 @@
 # This sample tests overload matching in cases where the match
 # is ambiguous due to an Any or Unknown argument.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Any, Generic, Literal, TypeVar, overload
 from typing_extensions import LiteralString, TypeIs

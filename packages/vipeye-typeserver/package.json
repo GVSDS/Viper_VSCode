@@ -1,7 +1,7 @@
 {
-    "name": "pyright-typeserver",
-    "displayName": "Pyright Type Server",
-    "description": "Type Server Protocol (TSP) server for the Python language, powered by Pyright",
+    "name": "vipeye-typeserver",
+    "displayName": "Vipeye Type Server",
+    "description": "Type Server Protocol (TSP) server for the Python language, powered by Vipeye",
     "version": "1.1.410",
     "license": "MIT",
     "author": {
@@ -13,8 +13,8 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/Microsoft/pyright",
-        "directory": "packages/pyright-typeserver"
+        "url": "https://github.com/TermiNexus/TransPyC",
+        "directory": "packages/vipeye-typeserver"
     },
     "scripts": {
         "build": "rspack build -c rspack.config.js --mode production",

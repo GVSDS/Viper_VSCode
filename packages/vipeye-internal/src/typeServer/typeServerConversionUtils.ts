@@ -11,13 +11,13 @@ import { CancellationToken } from 'vscode-languageserver-protocol';
 
 import { Declaration, DeclarationType } from '../analyzer/declaration';
 import { getChildNodes, ParseTreeWalker } from '../analyzer/parseTreeWalker';
-import * as PyrightTypes from '../analyzer/types';
+import * as ViperTypes from '../analyzer/types';
 import { assert } from '../common/debug';
 import { convertTextRangeToRange } from '../common/positionUtils';
 import { PythonVersion } from '../common/pythonVersion';
 import { Uri } from '../common/uri/uri';
 import { convertUriToLspUriString } from '../common/uri/uriUtils';
-import * as PyrightNodes from '../parser/parseNodes';
+import * as ViperNodes from '../parser/parseNodes';
 
 import { ITypeServerEvaluator } from './typeServerEvaluator';
 import { isDeclaration, map } from './typeEvalUtils';
@@ -55,14 +55,14 @@ export function toProtocolModuleName(moduleName: string): TypeServerProtocol.Mod
 
 export class ProtocolTypeFactory {
     private _id = 0;
-    private readonly _cycleMap = new Map<PyrightTypes.Type, number>();
+    private readonly _cycleMap = new Map<ViperTypes.Type, number>();
     private readonly _sourceUri: Uri;
     private readonly _evaluator: ITypeServerEvaluator;
 
     constructor(
         readonly view: IProgram,
         readonly pythonVersion: PythonVersion,
-        declarationOrNode: Declaration | PyrightNodes.ParseNode
+        declarationOrNode: Declaration | ViperNodes.ParseNode
     ) {
         this._evaluator = view.createEvaluator();
         // Extract source URI from declaration or node
@@ -81,7 +81,7 @@ export class ProtocolTypeFactory {
         return this._id++;
     }
 
-    getModule(type: PyrightTypes.FunctionType | PyrightTypes.ClassType): PyrightTypes.ModuleType {
+    getModule(type: ViperTypes.FunctionType | ViperTypes.ClassType): ViperTypes.ModuleType {
         const moduleName = type.shared.moduleName;
         const moduleDescriptor = toProtocolModuleName(moduleName);
         const moduleUri =
@@ -90,10 +90,10 @@ export class ProtocolTypeFactory {
         assert(moduleNode !== undefined, `Module node not found for URI: ${moduleUri.toString()}`);
         const scope = this.view.symbolLookup.getScope(moduleNode);
         const symbolTable = scope?.symbolTable;
-        return PyrightTypes.ModuleType.create(moduleName, moduleUri, symbolTable);
+        return ViperTypes.ModuleType.create(moduleName, moduleUri, symbolTable);
     }
 
-    getType(type: PyrightTypes.Type): TypeServerProtocol.Type {
+    getType(type: ViperTypes.Type): TypeServerProtocol.Type {
         const newId = this.getNextId();
 
         const existingTypeId = this._cycleMap.get(type);
@@ -110,11 +110,11 @@ export class ProtocolTypeFactory {
         return toProtocolType(newId, type, this);
     }
 
-    private _set(type: PyrightTypes.Type, id: number) {
+    private _set(type: ViperTypes.Type, id: number) {
         this._cycleMap.set(type, id);
     }
 
-    private _extractSourceUri(declarationOrNode: Declaration | PyrightNodes.ParseNode): Uri {
+    private _extractSourceUri(declarationOrNode: Declaration | ViperNodes.ParseNode): Uri {
         if (isDeclaration(declarationOrNode)) {
             return declarationOrNode.uri;
         } else {
@@ -124,7 +124,7 @@ export class ProtocolTypeFactory {
 }
 
 function toProtocolTypesOrUndefined(
-    types: PyrightTypes.Type[] | undefined,
+    types: ViperTypes.Type[] | undefined,
     factory: ProtocolTypeFactory
 ): TypeServerProtocol.Type[] | undefined {
     if (!types) {
@@ -134,12 +134,12 @@ function toProtocolTypesOrUndefined(
     return toProtocolTypes(types, factory);
 }
 
-function toProtocolTypes(types: PyrightTypes.Type[], factory: ProtocolTypeFactory): TypeServerProtocol.Type[] {
+function toProtocolTypes(types: ViperTypes.Type[], factory: ProtocolTypeFactory): TypeServerProtocol.Type[] {
     return map(types, (type) => factory.getType(type));
 }
 
 function toProtocolTypeOrUndefined(
-    type: PyrightTypes.Type | undefined,
+    type: ViperTypes.Type | undefined,
     factory: ProtocolTypeFactory
 ): TypeServerProtocol.Type | undefined {
     if (!type) {
@@ -149,7 +149,7 @@ function toProtocolTypeOrUndefined(
     return factory.getType(type);
 }
 
-function toProtocolTypeArgs(type: PyrightTypes.ClassType, factory: ProtocolTypeFactory) {
+function toProtocolTypeArgs(type: ViperTypes.ClassType, factory: ProtocolTypeFactory) {
     // See if we have any type arguments. Set those on the handle too.
     let typeArgs: TypeServerProtocol.Type[] | undefined = undefined;
     if (type.priv.tupleTypeArgs) {
@@ -174,7 +174,7 @@ function toProtocolTypeArgs(type: PyrightTypes.ClassType, factory: ProtocolTypeF
     return typeArgs;
 }
 
-function toProtocolTypeAliasInfo(info: PyrightTypes.TypeAliasInfo | undefined, factory: ProtocolTypeFactory) {
+function toProtocolTypeAliasInfo(info: ViperTypes.TypeAliasInfo | undefined, factory: ProtocolTypeFactory) {
     if (!info) {
         return undefined;
     }
@@ -196,9 +196,9 @@ function toProtocolTypeAliasInfo(info: PyrightTypes.TypeAliasInfo | undefined, f
 
 // This should be only called from TspTypeFactory
 // Otherwise, cycle detection won't work.
-function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTypeFactory): TypeServerProtocol.Type {
+function toProtocolType(id: number, type: ViperTypes.Type, factory: ProtocolTypeFactory): TypeServerProtocol.Type {
     switch (type.category) {
-        case PyrightTypes.TypeCategory.Class: {
+        case ViperTypes.TypeCategory.Class: {
             const decl = type.shared.declaration;
             if (decl) {
                 return {
@@ -215,7 +215,7 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
 
             return createSynthesizedType(id, type, factory);
         }
-        case PyrightTypes.TypeCategory.Function: {
+        case ViperTypes.TypeCategory.Function: {
             const decl = type.shared.declaration;
             if (decl) {
                 // Compute boundToType: if not set but strippedFirstParamType exists, use it as boundToType
@@ -223,12 +223,12 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
                 if (
                     !boundToType &&
                     type.priv.strippedFirstParamType &&
-                    PyrightTypes.isClass(type.priv.strippedFirstParamType)
+                    ViperTypes.isClass(type.priv.strippedFirstParamType)
                 ) {
                     boundToType = type.priv.strippedFirstParamType;
                 }
 
-                const returnType = PyrightTypes.FunctionType.getEffectiveReturnType(type, true);
+                const returnType = ViperTypes.FunctionType.getEffectiveReturnType(type, true);
                 return {
                     id,
                     kind: TypeServerProtocol.TypeKind.Function,
@@ -249,9 +249,9 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
 
             return createSynthesizedType(id, type, factory);
         }
-        case PyrightTypes.TypeCategory.Overloaded: {
-            const implementation = PyrightTypes.OverloadedType.getImplementation(type);
-            const overloaded = PyrightTypes.OverloadedType.getOverloads(type);
+        case ViperTypes.TypeCategory.Overloaded: {
+            const implementation = ViperTypes.OverloadedType.getImplementation(type);
+            const overloaded = ViperTypes.OverloadedType.getOverloads(type);
 
             return {
                 id,
@@ -261,7 +261,7 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
                 implementation: toProtocolTypeOrUndefined(implementation, factory),
             } satisfies TypeServerProtocol.OverloadedType;
         }
-        case PyrightTypes.TypeCategory.TypeVar: {
+        case ViperTypes.TypeCategory.TypeVar: {
             const declaration = getDeclarationForTypeVar(type, factory);
             if (declaration) {
                 return {
@@ -274,7 +274,7 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
 
             return createSynthesizedType(id, type, factory);
         }
-        case PyrightTypes.TypeCategory.Unbound: {
+        case ViperTypes.TypeCategory.Unbound: {
             const handle: TypeServerProtocol.BuiltInType = {
                 id,
                 kind: TypeServerProtocol.TypeKind.BuiltIn,
@@ -284,7 +284,7 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
 
             return handle;
         }
-        case PyrightTypes.TypeCategory.Unknown: {
+        case ViperTypes.TypeCategory.Unknown: {
             const possibleType = type.priv.possibleType;
             const handle: TypeServerProtocol.BuiltInType = {
                 id,
@@ -295,7 +295,7 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
             };
             return handle;
         }
-        case PyrightTypes.TypeCategory.Any: {
+        case ViperTypes.TypeCategory.Any: {
             const handle: TypeServerProtocol.BuiltInType = {
                 id,
                 kind: TypeServerProtocol.TypeKind.BuiltIn,
@@ -304,7 +304,7 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
             };
             return handle;
         }
-        case PyrightTypes.TypeCategory.Never: {
+        case ViperTypes.TypeCategory.Never: {
             const handle: TypeServerProtocol.BuiltInType = {
                 id,
                 kind: TypeServerProtocol.TypeKind.BuiltIn,
@@ -313,7 +313,7 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
             };
             return handle;
         }
-        case PyrightTypes.TypeCategory.Union:
+        case ViperTypes.TypeCategory.Union:
             return {
                 id,
                 kind: TypeServerProtocol.TypeKind.Union,
@@ -323,7 +323,7 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
                 subTypes: map(type.priv.subtypes, (t) => factory.getType(t)),
             } satisfies TypeServerProtocol.UnionType;
 
-        case PyrightTypes.TypeCategory.Module: {
+        case ViperTypes.TypeCategory.Module: {
             return {
                 id,
                 kind: TypeServerProtocol.TypeKind.Module,
@@ -337,16 +337,16 @@ function toProtocolType(id: number, type: PyrightTypes.Type, factory: ProtocolTy
 
 function createSynthesizedType(
     id: number,
-    type: PyrightTypes.FunctionType | PyrightTypes.ClassType | PyrightTypes.TypeVarType,
+    type: ViperTypes.FunctionType | ViperTypes.ClassType | ViperTypes.TypeVarType,
     factory: ProtocolTypeFactory
 ): TypeServerProtocol.SynthesizedType {
     const options = { pythonVersion: factory.pythonVersion } satisfies StubGenerationOptions;
     let moduleHandle: TypeServerProtocol.ModuleType;
     let stubResult: StubGenerationResult;
 
-    if (PyrightTypes.isTypeVar(type)) {
+    if (ViperTypes.isTypeVar(type)) {
         const moduleName = factory.view.getModuleName(factory.sourceUri) ?? '';
-        const moduleType = PyrightTypes.ModuleType.create(moduleName, factory.sourceUri, new Map());
+        const moduleType = ViperTypes.ModuleType.create(moduleName, factory.sourceUri, new Map());
         moduleHandle = factory.getType(moduleType) as TypeServerProtocol.ModuleType;
 
         stubResult = generateStubFromTypeVar(type, options);
@@ -354,7 +354,7 @@ function createSynthesizedType(
         const module = factory.getModule(type);
         moduleHandle = factory.getType(module) as TypeServerProtocol.ModuleType;
 
-        stubResult = PyrightTypes.isFunction(type)
+        stubResult = ViperTypes.isFunction(type)
             ? generateStubFromFunctionType(factory.evaluator, type, options)
             : generateStubFromClassType(factory.evaluator, type, options);
     }
@@ -375,7 +375,7 @@ function createSynthesizedType(
 }
 
 function toProtocolSpecializedFunctionTypesOrUndefined(
-    specializedTypes: PyrightTypes.SpecializedFunctionTypes | undefined,
+    specializedTypes: ViperTypes.SpecializedFunctionTypes | undefined,
     factory: ProtocolTypeFactory
 ): TypeServerProtocol.SpecializedFunctionTypes | undefined {
     if (!specializedTypes) {
@@ -392,7 +392,7 @@ function toProtocolSpecializedFunctionTypesOrUndefined(
 }
 
 function toProtocolLiteralValue(
-    type: PyrightTypes.ClassType,
+    type: ViperTypes.ClassType,
     factory: ProtocolTypeFactory
 ): TypeServerProtocol.LiteralValue | undefined {
     const value = type.priv.literalValue;
@@ -400,7 +400,7 @@ function toProtocolLiteralValue(
         return undefined;
     }
 
-    if (value instanceof PyrightTypes.SentinelLiteral) {
+    if (value instanceof ViperTypes.SentinelLiteral) {
         return {
             classNode: toProtocolNode(type.shared.declaration!.node, factory.view),
             moduleName: type.shared.moduleName,
@@ -408,7 +408,7 @@ function toProtocolLiteralValue(
         } satisfies TypeServerProtocol.SentinelLiteral;
     }
 
-    if (value instanceof PyrightTypes.EnumLiteral) {
+    if (value instanceof ViperTypes.EnumLiteral) {
         return {
             className: value.className,
             itemName: value.itemName,
@@ -424,7 +424,7 @@ function toProtocolLiteralValue(
 // reconstruction frequently loses this link, so we search for it on demand using the
 // scope id that is preserved on the TypeVar instance.
 export function getDeclarationForTypeVar(
-    typeVar: PyrightTypes.TypeVarType,
+    typeVar: ViperTypes.TypeVarType,
     factory: ProtocolTypeFactory
 ): Declaration | undefined {
     // freeTypeVar stores the "canonical" definition for synthesized instances that were
@@ -449,7 +449,7 @@ export function getDeclarationForTypeVar(
     // Start by inspecting the symbol table attached to the original scope; this covers
     // most cases for function, class, and alias TypeVars.
     let symbolTable = factory.view.symbolLookup.getSymbolsForNode(scopeNode);
-    if (!symbolTable && scopeNode.nodeType === PyrightNodes.ParseNodeType.Module) {
+    if (!symbolTable && scopeNode.nodeType === ViperNodes.ParseNodeType.Module) {
         const fileInfo = factory.view.symbolLookup.getFileInfo(scopeNode);
         symbolTable = factory.view.symbolLookup.getSymbolsForFile(fileInfo.fileUri);
     }
@@ -459,7 +459,7 @@ export function getDeclarationForTypeVar(
 
     if (
         (!symbol || symbol.getDeclarations().length === 0) &&
-        scopeNode.nodeType !== PyrightNodes.ParseNodeType.Module
+        scopeNode.nodeType !== ViperNodes.ParseNodeType.Module
     ) {
         // For nested scopes we can fall back to the file-level module scope. This is
         // common when using PEP 695 syntax where a type parameter is hoisted into the
@@ -504,7 +504,7 @@ export function getDeclarationForTypeVar(
 // Search all known parse trees to locate the node that owns the provided scope id.
 // Scope ids are assigned to functions, classes, modules, and type aliases; once we
 // find the matching node we can dig into its symbol table for declarations.
-function findScopeNodeForId(scopeId: string, view: IProgram): PyrightNodes.ParseNode | undefined {
+function findScopeNodeForId(scopeId: string, view: IProgram): ViperNodes.ParseNode | undefined {
     const targetPrefix = scopeId.split('.', 1)[0];
     const matchingFiles = view.symbolLookup.getMatchingFileInfos(targetPrefix);
 
@@ -514,7 +514,7 @@ function findScopeNodeForId(scopeId: string, view: IProgram): PyrightNodes.Parse
             continue;
         }
 
-        const stack: PyrightNodes.ParseNode[] = [parseResults.parseTree];
+        const stack: ViperNodes.ParseNode[] = [parseResults.parseTree];
         while (stack.length > 0) {
             const node = stack.pop()!;
             const nodeScopeId = view.symbolLookup.getScopeIdForNode(node);
@@ -523,7 +523,7 @@ function findScopeNodeForId(scopeId: string, view: IProgram): PyrightNodes.Parse
             }
 
             // Expression nodes cannot contain declarations, so skip their children.
-            if (!PyrightNodes.isExpressionNode(node)) {
+            if (!ViperNodes.isExpressionNode(node)) {
                 for (const child of getChildNodes(node)) {
                     if (child) {
                         stack.push(child);
@@ -540,18 +540,18 @@ function findScopeNodeForId(scopeId: string, view: IProgram): PyrightNodes.Parse
 // type parameters (function/class/type alias). This gives us a concrete parse node even
 // when the TypeVar was not bound to a symbol table entry.
 function findTypeParameterNode(
-    scopeNode: PyrightNodes.ParseNode,
+    scopeNode: ViperNodes.ParseNode,
     typeVarName: string
-): PyrightNodes.TypeParameterNode | undefined {
-    let typeParams: PyrightNodes.TypeParameterListNode | undefined;
+): ViperNodes.TypeParameterNode | undefined {
+    let typeParams: ViperNodes.TypeParameterListNode | undefined;
 
     switch (scopeNode.nodeType) {
-        case PyrightNodes.ParseNodeType.Function:
-        case PyrightNodes.ParseNodeType.Class:
-        case PyrightNodes.ParseNodeType.TypeAlias:
+        case ViperNodes.ParseNodeType.Function:
+        case ViperNodes.ParseNodeType.Class:
+        case ViperNodes.ParseNodeType.TypeAlias:
             typeParams = scopeNode.d.typeParams;
             break;
-        case PyrightNodes.ParseNodeType.Module:
+        case ViperNodes.ParseNodeType.Module:
             typeParams = undefined;
             break;
     }
@@ -565,11 +565,11 @@ function findTypeParameterNode(
 
 // Walks parent pointers up to the root module node. Used when we fall back to the
 // file-level scope to locate a TypeVar that was re-exported at module scope.
-function findModuleAncestor(node: PyrightNodes.ParseNode): PyrightNodes.ModuleNode | undefined {
-    let current: PyrightNodes.ParseNode | undefined = node;
+function findModuleAncestor(node: ViperNodes.ParseNode): ViperNodes.ModuleNode | undefined {
+    let current: ViperNodes.ParseNode | undefined = node;
     while (current) {
-        if (current.nodeType === PyrightNodes.ParseNodeType.Module) {
-            return current as PyrightNodes.ModuleNode;
+        if (current.nodeType === ViperNodes.ParseNodeType.Module) {
+            return current as ViperNodes.ModuleNode;
         }
         current = current.parent;
     }
@@ -578,33 +578,33 @@ function findModuleAncestor(node: PyrightNodes.ParseNode): PyrightNodes.ModuleNo
 
 // Only certain node kinds introduce scope ids; this helper keeps the search logic focused
 // on those nodes to avoid unnecessary traversal work during scope discovery.
-function isTypeVarScopeCandidate(node: PyrightNodes.ParseNode): boolean {
+function isTypeVarScopeCandidate(node: ViperNodes.ParseNode): boolean {
     switch (node.nodeType) {
-        case PyrightNodes.ParseNodeType.Module:
-        case PyrightNodes.ParseNodeType.Class:
-        case PyrightNodes.ParseNodeType.Function:
-        case PyrightNodes.ParseNodeType.TypeAlias:
+        case ViperNodes.ParseNodeType.Module:
+        case ViperNodes.ParseNodeType.Class:
+        case ViperNodes.ParseNodeType.Function:
+        case ViperNodes.ParseNodeType.TypeAlias:
             return true;
         default:
             return false;
     }
 }
 
-export function findFirstExpression(node: PyrightNodes.ParseNode): PyrightNodes.ExpressionNode | undefined {
-    if (PyrightNodes.isExpressionNode(node)) {
-        return node as PyrightNodes.ExpressionNode;
+export function findFirstExpression(node: ViperNodes.ParseNode): ViperNodes.ExpressionNode | undefined {
+    if (ViperNodes.isExpressionNode(node)) {
+        return node as ViperNodes.ExpressionNode;
     }
 
     class ExpressionNodeWalker extends ParseTreeWalker {
-        private _result: PyrightNodes.ExpressionNode | undefined;
+        private _result: ViperNodes.ExpressionNode | undefined;
 
-        getResult(): PyrightNodes.ExpressionNode | undefined {
+        getResult(): ViperNodes.ExpressionNode | undefined {
             return this._result;
         }
 
-        override visitNode(node: PyrightNodes.ParseNode): PyrightNodes.ParseNodeArray {
-            if (PyrightNodes.isExpressionNode(node)) {
-                this._result = node as PyrightNodes.ExpressionNode;
+        override visitNode(node: ViperNodes.ParseNode): ViperNodes.ParseNodeArray {
+            if (ViperNodes.isExpressionNode(node)) {
+                this._result = node as ViperNodes.ExpressionNode;
                 return [];
             }
             return super.visitNode(node);

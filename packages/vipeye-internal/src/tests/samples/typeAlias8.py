@@ -1,7 +1,7 @@
 # This sample verifies that a generic type alias with a Callable
 # works correctly.
 
-# pyright: reportInvalidTypeVarUse=false
+# viper: reportInvalidTypeVarUse=false
 
 from typing import Callable, TypeVar
 

@@ -6,7 +6,7 @@ from enum import Enum, auto
 from http import HTTPStatus
 from typing import Annotated, Literal, TypeVar
 
-# pyright: reportIncompatibleMethodOverride=false
+# viper: reportIncompatibleMethodOverride=false
 
 
 def handle_reply(reply: tuple[HTTPStatus, str] | tuple[HTTPStatus]):

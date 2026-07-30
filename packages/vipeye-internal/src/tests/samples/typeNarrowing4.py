@@ -2,7 +2,7 @@
 # conditional expression involving assignment expressions
 # (walrus operator).
 
-# pyright: strict
+# viper: strict
 
 
 class C:

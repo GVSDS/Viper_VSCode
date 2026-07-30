@@ -2,7 +2,7 @@
 # tuple or a specialized TypeVarTuple and is overridden by a method
 # that supplies specific arguments.
 
-# pyright: strict
+# viper: strict
 
 from typing import Generic, TypeVarTuple
 

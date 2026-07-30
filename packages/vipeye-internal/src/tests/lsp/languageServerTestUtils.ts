@@ -94,7 +94,7 @@ export const DEFAULT_WORKSPACE_ROOT = combinePaths('/', 'src');
 export const ERROR_SCRIPT_OUTPUT = 'Error: script failed to run';
 export const STALL_SCRIPT_OUTPUT = 'Timeout: script never finished running';
 
-export interface PyrightServerInfo {
+export interface ViperServerInfo {
     disposables: Disposable[];
     registrations: Registration[];
     logs: LogMessageParams[];
@@ -225,12 +225,12 @@ export function createFileSystem(projectRoot: string, testData: FourSlashData, o
 
     const vfsInfo = createVfsInfoFromFourSlashData(projectRoot, testData);
 
-    // If there's a pyrightconfig.json, add it to the list of files as well.
+    // If there's a viperconfig.json, add it to the list of files as well.
     const files = vfsInfo.files;
     if (vfsInfo.rawConfigJson) {
-        files[combinePaths(vfsInfo.projectRoot, 'pyrightconfig.json')] = new vfs.File(
+        files[combinePaths(vfsInfo.projectRoot, 'viperconfig.json')] = new vfs.File(
             JSON.stringify(vfsInfo.rawConfigJson),
-            { encoding: 'utf8', meta: { filename: 'pyrightconfig.json' } }
+            { encoding: 'utf8', meta: { filename: 'viperconfig.json' } }
         );
     }
     return createFromFileSystem(
@@ -241,7 +241,7 @@ export function createFileSystem(projectRoot: string, testData: FourSlashData, o
     );
 }
 
-const settingsMap = new Map<PyrightServerInfo, { item: ConfigurationItem; value: any }[]>();
+const settingsMap = new Map<ViperServerInfo, { item: ConfigurationItem; value: any }[]>();
 
 function isDotPathPrefix(prefix: string | undefined, path: string | undefined) {
     const prefixParts = prefix ? prefix.split('.') : [];
@@ -338,18 +338,18 @@ function createServerConnection(testServerData: CustomLSP.TestServerStartOptions
     return connection;
 }
 
-function getProjectRootString(info: PyrightServerInfo, projectRoot?: Uri) {
+function getProjectRootString(info: ViperServerInfo, projectRoot?: Uri) {
     return projectRoot ? projectRoot.toString() : info.projectRoots.length > 0 ? info.projectRoots[0].toString() : '';
 }
 
-export async function getOpenFiles(info: PyrightServerInfo, projectRoot?: Uri): Promise<Uri[]> {
+export async function getOpenFiles(info: ViperServerInfo, projectRoot?: Uri): Promise<Uri[]> {
     const uri = getProjectRootString(info, projectRoot);
     const result = await CustomLSP.sendRequest(info.connection, CustomLSP.Requests.GetOpenFiles, { uri });
     return deserialize(result.files);
 }
 
 export async function waitForPushDiagnostics(
-    info: PyrightServerInfo,
+    info: ViperServerInfo,
     clearFirst: boolean,
     numberOfFiles = 1,
     timeout = 10000
@@ -444,7 +444,7 @@ export function convertDiagnosticReport(
     return [convertDiagnosticReportItem(uri, documentReport)];
 }
 
-async function waitForPullDiagnostics(info: PyrightServerInfo): Promise<PublishDiagnosticsParams[]> {
+async function waitForPullDiagnostics(info: ViperServerInfo): Promise<PublishDiagnosticsParams[]> {
     const openFiles = await getOpenFiles(info);
     if (openFiles.length <= 0) {
         return waitForPushDiagnostics(info, false);
@@ -462,7 +462,7 @@ async function waitForPullDiagnostics(info: PyrightServerInfo): Promise<PublishD
     }
 }
 
-export async function waitForDiagnostics(info: PyrightServerInfo, timeout = 20000) {
+export async function waitForDiagnostics(info: ViperServerInfo, timeout = 20000) {
     if (info.supportsPullDiagnostics) {
         // Timeout doesn't apply on pull because we can actually ask for them.
         return waitForPullDiagnostics(info);
@@ -481,7 +481,7 @@ class TestProgressPart implements ProgressPart {
     constructor(
         private readonly _context: ProgressContext,
         private readonly _token: ProgressToken,
-        info: PyrightServerInfo,
+        info: ViperServerInfo,
         done: () => void
     ) {
         info.disposables.push(
@@ -526,7 +526,7 @@ export async function waitForPromise(promise: Promise<any>, timeout = 10000, mes
     });
 }
 
-export async function runPyrightServer(
+export async function runViperServer(
     projectRoots: string[] | string,
     code: string,
     callInitialize = true,
@@ -534,7 +534,7 @@ export async function runPyrightServer(
     pythonVersion: PythonVersion = pythonVersion3_10,
     backgroundAnalysis?: boolean,
     supportPullDiagnostics?: boolean
-): Promise<PyrightServerInfo> {
+): Promise<ViperServerInfo> {
     // Setup the test data we need to send for Test server startup.
     const projectRootsArray = Array.isArray(projectRoots) ? projectRoots : [projectRoots];
 
@@ -579,7 +579,7 @@ export async function runPyrightServer(
     const partialResultToken = `4fb5ab8a-37a6-4c16-a290-03cfc892ea7e`; // Doesn't need to be different, just a random guid
 
     // Setup the server info.
-    const info: PyrightServerInfo = {
+    const info: ViperServerInfo = {
         disposables,
         registrations: [],
         connection,
@@ -768,7 +768,7 @@ export async function runPyrightServer(
     return info;
 }
 
-function startWorkspaceDiagnostics(info: PyrightServerInfo, extraMessage: string) {
+function startWorkspaceDiagnostics(info: ViperServerInfo, extraMessage: string) {
     if (!info.pendingWorkspaceDiagnostics) {
         info.logs.push({ message: `Starting workspace diagnostics request: ${extraMessage}`, type: 4 });
         info.pendingWorkspaceDiagnostics = info.connection
@@ -783,7 +783,7 @@ function startWorkspaceDiagnostics(info: PyrightServerInfo, extraMessage: string
     }
 }
 
-async function stopWorkspaceDiagnostics(info: PyrightServerInfo, extraMessage: string) {
+async function stopWorkspaceDiagnostics(info: ViperServerInfo, extraMessage: string) {
     if (info.pendingWorkspaceDiagnostics) {
         const pending = info.pendingWorkspaceDiagnostics;
         info.pendingWorkspaceDiagnostics = undefined;
@@ -799,7 +799,7 @@ async function stopWorkspaceDiagnostics(info: PyrightServerInfo, extraMessage: s
     }
 }
 
-export async function initializeLanguageServer(info: PyrightServerInfo) {
+export async function initializeLanguageServer(info: ViperServerInfo) {
     const params = info.getInitializeParams();
 
     // Send the initialize request.
@@ -835,14 +835,14 @@ export async function sleep(timeout: number): Promise<number> {
     });
 }
 
-export async function waitForTestSignal(info: PyrightServerInfo, signal: CustomLSP.TestSignalKinds, timeout = 10000) {
+export async function waitForTestSignal(info: ViperServerInfo, signal: CustomLSP.TestSignalKinds, timeout = 10000) {
     const result = await Promise.race([info.signals.get(signal)!.promise, sleep(timeout)]);
     if (result === timeout) {
         throw new Error(`Timed out waiting for signal ${signal}`);
     }
 }
 
-export async function openFile(info: PyrightServerInfo, markerName: string, text?: string) {
+export async function openFile(info: ViperServerInfo, markerName: string, text?: string) {
     const marker = getMarkerByName(info.testData, markerName);
     const uri = marker.fileUri.toString();
 
@@ -855,7 +855,7 @@ export async function openFile(info: PyrightServerInfo, markerName: string, text
     await waitForTestSignal(info, CustomLSP.TestSignalKinds.DidOpenDocument);
 }
 
-export async function hover(info: PyrightServerInfo, markerName: string) {
+export async function hover(info: ViperServerInfo, markerName: string) {
     const marker = info.testData.markerPositions.get(markerName)!;
     const fileUri = marker.fileUri;
     const text = info.testData.files.find((d) => d.fileName === marker.fileName)!.content;

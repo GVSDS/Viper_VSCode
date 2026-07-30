@@ -1,9 +1,9 @@
 # This sample tests a complicated combination of ParamSpec usage.
 
-# pyright: strict
+# viper: strict
 
 from typing import Callable, TypeVar, overload
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     Concatenate,
     ParamSpec,
 )

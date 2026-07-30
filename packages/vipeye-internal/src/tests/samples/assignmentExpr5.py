@@ -1,7 +1,7 @@
 # This sample tests the scoping rules for assignment expressions
 # within a list comprehension.
 
-# pyright: strict
+# viper: strict
 
 from typing import Tuple
 

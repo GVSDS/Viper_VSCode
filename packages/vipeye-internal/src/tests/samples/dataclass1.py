@@ -9,7 +9,7 @@ class DC1:
     bbb: int
     ccc: str
     aaa: str = "string"
-    __hash__: None  # pyright: ignore[reportIncompatibleMethodOverride]
+    __hash__: None  # viper: ignore[reportIncompatibleMethodOverride]
 
 
 bar1 = DC1(bbb=5, ccc="hello")

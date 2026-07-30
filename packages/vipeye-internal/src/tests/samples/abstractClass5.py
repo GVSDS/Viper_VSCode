@@ -36,7 +36,7 @@ class ClassA(ABC):
         raise NotImplementedError()
 
     @overload
-    def func3(self, a: str) -> str:  # pyright: ignore[reportNoOverloadImplementation]
+    def func3(self, a: str) -> str:  # viper: ignore[reportNoOverloadImplementation]
         ...
 
     @overload
@@ -46,7 +46,7 @@ class ClassA(ABC):
 
     @overload
     @abstractmethod
-    def func4(self, a: str) -> str:  # pyright: ignore[reportNoOverloadImplementation]
+    def func4(self, a: str) -> str:  # viper: ignore[reportNoOverloadImplementation]
         ...
 
     @overload

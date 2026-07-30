@@ -2,7 +2,7 @@
 # the alternative syntax form of TypedDict.
 
 from typing import TypedDict
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     Required,
     NotRequired,
 )

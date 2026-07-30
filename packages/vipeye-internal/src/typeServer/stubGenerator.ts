@@ -4,11 +4,11 @@
  *
  * stubGenerator.ts
  *
- * Generates Viper stub (.vpi) file content from Pyright function type information.
+ * Generates Viper stub (.vpi) file content from Vipeye function type information.
  */
 
 import { printType, PrintTypeFlags } from '../analyzer/typePrinter';
-import * as PyrightTypes from '../analyzer/types';
+import * as ViperTypes from '../analyzer/types';
 import { PythonVersion, pythonVersion3_10, pythonVersion3_11 } from '../common/pythonVersion';
 import { ParamCategory } from '../parser/parseNodes';
 
@@ -30,7 +30,7 @@ interface StubGenerationContext {
     imports: ImportCollection;
     pythonVersion: PythonVersion;
     moduleImports: Map<string, Set<string>>; // module -> set of imported names
-    methodClass?: PyrightTypes.ClassType; // Class type if generating stub for a method
+    methodClass?: ViperTypes.ClassType; // Class type if generating stub for a method
     targetMethodName?: string; // If provided, adds marker to this specific method instead of the class
     selfTypeVarName?: string; // If set, replace 'Self' with this TypeVar name
 }
@@ -51,7 +51,7 @@ export interface StubGenerationResult {
 }
 
 export function generateStubFromTypeVar(
-    typeVar: PyrightTypes.TypeVarType,
+    typeVar: ViperTypes.TypeVarType,
     options: StubGenerationOptions
 ): StubGenerationResult {
     const context: StubGenerationContext = {
@@ -63,10 +63,10 @@ export function generateStubFromTypeVar(
     const typeVarName = typeVar.shared.name || 'T';
     let initializer = '';
 
-    if (PyrightTypes.isParamSpec(typeVar)) {
+    if (ViperTypes.isParamSpec(typeVar)) {
         addImport(context, getTypingModule(context.pythonVersion, 'ParamSpec'), 'ParamSpec');
         initializer = `ParamSpec('${typeVarName}')`;
-    } else if (PyrightTypes.isTypeVarTuple(typeVar)) {
+    } else if (ViperTypes.isTypeVarTuple(typeVar)) {
         addImport(context, getTypingModule(context.pythonVersion, 'TypeVarTuple'), 'TypeVarTuple');
         initializer = `TypeVarTuple('${typeVarName}')`;
     } else {
@@ -76,18 +76,18 @@ export function generateStubFromTypeVar(
 
         if (typeVar.shared.constraints?.length) {
             const constraintStrings = typeVar.shared.constraints.map((constraint) =>
-                pyrightTypeToString(constraint, context)
+                viperTypeToString(constraint, context)
             );
             args.push(...constraintStrings);
         }
 
         if (typeVar.shared.boundType) {
-            const boundString = pyrightTypeToString(typeVar.shared.boundType, context);
+            const boundString = viperTypeToString(typeVar.shared.boundType, context);
             args.push(`bound=${boundString}`);
         }
 
         if (typeVar.shared.defaultType && typeVar.shared.isDefaultExplicit) {
-            const defaultString = pyrightTypeToString(typeVar.shared.defaultType, context);
+            const defaultString = viperTypeToString(typeVar.shared.defaultType, context);
             args.push(`default=${defaultString}`);
         }
 
@@ -97,7 +97,7 @@ export function generateStubFromTypeVar(
     const declarationLine = `${typeVarName} = ${initializer}`;
 
     const importLines = generateImportStatements(context);
-    const lines: string[] = ['# This stub file was generated from Pyright type information', ''];
+    const lines: string[] = ['# This stub file was generated from Vipeye type information', ''];
     if (importLines.length > 0) {
         lines.push(...importLines);
         lines.push('');
@@ -115,21 +115,21 @@ export function generateStubFromTypeVar(
 }
 
 /**
- * Generates a Python stub file (.vpi) from a Pyright FunctionType.
+ * Generates a Python stub file (.vpi) from a Vipeye FunctionType.
  *
- * @param type The Pyright function type
+ * @param type The Vipeye function type
  * @param options Generation options including Python version
  * @returns Stub generation result with content and metadata
  */
 export function generateStubFromFunctionType(
     evaluator: ITypeServerEvaluator,
-    type: PyrightTypes.FunctionType,
+    type: ViperTypes.FunctionType,
     options: StubGenerationOptions
 ): StubGenerationResult {
     // Check if this function is a method (has a methodClass)
     // If so, generate the entire class stub with marker on this specific method
     const methodClass = type.shared.methodClass;
-    if (methodClass && PyrightTypes.isClass(methodClass)) {
+    if (methodClass && ViperTypes.isClass(methodClass)) {
         // Generate class stub with marker on the specific method
         return generateStubFromClassType(evaluator, methodClass, options, type.shared.name);
     }
@@ -144,12 +144,12 @@ export function generateStubFromFunctionType(
     const lines: string[] = [];
 
     // Generate header comment
-    lines.push('# This stub file was generated from Pyright type information');
+    lines.push('# This stub file was generated from Vipeye type information');
     lines.push('');
 
     // Collect TypeVars/ParamSpecs used in the function signature
     // Use typeParams if available, otherwise collect from signature
-    let typeVarsToGenerate: PyrightTypes.TypeVarType[] = [];
+    let typeVarsToGenerate: ViperTypes.TypeVarType[] = [];
     if (type.shared.typeParams && type.shared.typeParams.length > 0) {
         typeVarsToGenerate = type.shared.typeParams;
     } else {
@@ -159,16 +159,16 @@ export function generateStubFromFunctionType(
 
     // Check if we have a Self TypeVar - if so, we need to replace it with a regular TypeVar
     // since there's no class context for a standalone function
-    const selfTypeVar = typeVarsToGenerate.find((tv) => PyrightTypes.TypeVarType.isSelf(tv));
+    const selfTypeVar = typeVarsToGenerate.find((tv) => ViperTypes.TypeVarType.isSelf(tv));
     if (selfTypeVar) {
         // Filter out Self and track that we need to replace it
-        typeVarsToGenerate = typeVarsToGenerate.filter((tv) => !PyrightTypes.TypeVarType.isSelf(tv));
+        typeVarsToGenerate = typeVarsToGenerate.filter((tv) => !ViperTypes.TypeVarType.isSelf(tv));
         context.selfTypeVarName = '__type_of_self__';
 
         // Create a TypeVar declaration for __type_of_self__ with the bound to the class (if any)
         const bound = selfTypeVar.shared.boundType;
         addImport(context, 'typing', 'TypeVar');
-        if (bound && PyrightTypes.isClass(bound)) {
+        if (bound && ViperTypes.isClass(bound)) {
             // Make sure this class is imported
             addImport(context, bound.shared.moduleName || '', bound.shared.name);
             lines.push(`__type_of_self__ = TypeVar('__type_of_self__', bound='${bound.shared.name}')`);
@@ -217,16 +217,16 @@ export function generateStubFromFunctionType(
 }
 
 /**
- * Generates a function stub signature from a Pyright function type.
+ * Generates a function stub signature from a Vipeye function type.
  *
- * @param type The Pyright function type
+ * @param type The Vipeye function type
  * @param context Generation context
  * @param docString Optional docstring to include
  * @param deprecatedMessage Optional deprecation message
  * @returns Function stub string (e.g., "def foo(x: int, y: str) -> bool: ...")
  */
 function generateFunctionStub(
-    type: PyrightTypes.FunctionType,
+    type: ViperTypes.FunctionType,
     context: StubGenerationContext,
     docString?: string,
     deprecatedMessage?: string
@@ -275,8 +275,8 @@ function generateFunctionStub(
         if (param._type) {
             paramParts.push(': ');
             const isSynthesizedSelfParam =
-                param._type && PyrightTypes.isTypeVar(param._type) && param._type.shared.isSynthesizedSelf;
-            let paramTypeString = pyrightTypeToString(param._type, isSynthesizedSelfParam ? undefined : context);
+                param._type && ViperTypes.isTypeVar(param._type) && param._type.shared.isSynthesizedSelf;
+            let paramTypeString = viperTypeToString(param._type, isSynthesizedSelfParam ? undefined : context);
             // Replace 'Self' with our TypeVar if we're in a standalone function context
             if (context.selfTypeVarName && paramTypeString === 'Self' && isSynthesizedSelfParam) {
                 paramTypeString = context.selfTypeVarName;
@@ -285,7 +285,7 @@ function generateFunctionStub(
         }
 
         // Default value (if present, just show "...")
-        const defaultType = PyrightTypes.FunctionType.getParamDefaultType(type, i);
+        const defaultType = ViperTypes.FunctionType.getParamDefaultType(type, i);
         if (defaultType || param.defaultExpr) {
             paramParts.push(' = ...');
         }
@@ -324,9 +324,9 @@ function generateFunctionStub(
 /**
  * Gets the return type string for a function.
  */
-function getReturnTypeStringFromFunction(type: PyrightTypes.FunctionType, context: StubGenerationContext): string {
-    const returnType = PyrightTypes.FunctionType.getEffectiveReturnType(type, true);
-    let returnTypeString = returnType ? pyrightTypeToString(returnType, context) : 'None';
+function getReturnTypeStringFromFunction(type: ViperTypes.FunctionType, context: StubGenerationContext): string {
+    const returnType = ViperTypes.FunctionType.getEffectiveReturnType(type, true);
+    let returnTypeString = returnType ? viperTypeToString(returnType, context) : 'None';
     // Replace 'Self' with our TypeVar if we're in a standalone function context
     if (context.selfTypeVarName && returnTypeString === 'Self') {
         returnTypeString = context.selfTypeVarName;
@@ -335,16 +335,16 @@ function getReturnTypeStringFromFunction(type: PyrightTypes.FunctionType, contex
 }
 
 /**
- * Converts a Pyright type to a Python type string using printType.
+ * Converts a Vipeye type to a Python type string using printType.
  */
-function pyrightTypeToString(type: PyrightTypes.Type, context?: StubGenerationContext): string {
+function viperTypeToString(type: ViperTypes.Type, context?: StubGenerationContext): string {
     const flags = PrintTypeFlags.PythonSyntax | PrintTypeFlags.UseFullyQualifiedNames;
     // Simple callback for getting return types - just use declared or inferred return type
-    const returnTypeCallback = (funcType: PyrightTypes.FunctionType): PyrightTypes.Type => {
+    const returnTypeCallback = (funcType: ViperTypes.FunctionType): ViperTypes.Type => {
         return (
             funcType.shared.declaredReturnType ??
             funcType.shared.inferredReturnType?.type ??
-            PyrightTypes.UnknownType.create()
+            ViperTypes.UnknownType.create()
         );
     };
     const typeString = printType(type, flags, returnTypeCallback);
@@ -366,7 +366,7 @@ function pyrightTypeToString(type: PyrightTypes.Type, context?: StubGenerationCo
  */
 function extractModuleImportsFromTypeString(
     typeString: string,
-    type: PyrightTypes.Type,
+    type: ViperTypes.Type,
     context: StubGenerationContext
 ): void {
     // Match module-qualified names like "test.Box" or "foo.bar.Baz"
@@ -500,16 +500,16 @@ function generateImportStatements(context: StubGenerationContext): string[] {
 }
 
 /**
- * Generates a Python stub file (.pyi) from a Pyright ClassType.
+ * Generates a Python stub file (.pyi) from a Vipeye ClassType.
  *
- * @param type The Pyright class type
+ * @param type The Vipeye class type
  * @param options Generation options including Python version
  * @param targetMethodName If provided, marks this specific method as the primary definition
  * @returns Stub generation result with content and metadata
  */
 export function generateStubFromClassType(
     evaluator: ITypeServerEvaluator,
-    type: PyrightTypes.ClassType,
+    type: ViperTypes.ClassType,
     options: StubGenerationOptions,
     targetMethodName?: string
 ): StubGenerationResult {
@@ -523,11 +523,11 @@ export function generateStubFromClassType(
     const lines: string[] = [];
 
     // Generate header comment
-    lines.push('# This stub file was generated from Pyright type information');
+    lines.push('# This stub file was generated from Vipeye type information');
     lines.push('');
 
     // Special handling for NewType classes - generate as NewType call instead of class definition
-    if (PyrightTypes.ClassType.isNewTypeClass(type)) {
+    if (ViperTypes.ClassType.isNewTypeClass(type)) {
         return generateNewTypeStub(type, context, options);
     }
 
@@ -579,7 +579,7 @@ export function generateStubFromClassType(
  * Generates a stub for a NewType class using NewType call syntax.
  */
 function generateNewTypeStub(
-    type: PyrightTypes.ClassType,
+    type: ViperTypes.ClassType,
     context: StubGenerationContext,
     options: StubGenerationOptions
 ): StubGenerationResult {
@@ -590,7 +590,7 @@ function generateNewTypeStub(
 
     // Get the base type (first base class, excluding object)
     const baseType = type.shared.baseClasses[0];
-    let baseTypeStr = baseType ? pyrightTypeToString(baseType, context) : 'object';
+    let baseTypeStr = baseType ? viperTypeToString(baseType, context) : 'object';
 
     // Remove type[] wrapper if present (NewType base should be the instance type, not type[])
     const typeWrapperMatch = baseTypeStr.match(/^type\[(.+)\]$/);
@@ -604,7 +604,7 @@ function generateNewTypeStub(
     // Generate imports
     const importLines = generateImportStatements(context);
     const result: string[] = [];
-    result.push('# This stub file was generated from Pyright type information');
+    result.push('# This stub file was generated from Vipeye type information');
     result.push('');
     if (importLines.length > 0) {
         result.push(...importLines);
@@ -627,14 +627,14 @@ function generateNewTypeStub(
 }
 
 /**
- * Generates a class stub from a Pyright class type.
+ * Generates a class stub from a Vipeye class type.
  * @param type - The class type to generate a stub for
  * @param context - The stub generation context
  * @param isTopLevel - Whether this is the main class (vs a synthesized base class)
  */
 function generateClassStub(
     evaluator: ITypeServerEvaluator,
-    type: PyrightTypes.ClassType,
+    type: ViperTypes.ClassType,
     context: StubGenerationContext,
     isTopLevel: boolean = false
 ): string {
@@ -664,10 +664,10 @@ function generateClassStub(
     // Add type parameters for generic classes
     if (type.shared.typeParams && type.shared.typeParams.length > 0) {
         const typeParamNames = type.shared.typeParams.map((tp) => {
-            if (PyrightTypes.isTypeVar(tp)) {
+            if (ViperTypes.isTypeVar(tp)) {
                 return tp.shared.name;
             }
-            return pyrightTypeToString(tp, context);
+            return viperTypeToString(tp, context);
         });
         parts.push('[');
         parts.push(typeParamNames.join(', '));
@@ -681,12 +681,12 @@ function generateClassStub(
     const baseClassStubs: string[] = [];
     if (type.shared.baseClasses && type.shared.baseClasses.length > 0) {
         for (const bc of type.shared.baseClasses) {
-            if (PyrightTypes.isClass(bc) && !bc.shared.declaration && bc.shared.name !== 'object') {
+            if (ViperTypes.isClass(bc) && !bc.shared.declaration && bc.shared.name !== 'object') {
                 // Track this as a synthesized base class
                 synthesizedBaseClasses.add(bc.shared.name);
                 // Generate stub for synthesized base class
                 const baseStub = generateClassStub(evaluator, bc, context);
-                let bcStr = pyrightTypeToString(bc, context);
+                let bcStr = viperTypeToString(bc, context);
                 // Remove type[] wrapper if present
                 const typeWrapperMatch = bcStr.match(/^type\[(.+)\]$/);
                 if (typeWrapperMatch) {
@@ -703,14 +703,14 @@ function generateClassStub(
     if (type.shared.baseClasses && type.shared.baseClasses.length > 0) {
         const baseClassStrs = type.shared.baseClasses
             .map((bc) => {
-                let bcStr = pyrightTypeToString(bc, context);
+                let bcStr = viperTypeToString(bc, context);
                 // Remove type[] wrapper if present
                 const typeWrapperMatch = bcStr.match(/^type\[(.+)\]$/);
                 if (typeWrapperMatch) {
                     bcStr = typeWrapperMatch[1];
                 }
                 // If this base class had its stub generated inline, use just the simple name
-                if (PyrightTypes.isClass(bc) && synthesizedBaseClasses.has(bc.shared.name)) {
+                if (ViperTypes.isClass(bc) && synthesizedBaseClasses.has(bc.shared.name)) {
                     return bc.shared.name;
                 }
                 return bcStr;
@@ -762,13 +762,13 @@ function generateClassStub(
  */
 function generateClassBody(
     evaluator: ITypeServerEvaluator,
-    type: PyrightTypes.ClassType,
+    type: ViperTypes.ClassType,
     context: StubGenerationContext
 ): string[] {
     const lines: string[] = [];
 
     // Get all fields from the symbol table, excluding private members
-    const fields: Array<{ name: string; type: PyrightTypes.Type; isMethod: boolean; isClassVar: boolean }> = [];
+    const fields: Array<{ name: string; type: ViperTypes.Type; isMethod: boolean; isClassVar: boolean }> = [];
 
     for (const [name, symbol] of type.shared.fields) {
         // Skip private fields (starting with single _), but keep dunder methods
@@ -777,7 +777,7 @@ function generateClassBody(
         }
 
         // Try to get the type from synthesized type, or from declarations
-        let fieldType: PyrightTypes.Type | undefined;
+        let fieldType: ViperTypes.Type | undefined;
         const synthesizedType = symbol.getSynthesizedType();
         if (synthesizedType) {
             fieldType = synthesizedType.type;
@@ -790,7 +790,7 @@ function generateClassBody(
             continue;
         }
 
-        const isMethod = PyrightTypes.isFunction(fieldType) || PyrightTypes.isOverloaded(fieldType);
+        const isMethod = ViperTypes.isFunction(fieldType) || ViperTypes.isOverloaded(fieldType);
         const isClassVar = symbol.isClassVar();
 
         // Skip fields that are private but not dunder methods
@@ -814,7 +814,7 @@ function generateClassBody(
     for (const field of fields) {
         if (field.isMethod) {
             // Generate method stub
-            if (PyrightTypes.isFunction(field.type)) {
+            if (ViperTypes.isFunction(field.type)) {
                 const methodContext = { ...context, methodClass: type };
                 const methodStub = generateFunctionStub(
                     field.type,
@@ -828,9 +828,9 @@ function generateClassBody(
                     .map((line) => `    ${line}`)
                     .join('\n');
                 lines.push(indentedStub);
-            } else if (PyrightTypes.isOverloaded(field.type)) {
+            } else if (ViperTypes.isOverloaded(field.type)) {
                 // Handle overloaded methods - just use first overload for stub
-                const overloads = PyrightTypes.OverloadedType.getOverloads(field.type);
+                const overloads = ViperTypes.OverloadedType.getOverloads(field.type);
                 if (overloads.length > 0) {
                     const methodContext = { ...context, methodClass: type };
                     const methodStub = generateFunctionStub(
@@ -846,7 +846,7 @@ function generateClassBody(
                     lines.push(indentedStub);
                 }
             }
-        } else if (PyrightTypes.isClass(field.type) && !field.type.shared.declaration) {
+        } else if (ViperTypes.isClass(field.type) && !field.type.shared.declaration) {
             // Nested synthesized class - generate its stub recursively
             const nestedStub = generateClassStub(evaluator, field.type, context);
             const indentedStub = nestedStub
@@ -856,7 +856,7 @@ function generateClassBody(
             lines.push(indentedStub);
         } else {
             // Regular field with type annotation
-            const typeStr = pyrightTypeToString(field.type, context);
+            const typeStr = viperTypeToString(field.type, context);
             lines.push(`    ${field.name}: ${typeStr}`);
         }
     }
@@ -867,7 +867,7 @@ function generateClassBody(
 /**
  * Generates a TypedDict stub using special syntax.
  */
-function generateTypedDictStub(type: PyrightTypes.ClassType, context: StubGenerationContext): string {
+function generateTypedDictStub(type: ViperTypes.ClassType, context: StubGenerationContext): string {
     const lines: string[] = [];
 
     // TypedDict class definition
@@ -891,7 +891,7 @@ function generateTypedDictStub(type: PyrightTypes.ClassType, context: StubGenera
     // Generate fields
     if (entries && entries.knownItems.size > 0) {
         for (const [name, entry] of entries.knownItems) {
-            const typeStr = pyrightTypeToString(entry.valueType, context);
+            const typeStr = viperTypeToString(entry.valueType, context);
             lines.push(`    ${name}: ${typeStr}`);
         }
     } else {
@@ -909,7 +909,7 @@ function generateTypedDictStub(type: PyrightTypes.ClassType, context: StubGenera
  */
 function generateNamedTupleStub(
     evaluator: ITypeServerEvaluator,
-    type: PyrightTypes.ClassType,
+    type: ViperTypes.ClassType,
     context: StubGenerationContext
 ): string {
     const lines: string[] = [];
@@ -929,12 +929,12 @@ function generateNamedTupleStub(
             if (entries.has(name)) {
                 const synthesizedType = symbol.getSynthesizedType();
                 if (synthesizedType) {
-                    const typeStr = pyrightTypeToString(synthesizedType.type, context);
+                    const typeStr = viperTypeToString(synthesizedType.type, context);
                     lines.push(`    ${name}: ${typeStr}`);
                 } else {
                     const type = evaluator.getEffectiveTypeOfSymbol(symbol);
                     if (type) {
-                        const typeStr = pyrightTypeToString(type, context);
+                        const typeStr = viperTypeToString(type, context);
                         lines.push(`    ${name}: ${typeStr}`);
                     } else {
                         lines.push(`    ${name}: Any`);
@@ -959,22 +959,22 @@ function generateNamedTupleStub(
  * Collects all TypeVars/ParamSpecs used in a function signature by walking through
  * parameter types and return type.
  */
-function collectTypeVarsFromFunctionSignature(type: PyrightTypes.FunctionType): PyrightTypes.TypeVarType[] {
-    const typeVars = new Map<string, PyrightTypes.TypeVarType>();
+function collectTypeVarsFromFunctionSignature(type: ViperTypes.FunctionType): ViperTypes.TypeVarType[] {
+    const typeVars = new Map<string, ViperTypes.TypeVarType>();
 
     // Helper to recursively collect TypeVars from a type
-    const collectFromType = (t: PyrightTypes.Type) => {
-        if (PyrightTypes.isTypeVar(t)) {
+    const collectFromType = (t: ViperTypes.Type) => {
+        if (ViperTypes.isTypeVar(t)) {
             typeVars.set(t.shared.name, t);
-        } else if (PyrightTypes.isClass(t) && t.priv.typeArgs) {
+        } else if (ViperTypes.isClass(t) && t.priv.typeArgs) {
             // Check type arguments (e.g., List[T])
             for (const arg of t.priv.typeArgs) {
                 collectFromType(arg);
             }
-        } else if (PyrightTypes.isUnion(t)) {
+        } else if (ViperTypes.isUnion(t)) {
             // Check union members
             t.priv.subtypes.forEach((subtype) => collectFromType(subtype));
-        } else if (PyrightTypes.isFunction(t)) {
+        } else if (ViperTypes.isFunction(t)) {
             // Check function parameters and return type
             for (let i = 0; i < t.shared.parameters.length; i++) {
                 const param = t.shared.parameters[i];
@@ -982,7 +982,7 @@ function collectTypeVarsFromFunctionSignature(type: PyrightTypes.FunctionType): 
                     collectFromType(param._type);
                 }
             }
-            const returnType = PyrightTypes.FunctionType.getEffectiveReturnType(t, true);
+            const returnType = ViperTypes.FunctionType.getEffectiveReturnType(t, true);
             if (returnType) {
                 collectFromType(returnType);
             }
@@ -998,7 +998,7 @@ function collectTypeVarsFromFunctionSignature(type: PyrightTypes.FunctionType): 
     }
 
     // Collect from return type
-    const returnType = PyrightTypes.FunctionType.getEffectiveReturnType(type, true);
+    const returnType = ViperTypes.FunctionType.getEffectiveReturnType(type, true);
     if (returnType) {
         collectFromType(returnType);
     }
@@ -1009,20 +1009,20 @@ function collectTypeVarsFromFunctionSignature(type: PyrightTypes.FunctionType): 
 /**
  * Generates TypeVar/ParamSpec/TypeVarTuple declarations for a list of type parameters.
  */
-function generateTypeVarDeclarations(typeParams: PyrightTypes.TypeVarType[], context: StubGenerationContext): string[] {
+function generateTypeVarDeclarations(typeParams: ViperTypes.TypeVarType[], context: StubGenerationContext): string[] {
     const lines: string[] = [];
 
     for (const typeParam of typeParams) {
-        if (PyrightTypes.isTypeVar(typeParam)) {
+        if (ViperTypes.isTypeVar(typeParam)) {
             const name = typeParam.shared.name;
 
             // Check if it's a ParamSpec
-            if (PyrightTypes.isParamSpec(typeParam)) {
+            if (ViperTypes.isParamSpec(typeParam)) {
                 addImport(context, getTypingModule(context.pythonVersion, 'ParamSpec'), 'ParamSpec');
                 lines.push(`${name} = ParamSpec('${name}')`);
             }
             // Check if it's a TypeVarTuple
-            else if (PyrightTypes.isTypeVarTuple(typeParam)) {
+            else if (ViperTypes.isTypeVarTuple(typeParam)) {
                 addImport(context, getTypingModule(context.pythonVersion, 'TypeVarTuple'), 'TypeVarTuple');
                 lines.push(`${name} = TypeVarTuple('${name}')`);
             }
@@ -1033,13 +1033,13 @@ function generateTypeVarDeclarations(typeParams: PyrightTypes.TypeVarType[], con
 
                 // Add bound if present
                 if (typeParam.shared.boundType) {
-                    const boundStr = pyrightTypeToString(typeParam.shared.boundType, context);
+                    const boundStr = viperTypeToString(typeParam.shared.boundType, context);
                     parts.push(`, bound=${boundStr}`);
                 }
 
                 // Add constraints if present
                 if (typeParam.shared.constraints && typeParam.shared.constraints.length > 0) {
-                    const constraintStrs = typeParam.shared.constraints.map((c) => pyrightTypeToString(c, context));
+                    const constraintStrs = typeParam.shared.constraints.map((c) => viperTypeToString(c, context));
                     parts.push(`, ${constraintStrs.join(', ')}`);
                 }
 

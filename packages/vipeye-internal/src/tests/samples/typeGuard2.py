@@ -1,10 +1,10 @@
 # This sample tests the handling of user-defined type guards (PEP 647)
 # when they are used as callback functions.
 
-# pyright: strict, reportMissingModuleSource=false
+# viper: strict, reportMissingModuleSource=false
 
 from typing import Any, Callable, Sequence, TypeVar, overload
-from typing_extensions import TypeGuard  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypeGuard  # viper: ignore[reportMissingModuleSource]
 
 
 _T = TypeVar("_T")

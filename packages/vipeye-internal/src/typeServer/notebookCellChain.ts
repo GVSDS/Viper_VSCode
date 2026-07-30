@@ -6,12 +6,12 @@
  * Mode-agnostic helpers for analyzing notebook documents as chains of cell "files".
  *
  * A notebook is modeled as a linear chain of source files: a synthetic prefix cell followed
- * by one file per code cell, each chained to its predecessor (via Pyright's chained-source-file
+ * by one file per code cell, each chained to its predecessor (via Vipeye's chained-source-file
  * support and `IPythonMode.CellDocs`). This lets symbols defined in an earlier cell be visible
  * in later cells, matching Jupyter execution semantics.
  *
  * These functions are a near-direct port of Pylance's notebook helpers from
- * `pylance-internal/src/server/common.ts`, retyped onto Pyright's `Workspace`. They only touch
+ * `pylance-internal/src/server/common.ts`, retyped onto Vipeye's `Workspace`. They only touch
  * `workspace.service` (an `AnalyzerService`) so they work with any workspace implementation.
  */
 

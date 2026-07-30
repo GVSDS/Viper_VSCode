@@ -1,9 +1,9 @@
 import { TypeServerProtocol } from './protocol/typeServerProtocol';
 
-import * as PyrightDecl from '../analyzer/declaration';
+import * as ViperDecl from '../analyzer/declaration';
 import { synthesizeAliasDeclaration } from '../analyzer/declarationUtils';
 import { ParseTreeWalker } from '../analyzer/parseTreeWalker';
-import * as PyrightTypes from '../analyzer/types';
+import * as ViperTypes from '../analyzer/types';
 import { isCallableType, isLiteralType } from '../analyzer/typeUtils';
 import { CaseSensitivityDetector } from '../common/caseSensitivityDetector';
 import * as debug from '../common/debug';
@@ -12,7 +12,7 @@ import { convertOffsetsToRange, convertPositionToOffset } from '../common/positi
 import { TextRange } from '../common/textRange';
 import { Uri } from '../common/uri/uri';
 import { convertUriToLspUriString } from '../common/uri/uriUtils';
-import * as PyrightNodes from '../parser/parseNodes';
+import * as ViperNodes from '../parser/parseNodes';
 import { ParserOutput } from '../parser/parser';
 
 import { convertLspUriStringToUri } from './serverUtils';
@@ -21,7 +21,7 @@ import { ISymbolLookup, ParseResults } from './programTypes';
 import { INotebookUriMapper } from './notebookUriMapper';
 
 export interface IParserOutputProvider extends CaseSensitivityDetector {
-    getUri(node: PyrightNodes.ParseNode): Uri;
+    getUri(node: ViperNodes.ParseNode): Uri;
     getParserOutput(uri: Uri): ParserOutput | undefined;
     readonly fs: FileSystem;
     readonly uriMapper?: INotebookUriMapper;
@@ -30,7 +30,7 @@ export interface IParserOutputProvider extends CaseSensitivityDetector {
     addStubCode(code: string, directoryUri?: Uri): { uri: Uri; parseResults: ParseResults };
 }
 
-export function toProtocolNode(node: PyrightNodes.ParseNode, provider: IParserOutputProvider): TypeServerProtocol.Node {
+export function toProtocolNode(node: ViperNodes.ParseNode, provider: IParserOutputProvider): TypeServerProtocol.Node {
     const uri = provider.getUri(node);
     const results = provider.getParserOutput(uri);
     if (!results) {
@@ -46,10 +46,10 @@ export function toProtocolNode(node: PyrightNodes.ParseNode, provider: IParserOu
     };
 }
 
-export function fromProtocolNode<T extends PyrightNodes.ParseNodeBase<PyrightNodes.ParseNodeType>>(
+export function fromProtocolNode<T extends ViperNodes.ParseNodeBase<ViperNodes.ParseNodeType>>(
     node: TypeServerProtocol.Node,
     resultsProvider: IParserOutputProvider,
-    typeHints?: PyrightNodes.ParseNodeType[]
+    typeHints?: ViperNodes.ParseNodeType[]
 ): T {
     const uri = convertLspUriStringToUri(node.uri, resultsProvider, resultsProvider.uriMapper);
     const mappedUri = resultsProvider.fs.getMappedUri(uri);
@@ -64,35 +64,35 @@ export function fromProtocolNode<T extends PyrightNodes.ParseNodeBase<PyrightNod
         throw new Error(`Invalid range for node: ${JSON.stringify(node)}`);
     }
 
-    function keepNewType(oldType: PyrightNodes.ParseNodeType, newType: PyrightNodes.ParseNodeType) {
+    function keepNewType(oldType: ViperNodes.ParseNodeType, newType: ViperNodes.ParseNodeType) {
         if (typeHints) {
             return typeHints.some((t) => t === newType);
         }
         switch (oldType) {
-            case PyrightNodes.ParseNodeType.Name:
-                return newType !== PyrightNodes.ParseNodeType.Name;
-            case PyrightNodes.ParseNodeType.StringList:
-                return newType !== PyrightNodes.ParseNodeType.String;
-            case PyrightNodes.ParseNodeType.String:
-                return newType === PyrightNodes.ParseNodeType.StringList;
-            case PyrightNodes.ParseNodeType.Number:
-                return newType === PyrightNodes.ParseNodeType.Slice;
-            case PyrightNodes.ParseNodeType.Slice:
-                return newType !== PyrightNodes.ParseNodeType.Number;
-            case PyrightNodes.ParseNodeType.ModuleName:
+            case ViperNodes.ParseNodeType.Name:
+                return newType !== ViperNodes.ParseNodeType.Name;
+            case ViperNodes.ParseNodeType.StringList:
+                return newType !== ViperNodes.ParseNodeType.String;
+            case ViperNodes.ParseNodeType.String:
+                return newType === ViperNodes.ParseNodeType.StringList;
+            case ViperNodes.ParseNodeType.Number:
+                return newType === ViperNodes.ParseNodeType.Slice;
+            case ViperNodes.ParseNodeType.Slice:
+                return newType !== ViperNodes.ParseNodeType.Number;
+            case ViperNodes.ParseNodeType.ModuleName:
                 return (
-                    newType === PyrightNodes.ParseNodeType.Import ||
-                    newType === PyrightNodes.ParseNodeType.ImportFrom ||
-                    newType === PyrightNodes.ParseNodeType.ImportAs ||
-                    newType === PyrightNodes.ParseNodeType.ImportFromAs
+                    newType === ViperNodes.ParseNodeType.Import ||
+                    newType === ViperNodes.ParseNodeType.ImportFrom ||
+                    newType === ViperNodes.ParseNodeType.ImportAs ||
+                    newType === ViperNodes.ParseNodeType.ImportFromAs
                 );
-            case PyrightNodes.ParseNodeType.Import:
-            case PyrightNodes.ParseNodeType.ImportFrom:
-            case PyrightNodes.ParseNodeType.ImportAs:
-            case PyrightNodes.ParseNodeType.ImportFromAs:
-                return newType !== PyrightNodes.ParseNodeType.ModuleName;
-            case PyrightNodes.ParseNodeType.Error:
-                return newType !== PyrightNodes.ParseNodeType.Error;
+            case ViperNodes.ParseNodeType.Import:
+            case ViperNodes.ParseNodeType.ImportFrom:
+            case ViperNodes.ParseNodeType.ImportAs:
+            case ViperNodes.ParseNodeType.ImportFromAs:
+                return newType !== ViperNodes.ParseNodeType.ModuleName;
+            case ViperNodes.ParseNodeType.Error:
+                return newType !== ViperNodes.ParseNodeType.Error;
             default:
                 return true;
         }
@@ -101,19 +101,19 @@ export function fromProtocolNode<T extends PyrightNodes.ParseNodeBase<PyrightNod
     // Now that we have the root node, we can search for the node that contains the range.
     class ParseTreeWalkerImpl extends ParseTreeWalker {
         private _range: TextRange;
-        private _bestMatch: PyrightNodes.ParseNode = rootNode!;
-        private _bestMatchType: PyrightNodes.ParseNodeType = PyrightNodes.ParseNodeType.Error;
+        private _bestMatch: ViperNodes.ParseNode = rootNode!;
+        private _bestMatchType: ViperNodes.ParseNodeType = ViperNodes.ParseNodeType.Error;
 
         constructor(private _start: number, private _length: number) {
             super();
             this._range = TextRange.create(_start, _length);
         }
 
-        getBestMatch(): PyrightNodes.ParseNode {
+        getBestMatch(): ViperNodes.ParseNode {
             return this._bestMatch;
         }
 
-        override visitNode(node: PyrightNodes.ParseNode): PyrightNodes.ParseNodeArray {
+        override visitNode(node: ViperNodes.ParseNode): ViperNodes.ParseNodeArray {
             if (
                 node.start === this._start &&
                 node.length >= this._length &&
@@ -126,14 +126,14 @@ export function fromProtocolNode<T extends PyrightNodes.ParseNodeBase<PyrightNod
 
             // Perform the same special case that findNodeByOffset does for augmented assignments. leftExpr is
             // not searched, but rather the destExpr is.
-            if (node.nodeType === PyrightNodes.ParseNodeType.AugmentedAssignment) {
+            if (node.nodeType === ViperNodes.ParseNodeType.AugmentedAssignment) {
                 return [node.d.destExpr, node.d.rightExpr];
             }
 
             return super.visitNode(node);
         }
 
-        override walk(node: PyrightNodes.ParseNode): void {
+        override walk(node: ViperNodes.ParseNode): void {
             if (!TextRange.overlapsRange(this._range, node)) {
                 // If the node doesn't overlap with the range, we can skip it.
                 return;
@@ -154,24 +154,24 @@ export function fromProtocolNode<T extends PyrightNodes.ParseNodeBase<PyrightNod
     return bestMatch as T;
 }
 
-export function toProtocolDeclCategory(decl: PyrightDecl.Declaration) {
+export function toProtocolDeclCategory(decl: ViperDecl.Declaration) {
     switch (decl.type) {
-        case PyrightDecl.DeclarationType.Intrinsic:
+        case ViperDecl.DeclarationType.Intrinsic:
             return TypeServerProtocol.DeclarationCategory.Intrinsic;
-        case PyrightDecl.DeclarationType.Function:
+        case ViperDecl.DeclarationType.Function:
             return TypeServerProtocol.DeclarationCategory.Function;
-        case PyrightDecl.DeclarationType.Class:
-        case PyrightDecl.DeclarationType.SpecialBuiltInClass:
+        case ViperDecl.DeclarationType.Class:
+        case ViperDecl.DeclarationType.SpecialBuiltInClass:
             return TypeServerProtocol.DeclarationCategory.Class;
-        case PyrightDecl.DeclarationType.Param:
+        case ViperDecl.DeclarationType.Param:
             return TypeServerProtocol.DeclarationCategory.Param;
-        case PyrightDecl.DeclarationType.TypeParam:
+        case ViperDecl.DeclarationType.TypeParam:
             return TypeServerProtocol.DeclarationCategory.TypeParam;
-        case PyrightDecl.DeclarationType.TypeAlias:
+        case ViperDecl.DeclarationType.TypeAlias:
             return TypeServerProtocol.DeclarationCategory.TypeAlias;
-        case PyrightDecl.DeclarationType.Variable:
+        case ViperDecl.DeclarationType.Variable:
             return TypeServerProtocol.DeclarationCategory.Variable;
-        case PyrightDecl.DeclarationType.Alias:
+        case ViperDecl.DeclarationType.Alias:
             return TypeServerProtocol.DeclarationCategory.Import;
         default:
             throw new Error(`Unknown declaration type: ${(decl as any).type}`);
@@ -179,7 +179,7 @@ export function toProtocolDeclCategory(decl: PyrightDecl.Declaration) {
 }
 
 export function toProtocolDecl(
-    decl: PyrightDecl.Declaration,
+    decl: ViperDecl.Declaration,
     provider: IParserOutputProvider
 ): TypeServerProtocol.Declaration {
     const wrap: IParserOutputProvider = {
@@ -229,7 +229,7 @@ export function fromProtocolDecl(
     decl: TypeServerProtocol.Declaration,
     resultsProvider: IParserOutputProvider,
     symbolLookup: ISymbolLookup
-): PyrightDecl.Declaration | undefined {
+): ViperDecl.Declaration | undefined {
     if (decl.kind === TypeServerProtocol.DeclarationKind.Synthesized) {
         return synthesizeAliasDeclaration(
             convertLspUriStringToUri(decl.uri, resultsProvider, resultsProvider.uriMapper)
@@ -245,9 +245,9 @@ export function fromProtocolDecl(
     // Try to get the node from the protocol - if this fails (e.g., file not available in this context
     // or the range is invalid because the external server uses a different version of the file),
     // fall back to the module root node so we can still look up the symbol by name.
-    let node: PyrightNodes.ParseNode | undefined;
+    let node: ViperNodes.ParseNode | undefined;
     try {
-        node = fromProtocolNode<PyrightNodes.ParseNode>(decl.node, resultsProvider, hints);
+        node = fromProtocolNode<ViperNodes.ParseNode>(decl.node, resultsProvider, hints);
     } catch (error) {
         // Try to get the module root node as a fallback for symbol lookup.
         if (decl.node?.uri) {
@@ -281,39 +281,39 @@ export function fromProtocolDecl(
     }
 
     // Helper to check if a declaration matches the expected category type.
-    const matchesDeclCategory = (d: PyrightDecl.Declaration): boolean => {
+    const matchesDeclCategory = (d: ViperDecl.Declaration): boolean => {
         switch (decl.category) {
             case TypeServerProtocol.DeclarationCategory.Import:
-                return PyrightDecl.isAliasDeclaration(d);
+                return ViperDecl.isAliasDeclaration(d);
             case TypeServerProtocol.DeclarationCategory.Intrinsic:
-                return PyrightDecl.isIntrinsicDeclaration(d);
+                return ViperDecl.isIntrinsicDeclaration(d);
             case TypeServerProtocol.DeclarationCategory.Variable:
-                return PyrightDecl.isVariableDeclaration(d);
+                return ViperDecl.isVariableDeclaration(d);
             case TypeServerProtocol.DeclarationCategory.Param:
-                return PyrightDecl.isParamDeclaration(d);
+                return ViperDecl.isParamDeclaration(d);
             case TypeServerProtocol.DeclarationCategory.TypeParam:
-                return PyrightDecl.isTypeParamDeclaration(d);
+                return ViperDecl.isTypeParamDeclaration(d);
             case TypeServerProtocol.DeclarationCategory.TypeAlias:
-                return PyrightDecl.isTypeAliasDeclaration(d);
+                return ViperDecl.isTypeAliasDeclaration(d);
             case TypeServerProtocol.DeclarationCategory.Function:
-                return PyrightDecl.isFunctionDeclaration(d);
+                return ViperDecl.isFunctionDeclaration(d);
             case TypeServerProtocol.DeclarationCategory.Class:
-                return PyrightDecl.isClassDeclaration(d) || PyrightDecl.isSpecialBuiltInClassDeclaration(d);
+                return ViperDecl.isClassDeclaration(d) || ViperDecl.isSpecialBuiltInClassDeclaration(d);
             default:
                 return false;
         }
     };
 
     // Helper to check if a declaration's node matches the protocol node identity.
-    const matchesNodeIdentity = (d: PyrightDecl.Declaration): boolean => {
+    const matchesNodeIdentity = (d: ViperDecl.Declaration): boolean => {
         if (d.node === node) {
             return true;
         }
         // For Function/Class declarations, also check if the name node matches.
-        if (PyrightDecl.isFunctionDeclaration(d) && d.node.d.name === node) {
+        if (ViperDecl.isFunctionDeclaration(d) && d.node.d.name === node) {
             return true;
         }
-        if (PyrightDecl.isClassDeclaration(d) && d.node.d.name === node) {
+        if (ViperDecl.isClassDeclaration(d) && d.node.d.name === node) {
             return true;
         }
         return false;
@@ -334,10 +334,10 @@ export function fromProtocolDecl(
     return allDecls.find((d) => matchesDeclCategory(d));
 }
 
-export function getSymbolNameFromDeclaration(declaration: PyrightDecl.Declaration): string | undefined {
+export function getSymbolNameFromDeclaration(declaration: ViperDecl.Declaration): string | undefined {
     switch (declaration.type) {
-        case PyrightDecl.DeclarationType.Alias: {
-            if (declaration.node.nodeType === PyrightNodes.ParseNodeType.ImportFrom) {
+        case ViperDecl.DeclarationType.Alias: {
+            if (declaration.node.nodeType === ViperNodes.ParseNodeType.ImportFrom) {
                 if (declaration.node.d.isWildcardImport) {
                     return declaration.symbolName;
                 }
@@ -345,12 +345,12 @@ export function getSymbolNameFromDeclaration(declaration: PyrightDecl.Declaratio
                 return declaration.node.d.module.d.nameParts[0].d.value;
             }
 
-            if (declaration.node.nodeType === PyrightNodes.ParseNodeType.ImportFromAs) {
+            if (declaration.node.nodeType === ViperNodes.ParseNodeType.ImportFromAs) {
                 const nameNode = declaration.node.d.alias || declaration.node.d.name;
                 return nameNode.d.value;
             }
 
-            if (declaration.node.nodeType === PyrightNodes.ParseNodeType.ImportAs) {
+            if (declaration.node.nodeType === ViperNodes.ParseNodeType.ImportAs) {
                 return declaration.node.d.alias
                     ? declaration.node.d.alias.d.value
                     : declaration.node.d.module.d.nameParts[0].d.value;
@@ -358,27 +358,27 @@ export function getSymbolNameFromDeclaration(declaration: PyrightDecl.Declaratio
 
             return undefined;
         }
-        case PyrightDecl.DeclarationType.Class:
-        case PyrightDecl.DeclarationType.Function:
-        case PyrightDecl.DeclarationType.TypeParam:
-        case PyrightDecl.DeclarationType.TypeAlias:
+        case ViperDecl.DeclarationType.Class:
+        case ViperDecl.DeclarationType.Function:
+        case ViperDecl.DeclarationType.TypeParam:
+        case ViperDecl.DeclarationType.TypeAlias:
             return declaration.node.d.name.d.value;
 
-        case PyrightDecl.DeclarationType.Param:
+        case ViperDecl.DeclarationType.Param:
             return declaration.node.d.name?.d.value;
 
-        case PyrightDecl.DeclarationType.Variable: {
+        case ViperDecl.DeclarationType.Variable: {
             const node = declaration.node;
-            return node.nodeType === PyrightNodes.ParseNodeType.Name
+            return node.nodeType === ViperNodes.ParseNodeType.Name
                 ? node.d.value
-                : node.nodeType === PyrightNodes.ParseNodeType.StringList
+                : node.nodeType === ViperNodes.ParseNodeType.StringList
                 ? node.d.strings[0].d.value
                 : undefined;
         }
-        case PyrightDecl.DeclarationType.Intrinsic:
+        case ViperDecl.DeclarationType.Intrinsic:
             return declaration.name;
-        case PyrightDecl.DeclarationType.SpecialBuiltInClass:
-            return declaration.node.d.valueExpr.nodeType === PyrightNodes.ParseNodeType.Name
+        case ViperDecl.DeclarationType.SpecialBuiltInClass:
+            return declaration.node.d.valueExpr.nodeType === ViperNodes.ParseNodeType.Name
                 ? declaration.node.d.valueExpr.d.value
                 : undefined;
         default: {
@@ -387,7 +387,7 @@ export function getSymbolNameFromDeclaration(declaration: PyrightDecl.Declaratio
     }
 }
 
-export function getParseNodeTypesForDecl(decl: TypeServerProtocol.Declaration): PyrightNodes.ParseNodeType[] {
+export function getParseNodeTypesForDecl(decl: TypeServerProtocol.Declaration): ViperNodes.ParseNodeType[] {
     if (decl.kind === TypeServerProtocol.DeclarationKind.Synthesized) {
         // Synthesized declarations don't have an associated node.
         return [];
@@ -396,85 +396,85 @@ export function getParseNodeTypesForDecl(decl: TypeServerProtocol.Declaration): 
     switch (decl.category) {
         case TypeServerProtocol.DeclarationCategory.Import: {
             return [
-                PyrightNodes.ParseNodeType.ImportAs,
-                PyrightNodes.ParseNodeType.ImportFromAs,
-                PyrightNodes.ParseNodeType.ImportFrom,
+                ViperNodes.ParseNodeType.ImportAs,
+                ViperNodes.ParseNodeType.ImportFromAs,
+                ViperNodes.ParseNodeType.ImportFrom,
             ];
         }
         case TypeServerProtocol.DeclarationCategory.Intrinsic: {
             return [
-                PyrightNodes.ParseNodeType.Module |
-                    PyrightNodes.ParseNodeType.Function |
-                    PyrightNodes.ParseNodeType.Class,
+                ViperNodes.ParseNodeType.Module |
+                    ViperNodes.ParseNodeType.Function |
+                    ViperNodes.ParseNodeType.Class,
             ];
         }
         case TypeServerProtocol.DeclarationCategory.Variable: {
-            return [PyrightNodes.ParseNodeType.Name, PyrightNodes.ParseNodeType.StringList];
+            return [ViperNodes.ParseNodeType.Name, ViperNodes.ParseNodeType.StringList];
         }
         case TypeServerProtocol.DeclarationCategory.Param: {
-            return [PyrightNodes.ParseNodeType.Parameter];
+            return [ViperNodes.ParseNodeType.Parameter];
         }
         case TypeServerProtocol.DeclarationCategory.TypeParam: {
-            return [PyrightNodes.ParseNodeType.TypeParameter];
+            return [ViperNodes.ParseNodeType.TypeParameter];
         }
         case TypeServerProtocol.DeclarationCategory.TypeAlias: {
-            return [PyrightNodes.ParseNodeType.TypeAlias];
+            return [ViperNodes.ParseNodeType.TypeAlias];
         }
         case TypeServerProtocol.DeclarationCategory.Function: {
-            return [PyrightNodes.ParseNodeType.Function];
+            return [ViperNodes.ParseNodeType.Function];
         }
         case TypeServerProtocol.DeclarationCategory.Class: {
-            return [PyrightNodes.ParseNodeType.Class, PyrightNodes.ParseNodeType.TypeAnnotation];
+            return [ViperNodes.ParseNodeType.Class, ViperNodes.ParseNodeType.TypeAnnotation];
         }
     }
 }
 
-export function toProtocolTypeFlags(type: PyrightTypes.Type): TypeServerProtocol.TypeFlags {
+export function toProtocolTypeFlags(type: ViperTypes.Type): TypeServerProtocol.TypeFlags {
     let flags = TypeServerProtocol.TypeFlags.None;
-    if (PyrightTypes.isClass(type) && isLiteralType(type)) {
+    if (ViperTypes.isClass(type) && isLiteralType(type)) {
         flags |= TypeServerProtocol.TypeFlags.Literal;
     }
-    if (PyrightTypes.isClass(type) && type.shared.typeParams.length > 0) {
+    if (ViperTypes.isClass(type) && type.shared.typeParams.length > 0) {
         flags |= TypeServerProtocol.TypeFlags.Generic;
     }
-    if (PyrightTypes.TypeBase.isInstance(type)) {
+    if (ViperTypes.TypeBase.isInstance(type)) {
         flags |= TypeServerProtocol.TypeFlags.Instance;
     }
-    if (PyrightTypes.TypeBase.isInstantiable(type)) {
+    if (ViperTypes.TypeBase.isInstantiable(type)) {
         flags |= TypeServerProtocol.TypeFlags.Instantiable;
     }
     if (isCallableType(type)) {
         flags |= TypeServerProtocol.TypeFlags.Callable;
     }
-    if (PyrightTypes.isClass(type) && PyrightTypes.ClassType.isProtocolClass(type)) {
+    if (ViperTypes.isClass(type) && ViperTypes.ClassType.isProtocolClass(type)) {
         flags |= TypeServerProtocol.TypeFlags.Interface;
     }
     if (type.props?.typeAliasInfo) {
         flags |= TypeServerProtocol.TypeFlags.FromAlias;
     }
-    if (PyrightTypes.isUnpacked(type)) {
+    if (ViperTypes.isUnpacked(type)) {
         flags |= TypeServerProtocol.TypeFlags.Unpacked;
     }
     return flags;
 }
 
 export function toProtocolVariance(
-    variance: PyrightTypes.Variance | undefined
+    variance: ViperTypes.Variance | undefined
 ): TypeServerProtocol.Variance | undefined {
     if (variance === undefined) {
         return undefined;
     }
 
     switch (variance) {
-        case PyrightTypes.Variance.Auto:
+        case ViperTypes.Variance.Auto:
             return TypeServerProtocol.Variance.Auto;
-        case PyrightTypes.Variance.Unknown:
+        case ViperTypes.Variance.Unknown:
             return TypeServerProtocol.Variance.Unknown;
-        case PyrightTypes.Variance.Invariant:
+        case ViperTypes.Variance.Invariant:
             return TypeServerProtocol.Variance.Invariant;
-        case PyrightTypes.Variance.Covariant:
+        case ViperTypes.Variance.Covariant:
             return TypeServerProtocol.Variance.Covariant;
-        case PyrightTypes.Variance.Contravariant:
+        case ViperTypes.Variance.Contravariant:
             return TypeServerProtocol.Variance.Contravariant;
         default:
             debug.assertNever(variance);

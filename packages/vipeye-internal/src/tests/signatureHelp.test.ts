@@ -10,7 +10,7 @@ import assert from 'assert';
 import { CancellationToken, MarkupKind, SignatureHelp } from 'vscode-languageserver';
 import { SignatureHelpProvider } from '../languageService/signatureHelpProvider';
 import { parseAndGetTestState, TestState } from './harness/fourslash/testState';
-import { PyrightDocStringService } from '../common/docStringService';
+import { ViperDocStringService } from '../common/docStringService';
 
 test('invalid position in format string segment', () => {
     const code = `
@@ -62,7 +62,7 @@ test('nested call in format string segment', () => {
 
 test('signature help shows source default values for stub ellipsis defaults', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -90,7 +90,7 @@ test('signature help shows source default values for stub ellipsis defaults', ()
 
 test('signature help substitutes multiple stub ellipsis defaults from source', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -119,7 +119,7 @@ test('signature help substitutes multiple stub ellipsis defaults from source', (
 
 test('signature help shows concrete default values when provided by stub', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -144,7 +144,7 @@ test('signature help shows concrete default values when provided by stub', () =>
 
 test('signature help substitutes stub ellipsis defaults for all overloads', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -184,7 +184,7 @@ test('signature help substitutes stub ellipsis defaults for all overloads', () =
 
 test('signature help does not substitute when stub default is not ellipsis', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -213,7 +213,7 @@ test('signature help does not substitute when stub default is not ellipsis', () 
 
 test('signature help does not substitute when source implementation is missing', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -238,7 +238,7 @@ test('signature help does not substitute when source implementation is missing',
 test('signature help does not substitute unsafe long defaults for stub ellipsis defaults', () => {
     const longNumber = '9'.repeat(150);
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -267,7 +267,7 @@ test('signature help does not substitute unsafe long defaults for stub ellipsis 
 
 test('signature help does not substitute unsafe multiline defaults for stub ellipsis defaults', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -297,7 +297,7 @@ test('signature help does not substitute unsafe multiline defaults for stub elli
 
 test('signature help overloads: mixed ellipsis and concrete defaults', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -336,7 +336,7 @@ test('signature help overloads: mixed ellipsis and concrete defaults', () => {
 
 test('signature help overloads: overload with no defaults stays unchanged', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -375,7 +375,7 @@ test('signature help overloads: overload with no defaults stays unchanged', () =
 
 test('signature help overloads: param name not in source keeps ellipsis', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -414,7 +414,7 @@ test('signature help overloads: param name not in source keeps ellipsis', () => 
 
 test('signature help overloads: source uses *args/**kwargs, no substitution', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -452,7 +452,7 @@ test('signature help overloads: source uses *args/**kwargs, no substitution', ()
 
 test('signature help overloads: different param counts, extra params keep ellipsis', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -601,7 +601,7 @@ function getSignatureHelpForMarker(state: TestState, markerName: string): Signat
         /*hasSignatureLabelOffsetCapability*/ true,
         /*hasActiveParameterCapability*/ true,
         /*context*/ undefined,
-        new PyrightDocStringService(),
+        new ViperDocStringService(),
         CancellationToken.None
     ).getSignatureHelp();
 }

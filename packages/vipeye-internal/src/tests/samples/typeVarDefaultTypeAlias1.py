@@ -4,7 +4,7 @@
 
 from collections.abc import Callable
 from typing import Any, TypeAlias
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     TypeVar,
     ParamSpec,
     TypeVarTuple,

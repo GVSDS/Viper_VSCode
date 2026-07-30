@@ -2,7 +2,7 @@
 # with a generic class with a type parameter that has a default value.
 
 from typing import Generic
-from typing_extensions import TypeVar  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypeVar  # viper: ignore[reportMissingModuleSource]
 
 
 T = TypeVar("T", bound=int, default=int)

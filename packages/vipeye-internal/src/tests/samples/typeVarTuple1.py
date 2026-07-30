@@ -1,7 +1,7 @@
 # This sample tests various conditions under which variadic
 # type variables can and cannot be used.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Generic, TypeVar, Union
 from typing_extensions import TypeVarTuple, Unpack

@@ -1,6 +1,6 @@
 # This tests f-strings with format expressions.
 
-# pyright: strict
+# viper: strict
 
 
 def return_right_aligned_string():

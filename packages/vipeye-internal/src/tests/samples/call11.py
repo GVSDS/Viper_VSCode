@@ -1,7 +1,7 @@
 # This sample tests the case where a call expression involves a union
 # on the LHS where the subtypes of the union have different signatures.
 
-# pyright: strict
+# viper: strict
 
 from __future__ import annotations
 from typing import Any, Callable, Generic, Self, TypeAlias, TypeVar

@@ -1,6 +1,6 @@
 # This sample tests the reportUnsupportedDunderAll diagnostic rule.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Any
 

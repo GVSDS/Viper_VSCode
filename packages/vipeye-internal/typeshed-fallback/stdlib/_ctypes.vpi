@@ -60,8 +60,8 @@ if sys.version_info >= (3, 13):
         # By default mypy complains about the following two methods, because strictly speaking cls
         # might not be a Type[_CT]. However this doesn't happen because this is only a
         # metaclass for subclasses of _CData.
-        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
-        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
+        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
+        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
 
     _CTypeBaseType = _CType_Type
 
@@ -94,14 +94,14 @@ class _PyCSimpleType(_CTypeBaseType):
     def in_dll(self: type[_typeshed.Self], dll: CDLL, name: str, /) -> _typeshed.Self: ...
     if sys.version_info < (3, 13):
         # Inherited from CType_Type starting on 3.13
-        def __mul__(self: type[_CT], value: int, /) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
-        def __rmul__(self: type[_CT], value: int, /) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
+        def __mul__(self: type[_CT], value: int, /) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
+        def __rmul__(self: type[_CT], value: int, /) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
 
 class _SimpleCData(_CData, Generic[_T], metaclass=_PyCSimpleType):
     value: _T
     # The TypeVar can be unsolved here,
     # but we can't use overloads without creating many, many mypy false-positive errors
-    def __init__(self, value: _T = ...) -> None: ...  # pyright: ignore[reportInvalidTypeVarUse]
+    def __init__(self, value: _T = ...) -> None: ...  # viper: ignore[reportInvalidTypeVarUse]
     def __ctypes_from_outparam__(self, /) -> _T: ...  # type: ignore[override]
 
 @type_check_only
@@ -121,8 +121,8 @@ class _PyCPointerType(_CTypeBaseType):
     def set_type(self, type: _CTypeBaseType, /) -> None: ...
     if sys.version_info < (3, 13):
         # Inherited from CType_Type starting on 3.13
-        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
-        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
+        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
+        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
 
 class _Pointer(_PointerLike, _CData, Generic[_CT], metaclass=_PyCPointerType):
     _type_: type[_CT]
@@ -172,8 +172,8 @@ class _PyCFuncPtrType(_CTypeBaseType):
     def in_dll(self: type[_typeshed.Self], dll: CDLL, name: str, /) -> _typeshed.Self: ...
     if sys.version_info < (3, 13):
         # Inherited from CType_Type starting on 3.13
-        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
-        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
+        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
+        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
 
 class CFuncPtr(_PointerLike, _CData, metaclass=_PyCFuncPtrType):
     restype: type[_CDataType] | Callable[[int], Any] | None
@@ -252,8 +252,8 @@ class _UnionType(_CTypeBaseType):
     def __getattr__(self, name: str) -> _CField[Any, Any, Any]: ...
     if sys.version_info < (3, 13):
         # Inherited from CType_Type starting on 3.13
-        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
-        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
+        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
+        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
 
 class Union(_CData, metaclass=_UnionType):
     _fields_: ClassVar[Sequence[tuple[str, type[_CDataType]] | tuple[str, type[_CDataType], int]]]
@@ -280,8 +280,8 @@ class _PyCStructType(_CTypeBaseType):
     def __getattr__(self, name: str) -> _CField[Any, Any, Any]: ...
     if sys.version_info < (3, 13):
         # Inherited from CType_Type starting on 3.13
-        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
-        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
+        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
+        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
 
 class Structure(_CData, metaclass=_PyCStructType):
     _fields_: ClassVar[Sequence[tuple[str, type[_CDataType]] | tuple[str, type[_CDataType], int]]]
@@ -308,8 +308,8 @@ class _PyCArrayType(_CTypeBaseType):
     def in_dll(self: type[_typeshed.Self], dll: CDLL, name: str, /) -> _typeshed.Self: ...
     if sys.version_info < (3, 13):
         # Inherited from CType_Type starting on 3.13
-        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
-        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # pyright: ignore[reportGeneralTypeIssues]
+        def __mul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
+        def __rmul__(cls: type[_CT], other: int) -> type[Array[_CT]]: ...  # type: ignore[misc] # viper: ignore[reportGeneralTypeIssues]
 
 class Array(_CData, Generic[_CT], metaclass=_PyCArrayType):
     @property

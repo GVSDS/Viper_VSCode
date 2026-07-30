@@ -1,6 +1,6 @@
 # This sample tests type inference for empty lists and dictionaries.
 
-# pyright: reportUnknownVariableType=true, reportUnknownArgumentType=true
+# viper: reportUnknownVariableType=true, reportUnknownArgumentType=true
 
 
 def func1(a: bool):

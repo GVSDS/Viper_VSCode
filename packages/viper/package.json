@@ -20,7 +20,7 @@
         "workspaceContains:**/*.vpj",
         "workspaceContains:**/*.vp"
     ],
-    "icon": "images/viper-icon.svg",
+    "icon": "images/viper-icon.png",
     "main": "./dist/extension.js",
     "contributes": {
         "languages": [
@@ -100,33 +100,33 @@
         "commands": [
             {
                 "command": "viper.createProject",
-                "title": "Viper: Create Project",
+                "title": "Create Project",
                 "category": "Viper"
             },
             {
                 "command": "viper.selectToolchain",
-                "title": "Viper: Select Toolchain",
+                "title": "Select Toolchain",
                 "category": "Viper"
             },
             {
                 "command": "viper.showProjectInfo",
-                "title": "Viper: Show Project Info",
+                "title": "Show Project Info",
                 "category": "Viper"
             },
             {
                 "command": "viper.openSettings",
-                "title": "Viper: Open Settings",
+                "title": "Open Settings",
                 "category": "Viper"
             },
             {
                 "command": "viper.refreshView",
-                "title": "Viper: Refresh",
+                "title": "Refresh",
                 "category": "Viper",
                 "icon": "$(refresh)"
             },
             {
                 "command": "viper.openVpjAsJson",
-                "title": "Viper: Open .vpj as JSON",
+                "title": "Open .vpj as JSON",
                 "category": "Viper"
             }
         ],

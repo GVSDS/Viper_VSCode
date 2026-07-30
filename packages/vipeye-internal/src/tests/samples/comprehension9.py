@@ -1,7 +1,7 @@
 # This sample tests the case where a comprehension requires bidirectional
 # type inference for correct analysis.
 
-# pyright: strict
+# viper: strict
 
 from typing import TypedDict
 

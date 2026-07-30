@@ -50,7 +50,7 @@ export namespace DocStringService {
     }
 }
 
-export class PyrightDocStringService implements DocStringService {
+export class ViperDocStringService implements DocStringService {
     convertDocStringToPlainText(docString: string): string {
         return convertDocStringToPlainText(docString);
     }

@@ -8,10 +8,10 @@
     "author": {
         "name": "TermiNexus"
     },
-    "publisher": "terminexus",
+    "publisher": "TermiNexus",
     "repository": {
         "type": "git",
-        "url": "https://github.com/TermiNexus/Viper_VSCode"
+        "url": "https://git.gvsds.com/TermiNexus/Viper_VSCode"
     },
     "engines": {
         "vscode": "^1.101.0"
@@ -27,7 +27,7 @@
         "workspaceContains:**/*.vpj",
         "workspaceContains:**/*.vp"
     ],
-    "icon": "images/vipeye-icon.png",
+    "icon": "images/viper-icon.png",
     "main": "./dist/extension.js",
     "contributes": {
         "languages": [
@@ -42,8 +42,8 @@
                 ],
                 "configuration": "./language-configuration.json",
                 "icon": {
-                    "light": "images/vipeye-icon.png",
-                    "dark": "images/vipeye-icon.png"
+                    "light": "images/viper-icon.svg",
+                    "dark": "images/viper-icon.svg"
                 }
             }
         ],
@@ -100,7 +100,7 @@
             "editor/context": [
                 {
                     "command": "viper.organizeimports",
-                    "title": "Viper: Organize Imports",
+                    "title": "Organize Imports",
                     "group": "Viper",
                     "when": "editorLangId == viper"
                 }
@@ -201,7 +201,7 @@
                 },
                 "viper.analysis.diagnosticSeverityOverrides": {
                     "type": "object",
-                    "description": "Allows a user to override the severity levels for individual diagnostics. Use the rule name as a key and one of \"error\", \"warning\", \"information\", \"none\", `true` (alias for \"error\") or `false` (alias for \"none\") as value. The default value shown for each diagnostic is the default when \"viper.analysis.typeCheckingMode\" is set to \"standard\". See [here](https://github.com/microsoft/pyright/blob/main/docs/configuration.md#diagnostic-rule-defaults) for defaults for each type checking mode (\"off\", \"basic\", \"standard\", and \"strict\").",
+                    "description": "Allows a user to override the severity levels for individual diagnostics. Use the rule name as a key and one of \"error\", \"warning\", \"information\", \"none\", `true` (alias for \"error\") or `false` (alias for \"none\") as value. The default value shown for each diagnostic is the default when \"viper.analysis.typeCheckingMode\" is set to \"standard\". See the Viper documentation for defaults for each type checking mode (\"off\", \"basic\", \"standard\", and \"strict\").",
                     "scope": "resource",
                     "properties": {
                         "reportGeneralTypeIssues": {

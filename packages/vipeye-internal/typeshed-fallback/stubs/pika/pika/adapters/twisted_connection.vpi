@@ -7,14 +7,14 @@ from logging import Logger
 from typing import Any, Generic, NamedTuple, TypeVar
 
 from pika.adapters.utils.nbio_interface import AbstractTimerReference
-from twisted.internet.base import DelayedCall  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
-from twisted.internet.defer import (  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
+from twisted.internet.base import DelayedCall  # type: ignore[import-not-found]  # viper: ignore[reportMissingImports]
+from twisted.internet.defer import (  # type: ignore[import-not-found]  # viper: ignore[reportMissingImports]
     Deferred,
     DeferredQueue,
 )
-from twisted.internet.interfaces import ITransport  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
-from twisted.internet.protocol import Protocol  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
-from twisted.python.failure import Failure  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
+from twisted.internet.interfaces import ITransport  # type: ignore[import-not-found]  # viper: ignore[reportMissingImports]
+from twisted.internet.protocol import Protocol  # type: ignore[import-not-found]  # viper: ignore[reportMissingImports]
+from twisted.python.failure import Failure  # type: ignore[import-not-found]  # viper: ignore[reportMissingImports]
 
 from ..connection import Connection, Parameters
 
@@ -22,7 +22,7 @@ _T = TypeVar("_T")
 
 LOGGER: Logger
 
-class ClosableDeferredQueue(DeferredQueue[_T], Generic[_T]):  # pyright: ignore[reportUntypedBaseClass]  # noqa: Y060
+class ClosableDeferredQueue(DeferredQueue[_T], Generic[_T]):  # viper: ignore[reportUntypedBaseClass]  # noqa: Y060
     closed: Failure | BaseException | None
     def __init__(self, size: Incomplete | None = ..., backlog: Incomplete | None = ...) -> None: ...
     # Returns a Deferred with an error if fails. None if success
@@ -135,7 +135,7 @@ class _TwistedConnectionAdapter(Connection):
     def connection_lost(self, error: Exception) -> None: ...
     def data_received(self, data) -> None: ...
 
-class TwistedProtocolConnection(Protocol):  # pyright: ignore[reportUntypedBaseClass]
+class TwistedProtocolConnection(Protocol):  # viper: ignore[reportUntypedBaseClass]
     ready: Deferred[None] | None
     closed: Deferred[None] | Failure | BaseException | None
     def __init__(self, parameters: Incomplete | None = ..., custom_reactor: Incomplete | None = ...) -> None: ...

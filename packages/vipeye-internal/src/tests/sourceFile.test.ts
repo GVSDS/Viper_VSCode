@@ -4,7 +4,7 @@
  * Licensed under the MIT license.
  * Author: Eric Traut
  *
- * Unit tests for pyright sourceFile module.
+ * Unit tests for viper sourceFile module.
  */
 import * as assert from 'assert';
 
@@ -79,7 +79,7 @@ test('Empty Open file', () => {
 
 test('No unexpected user files', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "pythonVersion": "3.14"
 //// }

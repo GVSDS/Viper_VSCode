@@ -1,6 +1,6 @@
 # This sample tests that unhashable user classes are detected as unhashable.
 
-# pyright: reportIncompatibleMethodOverride=false
+# viper: reportIncompatibleMethodOverride=false
 
 
 class A: ...

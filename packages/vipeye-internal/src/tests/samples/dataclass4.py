@@ -1,7 +1,7 @@
 # This sample tests the analyzer's ability to handle inherited
 # data classes.
 
-# pyright: reportIncompatibleVariableOverride=false
+# viper: reportIncompatibleVariableOverride=false
 
 from dataclasses import dataclass, field
 

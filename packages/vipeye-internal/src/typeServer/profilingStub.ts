@@ -4,7 +4,7 @@
  * Licensed under the MIT license.
  *
  * The Pylance type server integrated with a profiling service. Profiling is a
- * Pylance-only feature, so the standalone Pyright type server keeps only the shape
+ * Pylance-only feature, so the standalone Viper type server keeps only the shape
  * (`ProfilingInfo`) that the program interfaces reference; there is no profiler.
  */
 

@@ -1,7 +1,7 @@
 # This sample tests the handling of Sentinel as described in PEP 661.
 
 from typing import Literal, TypeAlias
-from typing_extensions import Sentinel, TypeForm  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import Sentinel, TypeForm  # viper: ignore[reportMissingModuleSource]
 
 # This should generate an error because the names don't match.
 BAD_NAME1 = Sentinel("OTHER")

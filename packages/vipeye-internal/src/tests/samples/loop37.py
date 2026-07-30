@@ -1,7 +1,7 @@
 # This sample tests that a variable assigned in a doubly-nested loop
 # eliminates any Unknowns.
 
-# pyright: strict
+# viper: strict
 
 
 def func():

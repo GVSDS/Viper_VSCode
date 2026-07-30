@@ -94,9 +94,9 @@ export class SourceEnumerator {
                         '* Your workspace contains a symlink to a directory with many files\n' +
                         '* Your workspace is remote, and file enumeration is slow\n' +
                         'To reduce this time, open a workspace directory with fewer files ' +
-                        'or add a pyrightconfig.json configuration file with an "exclude" section to exclude ' +
+                        'or add a viperconfig.json configuration file with an "exclude" section to exclude ' +
                         'subdirectories from your workspace. For more details, refer to ' +
-                        'https://github.com/microsoft/pyright/blob/main/docs/configuration.md.'
+                        'https://github.com/TermiNexus/TransPyC/wiki/viper-configuration.'
                 );
 
                 this._loggedLongOperationError = true;

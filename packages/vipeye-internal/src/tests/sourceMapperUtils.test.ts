@@ -3,7 +3,7 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * Unit tests for pyright sourceMapperUtils module.
+ * Unit tests for viper sourceMapperUtils module.
  */
 import assert from 'assert';
 import { CancellationToken, CancellationTokenSource } from 'vscode-jsonrpc';
@@ -29,7 +29,7 @@ import { UriEx } from '../common/uri/uriUtils';
 import { HoverProvider } from '../languageService/hoverProvider';
 import { PartialStubService } from '../partialStubService';
 import { NameNode, ParseNodeType } from '../parser/parseNodes';
-import { PyrightFileSystem } from '../pyrightFileSystem';
+import { ViperFileSystem } from '../viperFileSystem';
 import { parseTestData } from './harness/fourslash/fourSlashParser';
 import { TestAccessHost } from './harness/testAccessHost';
 import { getNodeAtMarker, parseAndGetTestState } from './harness/fourslash/testState';
@@ -261,7 +261,7 @@ function assertTypeAlias(code: string) {
 
 test('find method declarations through alias factory assignment', () => {
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "useLibraryCodeForTypes": true
 //// }
@@ -461,7 +461,7 @@ function createAnalyzerServiceFromCode(code: string, pythonSearchPaths: string[]
         testFS.writeFileSync(UriEx.file(filePath), file.content, 'utf8');
     }
 
-    const fs = new PyrightFileSystem(testFS);
+    const fs = new ViperFileSystem(testFS);
     const serviceProvider = createServiceProvider(testFS, fs, new PartialStubService(fs));
     const configOptions = new ConfigOptions(UriEx.file('/'));
     configOptions.internalTestMode = true;

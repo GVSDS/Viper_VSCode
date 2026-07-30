@@ -1,6 +1,6 @@
 # This sample tests specialization of nested generic classes.
 
-# pyright: strict
+# viper: strict
 
 
 from typing import Collection, Generic, Iterable, Iterator, TypeVar

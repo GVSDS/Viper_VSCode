@@ -3,9 +3,9 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * Converts Pyright's internal diagnostics into LSP diagnostics for the type server.
+ * Converts Vipeye's internal diagnostics into LSP diagnostics for the type server.
  * This mirrors `LanguageServerBase._convertDiagnostics`; the Pylance-only VS "task item"
- * ranking is omitted (task-item diagnostics are dropped, matching Pyright's own server).
+ * ranking is omitted (task-item diagnostics are dropped, matching Vipeye's own server).
  */
 
 import {
@@ -16,7 +16,7 @@ import {
     Location,
 } from 'vscode-languageserver';
 
-import { Diagnostic as PyrightDiagnostic, DiagnosticCategory } from '../common/diagnostic';
+import { Diagnostic as ViperDiagnostic, DiagnosticCategory } from '../common/diagnostic';
 import { ReadOnlyFileSystem } from '../common/fileSystem';
 import { convertUriToLspUriString } from '../common/uri/uriUtils';
 import { canNavigateToFile } from '../languageService/navigationUtils';
@@ -40,15 +40,15 @@ function convertCategoryToSeverity(category: DiagnosticCategory): DiagnosticSeve
     }
 }
 
-export function convertFromPyrightDiagnostic(
-    diag: PyrightDiagnostic,
+export function convertFromViperDiagnostic(
+    diag: ViperDiagnostic,
     fs: ReadOnlyFileSystem,
     supportsUnnecessaryDiagnosticTag: boolean,
     supportsTaskItemDiagnosticTag: boolean
 ): Diagnostic | undefined {
     const severity = convertCategoryToSeverity(diag.category);
     const rule = diag.getRule();
-    const vsDiag = Diagnostic.create(diag.range, diag.message, severity, rule, 'pyright');
+    const vsDiag = Diagnostic.create(diag.range, diag.message, severity, rule, 'viper');
 
     // Save all of the actions in the data.
     const actions = diag.getActions();

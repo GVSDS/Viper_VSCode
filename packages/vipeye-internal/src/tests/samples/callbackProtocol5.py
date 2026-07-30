@@ -2,7 +2,7 @@
 # attributes.
 
 from typing import Any, Callable, Protocol, TypeVar, cast
-from typing_extensions import ParamSpec  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import ParamSpec  # viper: ignore[reportMissingModuleSource]
 
 
 P = ParamSpec("P")

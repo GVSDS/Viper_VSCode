@@ -3,7 +3,7 @@
 # these parameters. In this case, the types of the extra parameters should
 # be inferred based on the default value type.
 
-# pyright: strict
+# viper: strict
 
 from typing import Callable
 

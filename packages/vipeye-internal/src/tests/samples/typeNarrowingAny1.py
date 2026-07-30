@@ -1,7 +1,7 @@
 # This sample tests the type analyzer's type narrowing logic for
 # Any and Unknown types with "is None" checks.
 
-# pyright: strict
+# viper: strict
 
 from typing import Any, reveal_type
 

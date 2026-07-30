@@ -2,7 +2,7 @@
 # ("a") is involved in a recursive type dependency
 # ("a" depends on "test" which depends on "a").
 
-# pyright: strict
+# viper: strict
 
 
 test = {"key": "value"}

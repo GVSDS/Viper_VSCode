@@ -1,6 +1,6 @@
 # This sample tests the constraint solver when a callable type is involved.
 
-# pyright: strict
+# viper: strict
 
 from typing import Callable, Literal, TypeVar
 

@@ -8,23 +8,23 @@ from typing import IO, TypeAlias, overload
 # valid, and causes them to be included in a star import. See #6523
 
 __all__ = [  # noqa: F822  # Undefined names in __all__
-    "base64mime",  # pyright: ignore[reportUnsupportedDunderAll]
-    "charset",  # pyright: ignore[reportUnsupportedDunderAll]
-    "encoders",  # pyright: ignore[reportUnsupportedDunderAll]
-    "errors",  # pyright: ignore[reportUnsupportedDunderAll]
-    "feedparser",  # pyright: ignore[reportUnsupportedDunderAll]
-    "generator",  # pyright: ignore[reportUnsupportedDunderAll]
-    "header",  # pyright: ignore[reportUnsupportedDunderAll]
-    "iterators",  # pyright: ignore[reportUnsupportedDunderAll]
-    "message",  # pyright: ignore[reportUnsupportedDunderAll]
+    "base64mime",  # viper: ignore[reportUnsupportedDunderAll]
+    "charset",  # viper: ignore[reportUnsupportedDunderAll]
+    "encoders",  # viper: ignore[reportUnsupportedDunderAll]
+    "errors",  # viper: ignore[reportUnsupportedDunderAll]
+    "feedparser",  # viper: ignore[reportUnsupportedDunderAll]
+    "generator",  # viper: ignore[reportUnsupportedDunderAll]
+    "header",  # viper: ignore[reportUnsupportedDunderAll]
+    "iterators",  # viper: ignore[reportUnsupportedDunderAll]
+    "message",  # viper: ignore[reportUnsupportedDunderAll]
     "message_from_file",
     "message_from_binary_file",
     "message_from_string",
     "message_from_bytes",
-    "mime",  # pyright: ignore[reportUnsupportedDunderAll]
-    "parser",  # pyright: ignore[reportUnsupportedDunderAll]
-    "quoprimime",  # pyright: ignore[reportUnsupportedDunderAll]
-    "utils",  # pyright: ignore[reportUnsupportedDunderAll]
+    "mime",  # viper: ignore[reportUnsupportedDunderAll]
+    "parser",  # viper: ignore[reportUnsupportedDunderAll]
+    "quoprimime",  # viper: ignore[reportUnsupportedDunderAll]
+    "utils",  # viper: ignore[reportUnsupportedDunderAll]
 ]
 
 # Definitions imported by multiple submodules in typeshed

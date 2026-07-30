@@ -1,7 +1,7 @@
 # This sample tests a difficult set of circular dependencies
 # between untyped variables.
 
-# pyright: strict
+# viper: strict
 
 from typing import Dict
 

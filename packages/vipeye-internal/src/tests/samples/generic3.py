@@ -1,7 +1,7 @@
 # This sample tests that a Generic base class overrides the type parameter
 # ordering of other type parameters.
 
-# pyright: reportIncompatibleMethodOverride=false
+# viper: reportIncompatibleMethodOverride=false
 
 from typing import Generic, Iterable, Iterator, Mapping, TypeVar
 

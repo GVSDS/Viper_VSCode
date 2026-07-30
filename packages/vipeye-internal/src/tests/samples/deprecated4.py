@@ -2,7 +2,7 @@
 
 from typing import overload
 
-from typing_extensions import deprecated  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import deprecated  # viper: ignore[reportMissingModuleSource]
 
 
 class A:

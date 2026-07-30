@@ -43,6 +43,7 @@ import {
     AssignmentNode,
     AugmentedAssignmentNode,
     AwaitNode,
+    BinaryOperationNode,
     CallNode,
     CaseNode,
     ClassNode,
@@ -257,6 +258,7 @@ import {
     isCConstType,
     isCStaticType,
     isViperIntegerType,
+    isViperCIntegerTypeName,
     isOverloaded,
     isParamSpec,
     isPositionOnlySeparator,
@@ -1088,7 +1090,7 @@ export function createTypeEvaluator(
             prefetched.awaitableClass = getTypingType(node, 'Awaitable');
             prefetched.mappingClass = getTypingType(node, 'Mapping');
 
-            // Don't attempt to resolve the string.templatelib if pyright is configured for
+            // Don't attempt to resolve the string.templatelib if viper is configured for
             // Python 3.13 or older. Doing so will either fail to resolve (if running on Python 3.13
             // or older) or resolve to the templatelib.py source file (if running on Python 3.14).
             if (PythonVersion.isGreaterOrEqualTo(fileInfo.executionEnvironment.pythonVersion, pythonVersion3_14)) {
@@ -4955,11 +4957,28 @@ export function createTypeEvaluator(
             }
 
             if (effectiveTypeInfo.isRecursiveDefinition && isNodeReachable(node)) {
-                addDiagnostic(
-                    DiagnosticRule.reportGeneralTypeIssues,
-                    LocMessage.recursiveDefinition().format({ name }),
-                    node
-                );
+                // Viper 扩展：循环引用包含 CPtr 时不报错。
+                // C 语义中，struct 含指向自身的指针是合法的（如链表节点）：
+                //   struct Node { struct Node* next; }
+                // 对应 Viper: next: 'Node' | t.CPtr
+                // 指针大小固定，不需要知道结构体的完整定义，打破了无限递归。
+                // 但无 CPtr 的循环引用（如 next: 'Node'）是真正的无限递归，应报错。
+                const isViperPtrCycle =
+                    IsViperDialect(fileInfo.executionEnvironment.dialect) &&
+                    symbol.getTypedDeclarations().some((decl) => {
+                        if (decl.type !== DeclarationType.Variable || !decl.typeAnnotationNode) {
+                            return false;
+                        }
+                        return typeAnnotationContainsCPtr(decl.typeAnnotationNode);
+                    });
+
+                if (!isViperPtrCycle) {
+                    addDiagnostic(
+                        DiagnosticRule.reportGeneralTypeIssues,
+                        LocMessage.recursiveDefinition().format({ name }),
+                        node
+                    );
+                }
             }
 
             const isSpecialBuiltIn =
@@ -8914,6 +8933,172 @@ export function createTypeEvaluator(
         return entryTypes;
     }
 
+    // Viper 扩展：判断调用节点是否为 Viper C 整数类型的构造调用。
+    // 支持两种形式：
+    //   1. 直接名称调用：CUInt32T(addr, t.CPtr)
+    //   2. 成员访问调用：t.CUInt32T(addr, t.CPtr)
+    // 通过提取调用表达式左侧的名称（CUInt32T），查询 _viperCIntegerTypeNames 白名单判断。
+    function isViperCIntegerCall(node: CallNode): boolean {
+        const leftExpr = node.d.leftExpr;
+        let name: string | undefined;
+
+        if (leftExpr.nodeType === ParseNodeType.Name) {
+            // 形式 1：直接名称调用
+            name = leftExpr.d.value;
+        } else if (leftExpr.nodeType === ParseNodeType.MemberAccess) {
+            // 形式 2：成员访问调用（如 t.CUInt32T）
+            name = leftExpr.d.member.d.value;
+        }
+
+        return name !== undefined && isViperCIntegerTypeName(name);
+    }
+
+    // Viper 扩展：判断调用节点是否为 __sizeof__ 方法调用。
+    // 支持两种形式：
+    //   1. 类调用：Type.__sizeof__()
+    //   2. 实例调用：instance.__sizeof__()
+    // Viper 中 __sizeof__ 是类方法（sizeof(Type) -> int），不需要 self 参数。
+    function isViperSizeOfCall(node: CallNode): boolean {
+        const leftExpr = node.d.leftExpr;
+        if (leftExpr.nodeType === ParseNodeType.MemberAccess) {
+            return leftExpr.d.member.d.value === '__sizeof__';
+        }
+        return false;
+    }
+
+    // Viper 扩展：检查类型注解 AST 节点是否包含 CPtr 引用。
+    // 用于判断循环引用是否被指针打破（如 next: 'Node' | t.CPtr）。
+    // 递归遍历类型注解表达式，查找名称为 CPtr/CNeedPtr/CAutoPtr/CArrayPtr 的标识符。
+    function typeAnnotationContainsCPtr(node: ExpressionNode): boolean {
+        return checkCPtrRecursively(node);
+    }
+
+    function checkCPtrRecursively(node: ParseNode): boolean {
+        if (!node) {
+            return false;
+        }
+
+        // 检查名称节点是否为 CPtr 系列
+        if (node.nodeType === ParseNodeType.Name) {
+            const name = (node as NameNode).d.value;
+            return name === 'CPtr' || name === 'CNeedPtr' || name === 'CAutoPtr' || name === 'CArrayPtr';
+        }
+
+        // 检查成员访问节点（如 t.CPtr），检查成员名
+        if (node.nodeType === ParseNodeType.MemberAccess) {
+            const memberAccess = node as MemberAccessNode;
+            const memberName = memberAccess.d.member.d.value;
+            if (
+                memberName === 'CPtr' || memberName === 'CNeedPtr' ||
+                memberName === 'CAutoPtr' || memberName === 'CArrayPtr'
+            ) {
+                return true;
+            }
+            // 继续检查左侧表达式
+            return checkCPtrRecursively(memberAccess.d.leftExpr);
+        }
+
+        // 检查二进制操作节点（如 'Node' | t.CPtr），递归检查两侧
+        if (node.nodeType === ParseNodeType.BinaryOperation) {
+            const binaryOp = node as BinaryOperationNode;
+            return checkCPtrRecursively(binaryOp.d.leftExpr) || checkCPtrRecursively(binaryOp.d.rightExpr);
+        }
+
+        // 检查索引节点（如 CPtr[Node]），递归检查左侧和索引项
+        if (node.nodeType === ParseNodeType.Index) {
+            const indexNode = node as IndexNode;
+            if (checkCPtrRecursively(indexNode.d.leftExpr)) {
+                return true;
+            }
+            for (const item of indexNode.d.items) {
+                if (checkCPtrRecursively(item.d.valueExpr)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // 检查字符串列表节点（字符串注解如 'Node'），检查字符串内容
+        if (node.nodeType === ParseNodeType.StringList) {
+            const stringList = node as StringListNode;
+            for (const stringNode of stringList.d.strings) {
+                if (stringNode.nodeType === ParseNodeType.String) {
+                    const strValue = (stringNode as any).d?.value ?? '';
+                    // 检查字符串注解中是否包含 CPtr 引用
+                    if (/\b(CPtr|CNeedPtr|CAutoPtr|CArrayPtr)\b/.test(strValue)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        // 检查类型注解节点（如 x: Type），递归检查类型表达式
+        if (node.nodeType === ParseNodeType.TypeAnnotation) {
+            const typeAnnot = node as TypeAnnotationNode;
+            return checkCPtrRecursively(typeAnnot.d.typeAnnotation);
+        }
+
+        // 对于其他节点类型，尝试遍历子节点
+        const d = (node as any).d;
+        if (d && typeof d === 'object') {
+            for (const key of Object.keys(d)) {
+                const value = d[key];
+                if (value && typeof value === 'object' && value.nodeType !== undefined) {
+                    if (checkCPtrRecursively(value)) {
+                        return true;
+                    }
+                } else if (Array.isArray(value)) {
+                    for (const item of value) {
+                        if (item && typeof item === 'object' && item.nodeType !== undefined) {
+                            if (checkCPtrRecursively(item)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // Viper 扩展：检测 C 整数类型构造调用的第二参数是否为 t.CPtr。
+    // 若是，则返回 CPtr 类的 instantiable 形式，用于构造 CPtr[T] 指针类型；
+    // 否则返回 undefined。
+    // 示例：t.CUInt32T(addr, t.CPtr) → 返回 CPtr 类，外层构造 CPtr[CUInt32T]。
+    //
+    // 判断方式：评估第二参数表达式的类型，若为 instantiable CPtr 类则匹配。
+    // 这样可以正确处理 t.CPtr、CPtr（直接引用）以及别名导入等各种形式。
+    function tryGetCPtrTypeFromSecondArg(
+        node: CallNode
+    ): ClassType | undefined {
+        if (node.d.args.length < 2) {
+            return undefined;
+        }
+
+        const secondArgExpr = node.d.args[1].d.valueExpr;
+        // 若是关键字参数且名字不是 base，则跳过（仅识别位置参数或 base=... 形式）
+        const argName = node.d.args[1].d.name;
+        if (argName && argName.d.value !== 'base') {
+            return undefined;
+        }
+
+        // 评估第二参数表达式的类型
+        const secondArgTypeResult = getTypeOfExpression(
+            secondArgExpr,
+            EvalFlags.CallBaseDefaults
+        );
+        const secondArgType = secondArgTypeResult.type;
+
+        // 期望第二参数为 CPtr 类的 instantiable 形式（type[CPtr]）
+        if (isInstantiableClass(secondArgType) && isCPtrType(secondArgType)) {
+            return secondArgType;
+        }
+
+        return undefined;
+    }
+
     function getTypeOfCall(
         node: CallNode,
         flags: EvalFlags,
@@ -8993,6 +9178,45 @@ export function createTypeEvaluator(
                 } else {
                     addDiagnostic(DiagnosticRule.reportCallIssue, LocMessage.revealLocalsArgs(), node);
                 }
+            } else if (
+                // Viper 扩展：拦截 C 整数类型的构造调用（如 t.CUInt32T(addr, t.CPtr)）。
+                // 这些类型在 vipershed-fallback/stdlib/t.vpi 中定义为 TypeAlias = int，
+                // 但在 Viper 语义中它们是独立的 C 整数类型，构造调用应支持指针强转语义，
+                // 而不是走 int.__new__ 的参数类型检查（int.__new__ 期望 str|bytes|bytearray，
+                // 而 Viper 强转常用指针地址作为参数）。
+                IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                isInstantiableClass(baseTypeResult.type) &&
+                ClassType.isBuiltIn(baseTypeResult.type, 'int') &&
+                isViperCIntegerCall(node)
+            ) {
+                // 跳过 int.__new__ 的参数类型检查，直接返回该整数类型的实例。
+                // Viper 的 C 整数类型构造调用本质是 C 语言的强转 (uint32_t)addr，
+                // 参数类型检查由 Viper 编译器在语义分析阶段处理，LSP 不需要重复检查。
+                //
+                // 特殊形式：当第二参数为 t.CPtr 时（如 t.CUInt32T(addr, t.CPtr)），
+                // 语义是强转为"指向该整数类型的指针"（即 (uint32_t*)addr），
+                // 此时返回 CPtr[T] 实例类型，以支持指针下标赋值 ptr[i] = value。
+                const integerInstanceType = ClassType.cloneAsInstance(baseTypeResult.type);
+                const cptrPointerType = tryGetCPtrTypeFromSecondArg(node);
+                if (cptrPointerType) {
+                    // 构造 CPtr[IntegerT] 实例类型
+                    const cptrInstance = ClassType.cloneAsInstance(cptrPointerType);
+                    typeResult.type = ClassType.specialize(cptrInstance, [integerInstanceType]);
+                } else {
+                    typeResult.type = integerInstanceType;
+                }
+            } else if (
+                // Viper 扩展：拦截 __sizeof__ 调用。
+                // Viper 中 __sizeof__ 语义是 C 语言的 sizeof(Type) -> int，
+                // 是类方法/静态方法，不需要 self 参数。但 object.__sizeof__ 是实例方法，
+                // 当通过类调用 Type.__sizeof__() 时会报 "Argument missing for parameter self"。
+                // 此处跳过参数检查，直接返回 int 类型。
+                IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                isViperSizeOfCall(node)
+            ) {
+                // Viper 的 __sizeof__ 是类方法（sizeof(Type)），返回类型大小（字节数）。
+                // 跳过 object.__sizeof__ 的实例方法参数检查，直接返回 int。
+                typeResult.type = getBuiltInObject(node, 'int');
             } else {
                 const callResult = validateCallArgs(
                     node,
@@ -10308,7 +10532,7 @@ export function createTypeEvaluator(
         recursionCount++;
 
         // Viper 方言允许联合类型强转，例如 `(memory_block | t.CPtr)(addr)`
-        // 或 `(t.CInt | t.CPtr)(x)`。Pyright 会把联合类型标记为 specialForm
+        // 或 `(t.CInt | t.CPtr)(x)`。Vipeye 会把联合类型标记为 specialForm
         // 并在上方报 objectNotCallable；Viper 是 AOT 静态语言，这类联合强转是
         // 合法语义（C 风格类型转换），因此在 Viper 模式下直接放行并返回 Unknown，
         // 避免对联合类型逐子类型校验时产生的误报。
@@ -10613,7 +10837,7 @@ export function createTypeEvaluator(
         }
 
         // Ignore instance variables. Also, ignore named tuple members, which are
-        // modeled in pyright as instance variables, but their runtime implementation
+        // modeled in vipeye as instance variables, but their runtime implementation
         // uses a descriptor object.
         if (!symbol.isClassMember() && !symbol.isNamedTupleMemberMember()) {
             return undefined;
@@ -27912,7 +28136,7 @@ export function createTypeEvaluator(
     // we may be able to narrow the type based on the assignment.
     function narrowTypeBasedOnAssignment(declaredType: Type, assignedTypeResult: TypeResult): TypeResult {
         // TODO: The rules for narrowing types on assignment are not defined in
-        // the typing spec. Pyright's current logic is currently not even internally
+        // the typing spec. Vipeye's current logic is currently not even internally
         // consistent and probably not sound from a type theory perspective. It
         // should be completely reworked once there has been a public discussion
         // about the correct behavior.

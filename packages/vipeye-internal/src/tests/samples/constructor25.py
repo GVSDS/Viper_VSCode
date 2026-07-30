@@ -2,7 +2,7 @@
 # allocates an instance of itself by invoking a constructor and passing
 # an argument that is a generic type.
 
-# pyright: strict
+# viper: strict
 
 from typing import Generic, TypeVar
 

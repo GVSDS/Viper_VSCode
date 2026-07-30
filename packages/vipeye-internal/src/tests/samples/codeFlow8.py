@@ -2,7 +2,7 @@
 # is used within a looping construct such that the assigned
 # value is initially unknown.
 
-# pyright: strict
+# viper: strict
 
 from typing import Iterator
 

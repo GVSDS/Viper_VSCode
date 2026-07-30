@@ -1,7 +1,7 @@
 # This sample tests the type checker's handling
 # of proper method resolution order (MRO).
 
-# pyright: reportIncompatibleMethodOverride=false
+# viper: reportIncompatibleMethodOverride=false
 
 
 class A:

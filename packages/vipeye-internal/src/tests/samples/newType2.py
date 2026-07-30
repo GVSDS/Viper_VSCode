@@ -1,7 +1,7 @@
 # This sample tests the special-case handle of the multi-parameter
 # form of the built-in "type" call.
 
-# pyright: strict
+# viper: strict
 
 X1 = type("X1", (object,), {})
 X2 = type("X2", (object,), {})

@@ -34,10 +34,10 @@ test('unused import', async () => {
     });
 });
 
-test('pyright ignore unused import', async () => {
+test('viper ignore unused import', async () => {
     const code = `
 // @filename: test1.py
-//// from test2 import [|/*marker*/foo|] # pyright: ignore
+//// from test2 import [|/*marker*/foo|] # viper: ignore
 
 // @filename: test2.py
 //// def foo(): pass
@@ -56,7 +56,7 @@ test('getDiagnosticsForRangeWithoutFileIgnore analyzes the file on demand when i
     // that serves code-action requests may never have checked the file, leaving its pre-ignore
     // diagnostics cache empty. The getter must populate that cache on demand.
     const code = `
-// @filename: pyrightconfig.json
+// @filename: viperconfig.json
 //// {
 ////   "ignore": ["**/test.py"]
 //// }

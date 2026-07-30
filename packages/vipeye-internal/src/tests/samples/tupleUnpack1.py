@@ -2,7 +2,7 @@
 # in PEP 646.
 
 from typing import Union
-from typing_extensions import Unpack  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import Unpack  # viper: ignore[reportMissingModuleSource]
 
 
 def func1(v1: tuple[int, Unpack[tuple[bool, bool]], str]):

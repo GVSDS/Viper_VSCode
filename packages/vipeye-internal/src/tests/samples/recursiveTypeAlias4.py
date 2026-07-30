@@ -1,6 +1,6 @@
 # This sample tests the handling of complex recursive types.
 
-# pyright: strict, reportUnusedVariable=false
+# viper: strict, reportUnusedVariable=false
 
 from typing import Generator
 

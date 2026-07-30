@@ -368,7 +368,7 @@ export class Binder extends ParseTreeWalker {
         // Single-underscore module-level names remain private even when __all__ uses an
         // unsupported/computed form. Since every entry in _potentialPrivateSymbols already
         // has an underscore prefix, shouldProcess always returns true here, preserving
-        // the behavior of upstream pyright test `Private3`.
+        // the behavior of upstream vipeye test `Private3`.
         this._potentialPrivateSymbols.forEach((symbol, name) => {
             if (shouldProcess(name) && !this._dunderAllNames?.some((sym) => sym === name)) {
                 symbol.setIsPrivateMember();

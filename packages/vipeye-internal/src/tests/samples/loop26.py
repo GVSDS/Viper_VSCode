@@ -1,6 +1,6 @@
 # This sample tests proper type narrowing within a double loop.
 
-# pyright: strict
+# viper: strict
 
 from typing import Callable
 

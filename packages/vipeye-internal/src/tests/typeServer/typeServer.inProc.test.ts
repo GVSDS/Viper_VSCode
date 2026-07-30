@@ -3,14 +3,14 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * In-process protocol tests for the Pyright type server (TSP).
+ * In-process protocol tests for the Viper type server (TSP).
  *
  * These exercise the server-side request handlers end-to-end over a real JSON-RPC
  * connection (in-memory streams), including the `_onGetType` conversion path
  * (fromProtocolNode -> evaluate via the sync->async adapter -> ProtocolTypeFactory).
  *
  * Ported from Pylance's `typeServer.inProc.test.ts`. The Pylance round-trip tests that
- * reconstruct a Pyright `Type` from the protocol `Type` depend on the client-side consumer
+ * reconstruct a Vipeye `Type` from the protocol `Type` depend on the client-side consumer
  * stack (ExternalProgram / snapshotSync), which stays in Pylance, so they are intentionally
  * not ported here. Instead these tests assert on the protocol-level responses.
  */

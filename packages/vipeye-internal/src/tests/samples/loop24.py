@@ -1,7 +1,7 @@
 # This sample tests a loop that involves assignment of a tuple
 # within a loop.
 
-# pyright: strict
+# viper: strict
 
 var = 0
 while True:

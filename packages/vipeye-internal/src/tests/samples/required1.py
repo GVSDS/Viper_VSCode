@@ -1,10 +1,10 @@
 # This sample tests the handling of Required and NotRequired
 # (PEP 655) in TypedDict definitions.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import Annotated, TypedDict
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     NotRequired,
     Required,
 )

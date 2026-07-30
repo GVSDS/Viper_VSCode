@@ -4,7 +4,7 @@
 from dataclasses import dataclass
 
 from typing import overload, Any, TypeVar, Generic, Optional, Union, Callable, Type
-from typing_extensions import (  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import (  # viper: ignore[reportMissingModuleSource]
     dataclass_transform,
 )
 

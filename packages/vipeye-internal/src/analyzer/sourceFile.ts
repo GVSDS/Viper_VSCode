@@ -127,7 +127,7 @@ class WriteableData {
     taskListDiagnostics: Diagnostic[] = [];
     typeIgnoreLines = new Map<number, IgnoreComment>();
     typeIgnoreAll: IgnoreComment | undefined;
-    pyrightIgnoreLines = new Map<number, IgnoreComment>();
+    viperIgnoreLines = new Map<number, IgnoreComment>();
 
     // Accumulated and filtered diagnostics that combines all of the
     // above information. This needs to be recomputed any time the
@@ -190,7 +190,7 @@ class WriteableData {
  taskListDiagnostics=${this.taskListDiagnostics?.length},
  accumulatedDiagnostics=${this.accumulatedDiagnostics?.length},
  typeIgnoreLines=${this.typeIgnoreLines?.size},
- pyrightIgnoreLines=${this.pyrightIgnoreLines?.size},
+ viperIgnoreLines=${this.viperIgnoreLines?.size},
  checkTime=${this.checkTime},
  clientDocumentContents=${this.clientDocumentContents?.length},
  parseResults=${this.parserOutput?.parseTree.length},
@@ -755,7 +755,7 @@ export class SourceFile {
                 this._writableData.parsedFileContents = fileContents;
                 this._writableData.typeIgnoreLines = parseFileResults.tokenizerOutput.typeIgnoreLines;
                 this._writableData.typeIgnoreAll = parseFileResults.tokenizerOutput.typeIgnoreAll;
-                this._writableData.pyrightIgnoreLines = parseFileResults.tokenizerOutput.pyrightIgnoreLines;
+                this._writableData.viperIgnoreLines = parseFileResults.tokenizerOutput.viperIgnoreLines;
                 this._writableData.lineCount = parseFileResults.tokenizerOutput.lines.length;
 
                 // Cache the tokenizer output only if this file is open.
@@ -841,7 +841,7 @@ export class SourceFile {
                     lines: this._writableData.tokenizerLines,
                     typeIgnoreAll: undefined,
                     typeIgnoreLines: new Map<number, IgnoreComment>(),
-                    pyrightIgnoreLines: new Map<number, IgnoreComment>(),
+                    viperIgnoreLines: new Map<number, IgnoreComment>(),
                     predominantEndOfLineSequence: '\n',
                     hasPredominantTabSequence: false,
                     predominantTabSequence: '    ',
@@ -1080,7 +1080,7 @@ export class SourceFile {
 
         const prefilteredDiagList = diagList;
         const typeIgnoreLinesClone = new Map(this._writableData.typeIgnoreLines);
-        const pyrightIgnoreLinesClone = new Map(this._writableData.pyrightIgnoreLines);
+        const viperIgnoreLinesClone = new Map(this._writableData.viperIgnoreLines);
 
         // Filter the diagnostics based on "type: ignore" lines.
         if (this._diagnosticRuleSet.enableTypeIgnoreComments) {
@@ -1104,8 +1104,8 @@ export class SourceFile {
             }
         }
 
-        // Filter the diagnostics based on "pyright: ignore" lines.
-        if (this._writableData.pyrightIgnoreLines.size > 0) {
+        // Filter the diagnostics based on "viper: ignore" lines.
+        if (this._writableData.viperIgnoreLines.size > 0) {
             diagList = diagList.filter((d) => {
                 if (
                     d.category !== DiagnosticCategory.UnusedCode &&
@@ -1113,10 +1113,10 @@ export class SourceFile {
                     d.category !== DiagnosticCategory.Deprecated
                 ) {
                     for (let line = d.range.start.line; line <= d.range.end.line; line++) {
-                        const pyrightIgnoreComment = this._writableData.pyrightIgnoreLines.get(line);
-                        if (pyrightIgnoreComment) {
-                            if (!pyrightIgnoreComment.rulesList) {
-                                pyrightIgnoreLinesClone.delete(line);
+                        const viperIgnoreComment = this._writableData.viperIgnoreLines.get(line);
+                        if (viperIgnoreComment) {
+                            if (!viperIgnoreComment.rulesList) {
+                                viperIgnoreLinesClone.delete(line);
                                 return false;
                             }
 
@@ -1128,17 +1128,17 @@ export class SourceFile {
                             }
 
                             // Did we find this rule in the list?
-                            if (pyrightIgnoreComment.rulesList.find((rule) => rule.text === diagRule)) {
-                                // Update the pyrightIgnoreLinesClone to remove this rule.
-                                const oldClone = pyrightIgnoreLinesClone.get(line);
+                            if (viperIgnoreComment.rulesList.find((rule) => rule.text === diagRule)) {
+                                // Update the viperIgnoreLinesClone to remove this rule.
+                                const oldClone = viperIgnoreLinesClone.get(line);
                                 if (oldClone?.rulesList) {
                                     const filteredRulesList = oldClone.rulesList.filter(
                                         (rule) => rule.text !== diagRule
                                     );
                                     if (filteredRulesList.length === 0) {
-                                        pyrightIgnoreLinesClone.delete(line);
+                                        viperIgnoreLinesClone.delete(line);
                                     } else {
-                                        pyrightIgnoreLinesClone.set(line, {
+                                        viperIgnoreLinesClone.set(line, {
                                             range: oldClone.range,
                                             rulesList: filteredRulesList,
                                         });
@@ -1210,7 +1210,7 @@ export class SourceFile {
                 }
             });
 
-            pyrightIgnoreLinesClone.forEach((ignoreComment) => {
+            viperIgnoreLinesClone.forEach((ignoreComment) => {
                 if (this._writableData.tokenizerLines!) {
                     if (!ignoreComment.rulesList) {
                         const rangeStart = ignoreComment.range.start;
@@ -1235,7 +1235,7 @@ export class SourceFile {
                             if (!isUnreachableCodeRange(range)) {
                                 const diag = new Diagnostic(
                                     diagCategory,
-                                    LocMessage.unnecessaryPyrightIgnoreRule().format({
+                                    LocMessage.unnecessaryViperIgnoreRule().format({
                                         name: unusedRule.text,
                                     }),
                                     range

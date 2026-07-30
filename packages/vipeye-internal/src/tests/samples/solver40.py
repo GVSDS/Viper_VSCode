@@ -1,7 +1,7 @@
 # This sample involves solving type variables that provide a lambda
 # its expected type.
 
-# pyright: strict
+# viper: strict
 
 from typing import Callable, TypeVar
 

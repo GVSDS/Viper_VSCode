@@ -42,7 +42,7 @@ import { Comparison, isNumber, isString } from '../../../common/core';
 import * as debug from '../../../common/debug';
 import { DiagnosticCategory } from '../../../common/diagnostic';
 import { DocumentRange } from '../../../common/docRange';
-import { PyrightDocStringService } from '../../../common/docStringService';
+import { ViperDocStringService } from '../../../common/docStringService';
 import { FileEditAction } from '../../../common/editAction';
 import { ReadOnlyFileSystem } from '../../../common/fileSystem';
 import { Host } from '../../../common/host';
@@ -75,7 +75,7 @@ import { ParseNode } from '../../../parser/parseNodes';
 import { ParseFileResults } from '../../../parser/parser';
 import { Tokenizer } from '../../../parser/tokenizer';
 import { NoOpPartialStubs, PartialStubService } from '../../../partialStubService';
-import { PyrightFileSystem } from '../../../pyrightFileSystem';
+import { ViperFileSystem } from '../../../viperFileSystem';
 import { NormalWorkspace, WellKnownWorkspaceKinds, Workspace, createInitStatus } from '../../../workspaceFactory';
 import { TestAccessHost } from '../testAccessHost';
 import * as host from '../testHost';
@@ -147,7 +147,7 @@ export class TestState {
     private readonly _hostSpecificFeatures: HostSpecificFeatures;
 
     readonly testFS: vfs.TestFileSystem;
-    readonly fs: PyrightFileSystem;
+    readonly fs: ViperFileSystem;
     readonly workspace: NormalWorkspace;
     readonly console: ConsoleInterface;
     readonly rawConfigJson: any | undefined;
@@ -177,7 +177,7 @@ export class TestState {
                 mountPaths
             );
 
-        this.fs = new PyrightFileSystem(this.testFS);
+        this.fs = new ViperFileSystem(this.testFS);
         this.console = new ConsoleWithLogLevel(new NullConsole(), 'test');
         const ps = options?.enablePartialStub ? new PartialStubService(this.fs) : new NoOpPartialStubs();
         this.serviceProvider = createServiceProvider(this.testFS, this.fs, this.console, ps);
@@ -1159,7 +1159,7 @@ export class TestState {
                 /* hasSignatureLabelOffsetCapability */ true,
                 /* hasActiveParameterCapability */ true,
                 /* context */ undefined,
-                new PyrightDocStringService(),
+                new ViperDocStringService(),
                 CancellationToken.None
             ).getSignatureHelp();
 

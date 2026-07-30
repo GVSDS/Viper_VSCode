@@ -11,7 +11,7 @@ module.exports = (_, { mode }) => {
     return {
         context: __dirname,
         entry: {
-            vipeye: './src/pyright.ts',
+            vipeye: './src/viper.ts',
             'vipeye-langserver': './src/langserver.ts',
         },
         target: 'node',

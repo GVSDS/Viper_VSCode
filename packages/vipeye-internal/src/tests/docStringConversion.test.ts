@@ -7,7 +7,7 @@
  */
 
 import assert = require('assert');
-import { PyrightDocStringService } from '../common/docStringService';
+import { ViperDocStringService } from '../common/docStringService';
 
 // For substitution in the test data strings
 // Produces more readable test data than escaping the back ticks
@@ -16,7 +16,7 @@ const doubleTick = '``';
 const tripleTick = '```';
 const tripleTilda = '~~~';
 
-export function docStringTests(docStringService = new PyrightDocStringService()) {
+export function docStringTests(docStringService = new ViperDocStringService()) {
     test('PlaintextIndention', () => {
         const all: string[][] = [
             ['A\nB', 'A\nB'],

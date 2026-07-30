@@ -1,7 +1,7 @@
 # This sample tests that generic type aliases are properly flagged as
 # partially-unknown types if their type arguments are omitted.
 
-# pyright: reportUnknownParameterType=true, reportMissingTypeArgument=false
+# viper: reportUnknownParameterType=true, reportMissingTypeArgument=false
 
 from typing import TypeVar
 

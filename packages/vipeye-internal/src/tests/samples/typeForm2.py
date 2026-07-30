@@ -1,6 +1,6 @@
 # This sample tests type inference rules for TypeForm.
 
-# pyright: reportMissingModuleSource=false
+# viper: reportMissingModuleSource=false
 
 from typing import (
     Annotated,

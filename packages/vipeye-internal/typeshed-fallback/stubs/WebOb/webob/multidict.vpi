@@ -22,12 +22,12 @@ class MultiDict(MutableMapping[_KT, _VT]):
     @overload
     def __init__(self) -> None: ...
     @overload
-    def __init__(self: MultiDict[str, _VT], **kwargs: _VT) -> None: ...  # pyright: ignore[reportInvalidTypeVarUse]  #11780
+    def __init__(self: MultiDict[str, _VT], **kwargs: _VT) -> None: ...  # viper: ignore[reportInvalidTypeVarUse]  #11780
     @overload
     def __init__(self, m: _SupportsItemsWithIterableResult[_KT, _VT], /) -> None: ...
     @overload
     def __init__(
-        self: MultiDict[str, _VT],  # pyright: ignore[reportInvalidTypeVarUse]  #11780
+        self: MultiDict[str, _VT],  # viper: ignore[reportInvalidTypeVarUse]  #11780
         m: _SupportsItemsWithIterableResult[str, _VT],
         /,
         **kwargs: _VT,
@@ -36,7 +36,7 @@ class MultiDict(MutableMapping[_KT, _VT]):
     def __init__(self, m: Iterable[tuple[_KT, _VT]], /) -> None: ...
     @overload
     def __init__(
-        self: MultiDict[str, _VT],  # pyright: ignore[reportInvalidTypeVarUse]  #11780
+        self: MultiDict[str, _VT],  # viper: ignore[reportInvalidTypeVarUse]  #11780
         m: Iterable[tuple[str, _VT]],
         /,
         **kwargs: _VT,

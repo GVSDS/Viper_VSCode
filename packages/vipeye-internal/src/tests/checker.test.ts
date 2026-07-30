@@ -4,7 +4,7 @@
  * Licensed under the MIT license.
  * Author: Eric Traut
  *
- * Unit tests for pyright type checker. These tests also
+ * Unit tests for viper type checker. These tests also
  * exercise the type evaluator (which the checker relies
  * heavily upon).
  */
@@ -373,28 +373,28 @@ test('TypeIgnore5', () => {
     TestUtils.validateResults(analysisResults, 0, 1);
 });
 
-test('PyrightIgnore1', () => {
+test('ViperIgnore1', () => {
     const configOptions = new ConfigOptions(Uri.empty());
 
-    const analysisResults = TestUtils.typeAnalyzeSampleFiles(['pyrightIgnore1.py'], configOptions);
+    const analysisResults = TestUtils.typeAnalyzeSampleFiles(['viperIgnore1.py'], configOptions);
     TestUtils.validateResults(analysisResults, 1);
 });
 
-test('PyrightIgnore2', () => {
+test('ViperIgnore2', () => {
     const configOptions = new ConfigOptions(Uri.empty());
 
-    let analysisResults = TestUtils.typeAnalyzeSampleFiles(['pyrightIgnore2.py'], configOptions);
+    let analysisResults = TestUtils.typeAnalyzeSampleFiles(['viperIgnore2.py'], configOptions);
     TestUtils.validateResults(analysisResults, 2);
 
     configOptions.diagnosticRuleSet.reportUnnecessaryTypeIgnoreComment = 'warning';
-    analysisResults = TestUtils.typeAnalyzeSampleFiles(['pyrightIgnore2.py'], configOptions);
+    analysisResults = TestUtils.typeAnalyzeSampleFiles(['viperIgnore2.py'], configOptions);
     TestUtils.validateResults(analysisResults, 2, 3);
 });
 
-test('PyrightComment1', () => {
+test('ViperComment1', () => {
     const configOptions = new ConfigOptions(Uri.empty());
 
-    const analysisResults = TestUtils.typeAnalyzeSampleFiles(['pyrightComment1.py'], configOptions);
+    const analysisResults = TestUtils.typeAnalyzeSampleFiles(['viperComment1.py'], configOptions);
     TestUtils.validateResults(analysisResults, 9);
 });
 

@@ -1,7 +1,7 @@
 /*
  * server.ts
  *
- * Implements pyright language server.
+ * Implements viper language server.
  */
 
 import {
@@ -39,13 +39,13 @@ import { Uri } from './common/uri/uri';
 import { getRootUri } from './common/uri/uriUtils';
 import { LanguageServerBase } from './languageServerBase';
 import { CodeActionProvider } from './languageService/codeActionProvider';
-import { PyrightFileSystem } from './pyrightFileSystem';
+import { ViperFileSystem } from './viperFileSystem';
 import { WellKnownWorkspaceKinds, Workspace } from './workspaceFactory';
 import { PartialStubService } from './partialStubService';
 
 const maxAnalysisTimeInForeground = { openFilesTimeInMs: 50, noOpenFilesTimeInMs: 200 };
 
-export class PyrightServer extends LanguageServerBase {
+export class ViperServer extends LanguageServerBase {
     private _controller: CommandController;
 
     constructor(connection: Connection, maxWorkers: number, realFileSystem?: FileSystem) {
@@ -56,12 +56,12 @@ export class PyrightServer extends LanguageServerBase {
         const console = new ConsoleWithLogLevel(connection.console);
         const fileWatcherProvider = new WorkspaceFileWatcherProvider();
         const fileSystem = realFileSystem ?? createFromRealFileSystem(tempFile, console, fileWatcherProvider);
-        const pyrightFs = new PyrightFileSystem(fileSystem);
+        const viperFs = new ViperFileSystem(fileSystem);
         const cacheManager = new CacheManager(maxWorkers);
-        const partialStubService = new PartialStubService(pyrightFs);
+        const partialStubService = new PartialStubService(viperFs);
 
         const serviceProvider = createServiceProvider(
-            pyrightFs,
+            viperFs,
             tempFile,
             console,
             cacheManager,
@@ -69,15 +69,15 @@ export class PyrightServer extends LanguageServerBase {
             new FileBasedCancellationProvider('bg')
         );
 
-        // When executed from CLI command (pyright-langserver), __rootDirectory is
+        // When executed from CLI command (vipeye-langserver), __rootDirectory is
         // already defined. When executed from VSCode extension, rootDirectory should
         // be __dirname.
         const rootDirectory: Uri = getRootUri(serviceProvider) || Uri.file(__dirname, serviceProvider);
-        const realPathRoot = pyrightFs.realCasePath(rootDirectory);
+        const realPathRoot = viperFs.realCasePath(rootDirectory);
 
         super(
             {
-                productName: 'Pyright',
+                productName: 'Vipeye',
                 rootDirectory: realPathRoot,
                 version,
                 serviceProvider,
@@ -267,7 +267,7 @@ export class PyrightServer extends LanguageServerBase {
                         })
                         .catch(() => {});
                 } else {
-                    this.connection.sendNotification('pyright/beginProgress');
+                    this.connection.sendNotification('viper/beginProgress');
                 }
             },
             report: (message: string) => {
@@ -278,7 +278,7 @@ export class PyrightServer extends LanguageServerBase {
                         })
                         .catch(() => {});
                 } else {
-                    this.connection.sendNotification('pyright/reportProgress', message);
+                    this.connection.sendNotification('viper/reportProgress', message);
                 }
             },
             end: () => {
@@ -291,7 +291,7 @@ export class PyrightServer extends LanguageServerBase {
                         .catch(() => {});
                     workDoneProgress = undefined;
                 } else {
-                    this.connection.sendNotification('pyright/endProgress');
+                    this.connection.sendNotification('viper/endProgress');
                 }
             },
         };

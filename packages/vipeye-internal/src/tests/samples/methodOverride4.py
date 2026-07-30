@@ -1,7 +1,7 @@
 # This sample tests the handling of methods that combine TypeVars
 # from a class and local method TypeVars in an override.
 
-# pyright: strict
+# viper: strict
 
 from abc import abstractmethod
 from typing import Callable, Generic, TypeVar

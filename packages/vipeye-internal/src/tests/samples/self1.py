@@ -1,7 +1,7 @@
 # This sample tests various error conditions for the Self type
 
 from typing import Callable, Generic, TypeVar
-from typing_extensions import Self  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import Self  # viper: ignore[reportMissingModuleSource]
 
 
 T = TypeVar("T")

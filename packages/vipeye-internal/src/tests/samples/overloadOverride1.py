@@ -1,7 +1,7 @@
 # This sample tests the case where a base class method is overridden
 # in a derived class with an overloaded method.
 
-# pyright: reportIncompatibleMethodOverride=true
+# viper: reportIncompatibleMethodOverride=true
 
 from typing import overload
 

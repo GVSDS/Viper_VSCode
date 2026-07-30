@@ -2,7 +2,7 @@
 # types cannot be after TypeVars with default types.
 
 from typing import Generic
-from typing_extensions import TypeVar, TypeVarTuple  # pyright: ignore[reportMissingModuleSource]
+from typing_extensions import TypeVar, TypeVarTuple  # viper: ignore[reportMissingModuleSource]
 
 
 T0 = TypeVar("T0", default=object)

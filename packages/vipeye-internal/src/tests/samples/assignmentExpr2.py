@@ -1,7 +1,7 @@
 # This sample tests the Python 3.8 assignment expressions. This sample
 # is taken from PEP 257.
 
-# pyright: reportUnusedExpression=false
+# viper: reportUnusedExpression=false
 
 import re
 

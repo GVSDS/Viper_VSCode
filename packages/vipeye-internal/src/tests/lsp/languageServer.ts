@@ -21,7 +21,7 @@ import { FileSystemEntries, resolvePaths } from '../../common/pathUtils';
 import { ServiceProvider } from '../../common/serviceProvider';
 import { Uri } from '../../common/uri/uri';
 import { parseTestData } from '../harness/fourslash/fourSlashParser';
-import * as PyrightTestHost from '../harness/testHost';
+import * as ViperTestHost from '../harness/testHost';
 import { clearCache } from '../harness/vfs/factory';
 
 import { IPythonMode } from '../../analyzer/sourceFile';
@@ -33,8 +33,8 @@ import { FileSystem } from '../../common/fileSystem';
 import { ServerSettings } from '../../common/languageServerInterface';
 import { PythonVersion } from '../../common/pythonVersion';
 import { ServiceKeys } from '../../common/serviceKeys';
-import { PyrightFileSystem } from '../../pyrightFileSystem';
-import { PyrightServer } from '../../server';
+import { ViperFileSystem } from '../../viperFileSystem';
+import { ViperServer } from '../../server';
 import { InitStatus, Workspace } from '../../workspaceFactory';
 import { CustomLSP } from './customLsp';
 import {
@@ -61,8 +61,8 @@ function getCommonRoot(files: Uri[]) {
     return root;
 }
 
-class TestPyrightHost implements PyrightTestHost.TestHost {
-    constructor(private _host: PyrightTestHost.TestHost) {}
+class TestViperHost implements ViperTestHost.TestHost {
+    constructor(private _host: ViperTestHost.TestHost) {}
     useCaseSensitiveFileNames(): boolean {
         return this._host.useCaseSensitiveFileNames();
     }
@@ -125,12 +125,12 @@ function createTestHost(testServerData: CustomLSP.TestServerStartOptions) {
     clearCache();
 
     // create a test file system using the test data.
-    const fs = createFileSystem(commonRoot, testData, new TestPyrightHost(PyrightTestHost.HOST));
+    const fs = createFileSystem(commonRoot, testData, new TestViperHost(ViperTestHost.HOST));
 
     return new TestHost(fs, fs, testData, projectRootPaths, options);
 }
 
-class TestServer extends PyrightServer {
+class TestServer extends ViperServer {
     private static _currentId = 0;
     private _id = TestServer._currentId++;
     constructor(
@@ -199,7 +199,7 @@ async function runServer(
     };
 
     try {
-        // Create a host so we can control the file system for the PyrightServer.
+        // Create a host so we can control the file system for the ViperServer.
         const disposables: Disposable[] = [];
         const host = createTestHost(testServerData);
         const server = new TestServer(connection, host.fs, testServerData.backgroundAnalysis);
@@ -393,7 +393,7 @@ async function runTestBackgroundThread() {
         // the host's file system. Has to be sync so that we don't
         // drop any messages sent to the background thread.
         const host = createTestHost(options);
-        const fs = new PyrightFileSystem(host.fs);
+        const fs = new ViperFileSystem(host.fs);
         const serviceProvider = new ServiceProvider();
         serviceProvider.add(ServiceKeys.fs, fs);
 

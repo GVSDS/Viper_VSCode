@@ -1,5 +1,0 @@
-Content-Length: 119
-
-{"jsonrpc":"2.0","method":"window/logMessage","params":{"type":3,"message":"Pyright language server 1.1.411 starting"}}Content-Length: 180
-
-{"jsonrpc":"2.0","method":"window/logMessage","params":{"type":3,"message":"Server root directory: file:///d%3A/Users/TermiNexus/Desktop/Viper_VSCode/packages/vscode-vipeye/dist"}}

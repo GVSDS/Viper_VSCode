@@ -164,6 +164,7 @@ import {
     isOverloaded,
     isParamSpec,
     isPossiblyUnbound,
+    isPureCModifierType,
     isTypeSame,
     isTypeVar,
     isTypeVarTuple,
@@ -4789,7 +4790,14 @@ export class Checker extends ParseTreeWalker {
             // The types of all return statement expressions were already checked
             // against the declared type, but we need to verify the implicit None
             // at the end of the function.
-            if (declaredReturnType && !functionNeverReturns && implicitlyReturnsNone) {
+            // Viper 扩展：返回类型包含 C 声明标记（t.State 等，等价 CExport | CExtern）
+            // 视为声明性函数（C extern 声明，如 w32 API 的 BOOL | t.State: pass），不要求返回值。
+            const isPureModifierReturn =
+                IsViperDialect(this._fileInfo.executionEnvironment.dialect) &&
+                declaredReturnType !== undefined &&
+                isPureCModifierType(declaredReturnType);
+
+            if (declaredReturnType && !functionNeverReturns && implicitlyReturnsNone && !isPureModifierReturn) {
                 if (isNever(declaredReturnType)) {
                     // If the function consists entirely of "...", assume that it's
                     // an abstract method or a protocol method and don't require that
@@ -4980,9 +4988,15 @@ export class Checker extends ParseTreeWalker {
             }
 
             // Enum members should not have type annotations.
+            // Viper 扩展：CEnum 子类允许类型注解成员（如 FR_OK: t.State = 0），
+            // 跳过此错误报告。
             const typedDecls = symbol.getTypedDeclarations();
             if (typedDecls.length > 0) {
-                if (typedDecls[0].type === DeclarationType.Variable && typedDecls[0].inferredTypeSource) {
+                if (
+                    !IsViperDialect(this._fileInfo.executionEnvironment.dialect) &&
+                    typedDecls[0].type === DeclarationType.Variable &&
+                    typedDecls[0].inferredTypeSource
+                ) {
                     this._evaluator.addDiagnostic(
                         DiagnosticRule.reportGeneralTypeIssues,
                         LocMessage.enumMemberTypeAnnotation(),
@@ -5009,7 +5023,8 @@ export class Checker extends ParseTreeWalker {
             }
 
             // Look for an enum attribute annotated with "Final".
-            if (decls[0].isFinal) {
+            // Viper 扩展：CEnum 子类允许类型注解成员，跳过 Final 注解错误。
+            if (decls[0].isFinal && !IsViperDialect(this._fileInfo.executionEnvironment.dialect)) {
                 this._evaluator.addDiagnostic(
                     DiagnosticRule.reportGeneralTypeIssues,
                     LocMessage.enumMemberTypeAnnotation(),

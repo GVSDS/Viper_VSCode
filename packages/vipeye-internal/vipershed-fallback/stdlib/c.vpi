@@ -2,13 +2,14 @@
 # 所有函数返回值类型姑息映射为 Python 类型。
 
 from typing import Any, TypeVar
+import t
 
 T = TypeVar('T')
 
 
-def Addr(x: T) -> int:
-    """取地址 &x，返回指针（int）。"""
-    return 0
+def Addr(x: T) -> t.CPtr[T]:
+    """取地址 &x，返回指向 T 的指针（&x）。"""
+    ...
 
 def Deref(ptr: int) -> T:
     """解引用 *ptr。"""

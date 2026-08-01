@@ -8,6 +8,7 @@
  */
 
 import { assert } from '../common/debug';
+import { IsViperDialect } from '../common/dialect';
 import { PythonVersion, pythonVersion3_13 } from '../common/pythonVersion';
 import { ArgCategory, ExpressionNode, NameNode, ParseNode, ParseNodeType } from '../parser/parseNodes';
 import { getFileInfo } from './analyzerNodeInfo';
@@ -380,10 +381,24 @@ export function transformTypeForEnumMember(
             nameNode.parent?.nodeType === ParseNodeType.TypeAnnotation &&
             nameNode.parent.d.valueExpr === nameNode
         ) {
-            if (ignoreAnnotation) {
+            // Viper 扩展：CEnum 子类的类型注解成员始终视为枚举成员。
+            // Python 的 Enum 要求成员有赋值（如 RED = 1），但 Viper 的 CEnum
+            // 允许只用类型注解声明成员（如 RES_PARERR: State）。
+            // 在 Viper 方言下，无论 ignoreAnnotation 如何，都设置 isMemberOfEnumeration = true。
+            if (ignoreAnnotation || IsViperDialect(getFileInfo(nameNode).executionEnvironment.dialect)) {
                 isMemberOfEnumeration = true;
             }
             declaredTypeNode = nameNode.parent.d.annotation;
+
+            // Viper 扩展：处理"类型注解 + 赋值"组合（如 FR_OK: t.State = 0）。
+            // 当 TypeAnnotation 的 parent 是 Assignment 时，提取赋值右侧表达式，
+            // 使 assignedType 能正确评估（如 0 → int）。declaredType（t.State）仍优先。
+            if (
+                nameNode.parent.parent?.nodeType === ParseNodeType.Assignment &&
+                nameNode.parent.parent.d.leftExpr === nameNode.parent
+            ) {
+                valueTypeExprNode = nameNode.parent.parent.d.rightExpr;
+            }
         }
 
         // The spec specifically excludes names that start and end with a single underscore.

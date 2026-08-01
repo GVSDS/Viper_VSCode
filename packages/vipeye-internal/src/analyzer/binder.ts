@@ -21,6 +21,7 @@ import { DiagnosticLevel } from '../common/configOptions';
 import { assert, assertNever, fail } from '../common/debug';
 import { CreateTypeStubFileAction, Diagnostic } from '../common/diagnostic';
 import { DiagnosticRule } from '../common/diagnosticRules';
+import { IsViperDialect } from '../common/dialect';
 import { stripFileExtension } from '../common/pathUtils';
 import { convertTextRangeToRange } from '../common/positionUtils';
 import { TextRange, getEmptyRange } from '../common/textRange';
@@ -424,6 +425,26 @@ export class Binder extends ParseTreeWalker {
                 node
             );
             return true;
+        }
+
+        // Viper 扩展：命名空间包（目录无 __init__.vp）标黄警告"疑似未完成"。
+        // Viper 是 AOT 静态语言，__init__.vp 缺失可能意味着模块未编写完整。
+        // 仅当导入的最终目标是目录（而非具体文件）时才标黄。
+        const lastResolvedUri = importResult.resolvedUris[importResult.resolvedUris.length - 1];
+        const isFinalTargetDirectory = !lastResolvedUri || lastResolvedUri.isEmpty();
+        if (
+            importResult.isImportFound &&
+            importResult.isNamespacePackage &&
+            isFinalTargetDirectory &&
+            IsViperDialect(this._fileInfo.executionEnvironment.dialect)
+        ) {
+            this._fileInfo.diagnosticSink.addDiagnosticWithTextRange(
+                'warning',
+                LocMessage.viperNamespacePackageIncomplete().format({
+                    importName: importResult.importName,
+                }),
+                node
+            );
         }
 
         // See if a source file was found but it's not part of a py.typed

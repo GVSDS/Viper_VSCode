@@ -1,1 +1,4 @@
 # _typeshed 占位。
+# 定义 NoneType 供类型求值器使用（getNoneType() 通过 _typeshed.NoneType 查找）。
+# 直接定义而非从 types 导入，避免 _typeshed ↔ types 循环导入。
+class NoneType: ...

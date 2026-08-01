@@ -844,6 +844,89 @@ export function getEvaluationNodeForAssignmentExpression(
     return undefined;
 }
 
+// Determines whether `node` sits within the annotation sub-tree of a class
+// member type annotation (e.g. the `t.CInt` part of `id: t.CInt`, including
+// nested sub-expressions such as `sheet` in `sheet: sheet.Sheet | t.CPtr`).
+//
+// Per PEP 526, such annotations are evaluated in the class's enclosing scope,
+// not the class scope itself, so a member name never shadows a module-level
+// import while the annotation is being resolved. The member name node itself
+// (`valueExpr`) and any nodes inside a nested method body are excluded.
+function isInClassMemberTypeAnnotation(node: ParseNode): boolean {
+    let curNode: ParseNode | undefined = node;
+    while (curNode) {
+        const parent = curNode.parent;
+        if (
+            parent?.nodeType === ParseNodeType.TypeAnnotation &&
+            parent.d.annotation === curNode
+        ) {
+            // curNode is the annotation expression (or a descendant reached via
+            // the loop below). Verify the TypeAnnotation lives directly in a
+            // class suite (not inside a nested function).
+            let ancestor: ParseNode | undefined = parent.parent;
+            while (ancestor) {
+                if (ancestor.nodeType === ParseNodeType.Function) {
+                    return false;
+                }
+                if (ancestor.nodeType === ParseNodeType.Class) {
+                    return true;
+                }
+                ancestor = ancestor.parent;
+            }
+            return false;
+        }
+        curNode = parent;
+    }
+    return false;
+}
+
+// Per PEP 526 and Viper's scoping rules, annotations on a method's signature
+// (parameter annotations and the return annotation) are evaluated in the
+// class's enclosing scope, not the class scope. This mirrors the treatment of
+// class member variable annotations: a module-level import whose name matches
+// a class member must not be shadowed by that member while resolving the
+// method signature. Annotations inside the method *body* (e.g. local variable
+// annotations) are unaffected because they use the function scope, which
+// already skips the class scope during name lookup.
+function isInClassMethodSignatureAnnotation(node: ParseNode): boolean {
+    let curNode: ParseNode | undefined = node;
+    let funcNode: ParseNode | undefined;
+
+    // Walk up to find whether the node lives within a parameter annotation or
+    // a function return annotation.
+    while (curNode) {
+        const parent = curNode.parent;
+        if (parent?.nodeType === ParseNodeType.Parameter && parent.d.annotation === curNode) {
+            // Parameter annotation: the enclosing function is the parameter's parent.
+            funcNode = parent.parent ?? undefined;
+            break;
+        }
+        if (parent?.nodeType === ParseNodeType.Function && parent.d.returnAnnotation === curNode) {
+            funcNode = parent;
+            break;
+        }
+        curNode = parent;
+    }
+
+    if (!funcNode || funcNode.nodeType !== ParseNodeType.Function) {
+        return false;
+    }
+
+    // The function must be a direct member of a class (not a nested function
+    // inside a method body, and not a module-level function).
+    let ancestor: ParseNode | undefined = funcNode.parent;
+    while (ancestor) {
+        if (ancestor.nodeType === ParseNodeType.Function) {
+            return false;
+        }
+        if (ancestor.nodeType === ParseNodeType.Class) {
+            return true;
+        }
+        ancestor = ancestor.parent;
+    }
+    return false;
+}
+
 // Returns the parse node corresponding to the scope that is used to evaluate
 // a symbol referenced in the specified node.
 export function getEvaluationScopeNode(node: ParseNode): EvaluationScopeInfo {
@@ -945,8 +1028,31 @@ export function getEvaluationScopeNode(node: ParseNode): EvaluationScopeInfo {
                 }
 
                 if (prevNode === curNode.d.suite) {
+                    // PEP 526: class member type annotations (e.g. the `t.CInt`
+                    // in `id: t.CInt`, or `sheet.Sheet | t.CPtr` in
+                    // `sheet: sheet.Sheet | t.CPtr`) are evaluated in the
+                    // class's enclosing scope, not the class scope. Otherwise a
+                    // module-level import whose name matches a member being
+                    // declared would be shadowed by that member, breaking the
+                    // annotation. Only the annotation sub-tree is affected;
+                    // the member name itself and all other class-body nodes
+                    // continue to use the class scope.
+                    if (isInClassMemberTypeAnnotation(node) || isInClassMethodSignatureAnnotation(node)) {
+                        if (curNode.d.typeParams) {
+                            const scopeNode = curNode.d.typeParams;
+                            if (getScope(scopeNode) !== undefined) {
+                                return {
+                                    node: scopeNode,
+                                    useChainedModuleLevelScopes: true,
+                                };
+                            }
+                        }
+                        break;
+                    }
+
+                    // All other nodes within the class suite use the class scope.
                     if (getScope(curNode) !== undefined) {
-                        return { node: curNode };
+                        return { node: curNode, useChainedModuleLevelScopes: true };
                     }
                 }
 

@@ -67,6 +67,7 @@ import {
     findConfigFileHereOrUp,
     findPyprojectTomlFile,
     findPyprojectTomlFileHereOrUp,
+    findVpjInChildDirs,
 } from './serviceUtils';
 import { SourceEnumerator } from './sourceEnumerator';
 import { IPythonMode } from './sourceFile';
@@ -830,6 +831,14 @@ export class AnalyzerService {
             // In a project-based IDE like VS Code, we should assume that the
             // project root directory contains the config file.
             configFilePath = findConfigFile(this.fs, projectRoot);
+
+            // Viper 扩展：LSP 模式下，如果工作区根没有配置文件，扫描一级子目录查找 .vpj。
+            // 支持工作区根（如 Viper_VSCode）包含子项目（如 Test/project.vpj）的场景。
+            // 找到 .vpj 后，projectRoot 调整为 .vpj 所在目录（后续 L842 逻辑），
+            // .vpj 的 includes 会被 _initializeFromViperProjectJson 解析为 defaultExtraPaths。
+            if (!configFilePath && commandLineOptions.fromLanguageServer) {
+                configFilePath = findVpjInChildDirs(this.fs, projectRoot);
+            }
 
             // If viper is being executed from the command line, the working
             // directory may be deep within a project, and we need to walk up the

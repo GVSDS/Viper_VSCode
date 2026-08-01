@@ -3207,6 +3207,48 @@ export function isCPtrType(type: Type): boolean {
     );
 }
 
+// Viper 扩展：计算类型的指针级数（仅对 CPtr 实例类型有效）。
+// 语义：
+//   - 非 CPtr 实例（值类型/整数/CVoid 等）→ 0 级
+//   - CPtr 实例（无 typeArgs 或 typeArgs[0] 非 CPtr）→ 1 级（如 CPtr、CPtr[CInt]）
+//   - CPtr[CPtr[...]] → 递归 +1（如 CPtr[CPtr[CInt]] 为 2 级，即 int**）
+// 用于 assignType 中的跨级指针隐式转换检查：禁止 src 级数 > dest 最大级数。
+// 注意：仅处理 instance 形式（构造调用返回与赋值比较的都是 instance）。
+export function getCPtrLevel(type: Type): number {
+    if (!isClassInstance(type) || !isCPtrType(type)) {
+        return 0;
+    }
+    const typeArgs = type.priv.typeArgs;
+    if (!typeArgs || typeArgs.length === 0) {
+        return 1;
+    }
+    const inner = typeArgs[0];
+    // 内层是 CPtr 实例则递归累加，否则为 1 级（CPtr[T]，T 为非指针目标类型）
+    if (isClassInstance(inner) && isCPtrType(inner)) {
+        return 1 + getCPtrLevel(inner);
+    }
+    return 1;
+}
+
+// Viper 扩展：计算类型（可能为联合类型）的最大可容纳指针级数。
+// 对联合类型（如 CVoid | CPtr）取所有子类型级数的最大值：
+//   - CVoid(0) | CPtr(1) → 最大 1 级（语义为 void*，一级指针）
+//   - CPtr[CInt](1) | CPtr[CPtr[CInt]](2) → 最大 2 级
+// 用于判断赋值目标能否容纳源的多级指针，跨级则报错。
+export function getMaxCPtrLevel(type: Type): number {
+    if (isUnion(type)) {
+        let max = 0;
+        for (const subtype of type.priv.subtypes) {
+            const lvl = getMaxCPtrLevel(subtype);
+            if (lvl > max) {
+                max = lvl;
+            }
+        }
+        return max;
+    }
+    return getCPtrLevel(type);
+}
+
 // Viper 扩展：检测类型是否为 t.CVoid（void 类型）。
 // void 在 Viper 中常作为指针的目标类型（CVoid | CPtr 表示 void*）。
 export function isCVoidType(type: Type): boolean {
@@ -3235,6 +3277,96 @@ export function isCStaticType(type: Type): boolean {
     return type.shared.name === 'CStatic' || type.shared.fullName === 't.CStatic';
 }
 
+// Viper 扩展：检测类型是否为 C 修饰符/描述符（编译时元指令，非数据类型）。
+// 这些类型在联合类型中应被过滤，只保留实际数据类型进行类型检查。
+// 依据 t.py 中 position 属性：含 PREFIX 的为修饰符（存储类/类型限定符/前缀）。
+// 特例：CDefine/CPass 虽 position=BASE，但语义是编译时元指令，也归为修饰符。
+// 注意：CUnsigned/CUnsignedChar 等是数据类型（position=BASE），不是修饰符。
+// 修饰符列表：CInline, CStatic, CConst, CExtern, CVolatile, CRegister,
+//             CExport, CAuto, CPass, CDefine, State（State 等价 CExport | CExtern）
+export function isCModifierType(type: Type): boolean {
+    if (!isClass(type)) {
+        return false;
+    }
+    const name = type.shared.name;
+    return (
+        name === 'CInline' ||
+        name === 'CStatic' ||
+        name === 'CConst' ||
+        name === 'CExtern' ||
+        name === 'CVolatile' ||
+        name === 'CRegister' ||
+        name === 'CExport' ||
+        name === 'CAuto' ||
+        name === 'CPass' ||
+        name === 'CDefine' ||
+        name === 'State'
+    );
+}
+
+// Viper 扩展：检测返回类型是否包含 C 声明标记（t.State 等修饰符）。
+// 语义：t.State 等价 CExport | CExtern，作为函数返回类型（或其一部分）时表示
+//       "声明性函数"（C extern 声明），函数体为 pass，隐式返回 None，不要求返回值。
+// 判断：单类型为 isCModifierType，或联合类型包含任意一个修饰符子类型。
+//       用 some 而非 every，使 BOOL | t.State 这类"返回 BOOL 的声明性函数"
+//       也被识别为声明标记（w32 外部函数声明的常见形式）。
+// 用于 checker 跳过返回值检查（如 def CloseHandle() -> BOOL | t.State: pass 合法），
+// 及 typeEvaluator 允许 None 赋值给包含声明标记的返回类型。
+export function isPureCModifierType(type: Type): boolean {
+    if (isUnion(type)) {
+        // 联合类型只要包含一个修饰符（如 BOOL | t.State 中的 State），
+        // 即视为声明性函数返回类型，允许 pass/None。
+        return type.priv.subtypes.some((subtype) => isPureCModifierType(subtype));
+    }
+    return isCModifierType(type);
+}
+
+// Viper 扩展：检测类型是否为 t.CEnum（enum 命名类型基类）。
+// CEnum 不是 Python 的 enum.Enum，但语义上等价：继承 CEnum 的类（如 DRESULT）
+// 应被标记为 EnumClass，使枚举成员访问（如 DRESULT.RES_PARERR）返回 DRESULT 类型，
+// 而不是成员的声明类型。注意：不能用 ClassType.isBuiltIn 判断，因为 t.CEnum
+// 来自 vipershed-fallback，没有 BuiltIn 标志。
+export function isCEnumType(type: Type): boolean {
+    if (!isClass(type)) {
+        return false;
+    }
+    return type.shared.name === 'CEnum' || type.shared.fullName === 't.CEnum';
+}
+
+// Viper 扩展：检测类型是否为 t.CEnum 的子类（包括 CEnum 本身）。
+// 通过检查 MRO 中是否包含 CEnum 来判断。用于枚举到 int 的隐式转换。
+export function isCEnumSubclassType(type: Type): boolean {
+    if (!isClass(type)) {
+        return false;
+    }
+    if (isCEnumType(type)) {
+        return true;
+    }
+    // 检查 MRO 中是否包含 CEnum
+    return type.shared.mro.some((mroType) => isClass(mroType) && isCEnumType(mroType));
+}
+
+// Viper 扩展：检测类型是否为 t.CType（C 类型基类）。
+export function isCTypeType(type: Type): boolean {
+    if (!isClass(type)) {
+        return false;
+    }
+    return type.shared.name === 'CType' || type.shared.fullName === 't.CType';
+}
+
+// Viper 扩展：检测类型是否为 t.CType 的子类（包括 CType 本身）。
+// 通过检查 MRO 中是否包含 CType 来判断。用于允许 int/float/str/bool 值
+// 赋给 CType 子类（如 `k: t.CInt = 1`），因为 C 类型在底层等价于 Python 内置类型。
+export function isCTypeSubclassType(type: Type): boolean {
+    if (!isClass(type)) {
+        return false;
+    }
+    if (isCTypeType(type)) {
+        return true;
+    }
+    return type.shared.mro.some((mroType) => isClass(mroType) && isCTypeType(mroType));
+}
+
 // Viper 扩展：检测类型是否为 Viper 整数类型。
 // Viper 中所有 C 整数类型（CInt, CUnsignedLong, CSizeT 等）都是 int 的 TypeAlias，
 // 在类型系统中解析为内置 int 类。此函数检测是否为内置 int/bytes 类
@@ -3243,12 +3375,18 @@ export function isViperIntegerType(type: Type): boolean {
     if (!isClassInstance(type)) {
         return false;
     }
-    return ClassType.isBuiltIn(type, 'int');
+    if (ClassType.isBuiltIn(type, 'int')) {
+        return true;
+    }
+    if (isCTypeSubclassType(type) && _viperCIntegerTypeNames.has(type.shared.name)) {
+        return true;
+    }
+    return false;
 }
 
 // Viper 扩展：Viper C 整数类型名称白名单。
-// 这些类型在 vipershed-fallback/stdlib/t.vpi 中定义为 TypeAlias = int，
-// 但在 Viper 语义中它们是独立的 C 整数类型，构造调用应支持指针强转语义，
+// 这些类型在 vipershed-fallback/stdlib/t.vpi 中定义为 CType 子类，
+// 在 Viper 语义中它们是独立的 C 整数类型，构造调用应支持指针强转语义，
 // 而不是走 int.__new__ 的参数类型检查。
 const _viperCIntegerTypeNames = new Set<string>([
     // 基本整数类型
@@ -3281,6 +3419,124 @@ const _viperCIntegerTypeNames = new Set<string>([
 // 并跳过 int.__new__ 的参数类型检查，实现 Viper 的指针强转语义。
 export function isViperCIntegerTypeName(name: string): boolean {
     return _viperCIntegerTypeNames.has(name);
+}
+
+// Viper 扩展：Viper C 浮点类型名称白名单。
+const _viperCFloatTypeNames = new Set<string>([
+    'CFloat', 'CDouble', 'CFloat8T', 'CFloat16T', 'CFloat32T', 'CFloat64T', 'CFloat128T',
+]);
+
+// Viper 扩展：判断类型名是否为 Viper C 浮点类型。
+// 用于协议匹配等场景，让 CType 浮点子类满足 SupportsFloat 等数值协议。
+export function isViperCFloatTypeName(name: string): boolean {
+    return _viperCFloatTypeNames.has(name);
+}
+
+// Viper 扩展：C 类型位宽映射表（单位：位）。
+// 依据 t.py 中各类型的 Size 属性。平台相关类型按 64 位默认值。
+// 用于实现 CType 子类之间的精确隐式转换规则：
+//   - 低向高（srcSize <= destSize）或同级：允许
+//   - 高向低（srcSize > destSize）：不允许
+const _viperCTypeSizeMap = new Map<string, number>([
+    // 基本整数
+    ['CChar', 8], ['CShort', 16], ['CInt', 32], ['CLong', 64], ['CLongLong', 64],
+    ['CSignedChar', 8], ['CUnsignedChar', 8], ['CUnsignedShort', 16],
+    ['CUnsignedInt', 32], ['CUnsignedLong', 64], ['CUnsignedLongLong', 64],
+    // 固定宽度整数
+    ['CInt8T', 8], ['CInt16T', 16], ['CInt32T', 32], ['CInt64T', 64],
+    ['CUInt8T', 8], ['CUInt16T', 16], ['CUInt32T', 32], ['CUInt64T', 64],
+    // 最小/最快宽度整数
+    ['CIntLeast8T', 8], ['CIntLeast16T', 16], ['CIntLeast32T', 32], ['CIntLeast64T', 64],
+    ['CUIntLeast8T', 8], ['CUIntLeast16T', 16], ['CUIntLeast32T', 32], ['CUIntLeast64T', 64],
+    ['CIntFast8T', 8], ['CIntFast16T', 16], ['CIntFast32T', 32], ['CIntFast64T', 64],
+    ['CUIntFast8T', 8], ['CUIntFast16T', 16], ['CUIntFast32T', 32], ['CUIntFast64T', 64],
+    // 最大宽度整数
+    ['CIntMaxT', 64], ['CUIntMaxT', 64],
+    // 平台相关整数
+    ['CSizeT', 64], ['CIntPtrT', 64], ['CUIntPtrT', 64], ['CPtrDiffT', 64],
+    // 布尔
+    ['CBool', 8],
+    // 宽字符
+    ['CWCharT', 32], ['CChar8T', 8], ['CChar16T', 16], ['CChar32T', 32],
+    // LLVM 简写
+    ['i1', 1], ['i8', 8], ['i16', 16], ['i32', 32], ['i64', 64],
+    ['u1', 1], ['u8', 8], ['u16', 16], ['u32', 32], ['u64', 64],
+    // 浮点
+    ['CFloat', 32], ['CDouble', 64],
+    ['CFloat8T', 8], ['CFloat16T', 16], ['CFloat32T', 32], ['CFloat64T', 64], ['CFloat128T', 128],
+    // void
+    ['CVoid', 0],
+]);
+
+// Viper 扩展：判断 CType 子类之间的隐式转换是否合法。
+// 规则：
+//   1. 整数 → 整数：srcSize <= destSize 允许（低向高或同级），否则不允许
+//   2. 浮点 → 浮点：srcSize <= destSize 允许
+//   3. 整数 → 浮点：destSize >= srcSize 允许（无损）
+//   4. 浮点 → 整数：不允许（有损）
+//   5. 同级指针（都是 CPtr 子类）：允许不同类型转换
+//   6. 不同级（一个是指针，另一个不是）：不允许
+//   7. 未知位宽：保守允许（避免误报）
+export function canImplicitlyConvertCType(srcType: Type, destType: Type): boolean {
+    if (!isClassInstance(srcType) || !isClassInstance(destType)) {
+        return false;
+    }
+
+    const srcName = srcType.shared.name;
+    const destName = destType.shared.name;
+
+    // 同类型，允许
+    if (srcName === destName) {
+        return true;
+    }
+
+    // 指针规则：同级指针（都是 CPtr 子类）允许，不同级不允许
+    const srcIsPtr = isCPtrType(srcType);
+    const destIsPtr = isCPtrType(destType);
+    if (srcIsPtr && destIsPtr) {
+        return true;
+    }
+    if (srcIsPtr !== destIsPtr) {
+        return false;
+    }
+
+    const srcSize = _viperCTypeSizeMap.get(srcName);
+    const destSize = _viperCTypeSizeMap.get(destName);
+
+    // 未知位宽，保守允许
+    if (srcSize === undefined || destSize === undefined) {
+        return true;
+    }
+
+    const srcIsInt = _viperCIntegerTypeNames.has(srcName);
+    const destIsInt = _viperCIntegerTypeNames.has(destName);
+    const srcIsFloat = _viperCFloatTypeNames.has(srcName);
+    const destIsFloat = _viperCFloatTypeNames.has(destName);
+
+    // 整数 → 整数：允许所有方向（C 语义，高向低可安全降级）
+    // Viper 中所有 C 整数类型在底层等价于 int，整数间的隐式转换
+    // 无论位宽大小都可安全进行（如 CUInt64T → CInt 高向低降级）。
+    if (srcIsInt && destIsInt) {
+        return true;
+    }
+
+    // 浮点 → 浮点：允许所有方向（C 语义，高向低可安全降级）
+    if (srcIsFloat && destIsFloat) {
+        return true;
+    }
+
+    // 整数 → 浮点：浮点位宽 >= 整数位宽时允许（无损）
+    if (srcIsInt && destIsFloat) {
+        return destSize >= srcSize;
+    }
+
+    // 浮点 → 整数：不允许（有损）
+    if (srcIsFloat && destIsInt) {
+        return false;
+    }
+
+    // 其他情况（void 等），保守允许
+    return true;
 }
 
 export function isAny(type: Type): type is AnyType {
@@ -3870,6 +4126,23 @@ export function combineTypes(subtypes: Type[], options?: CombineTypesOptions): T
         const nonCDefineTypes = subtypes.filter((t) => !isCDefineType(t));
         if (nonCDefineTypes.length > 0 && nonCDefineTypes.length < subtypes.length) {
             subtypes = nonCDefineTypes;
+        }
+    }
+
+    // Viper 扩展：过滤联合类型中的 C 修饰符/描述符（编译时元指令）。
+    // 语义：CInline | CInt = CInt（修饰符是编译时元指令，按数据类型规则检查）。
+    // 覆盖修饰符：CInline, CStatic, CConst, CExtern, CVolatile, CRegister,
+    //             CExport, CAuto, CPass（CDefine 已由上方专门逻辑处理）。
+    // 例外：State 不过滤——State 是声明标记（C extern 语义），非类型修饰符。
+    //       保留 State 使 isPureCModifierType 能识别声明性函数返回类型
+    //       （如 BOOL | t.State: pass 的 extern 声明，过滤后仍为 BOOL | State 联合类型）。
+    // 若过滤后无剩余类型，则保留原数组（避免空数组异常）。
+    if (subtypes.length > 1) {
+        const nonModifierTypes = subtypes.filter(
+            (t) => !isCModifierType(t) || (isClass(t) && t.shared.name === 'State')
+        );
+        if (nonModifierTypes.length > 0 && nonModifierTypes.length < subtypes.length) {
+            subtypes = nonModifierTypes;
         }
     }
 

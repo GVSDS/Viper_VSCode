@@ -69,6 +69,32 @@ export function findVpjFileInDir(fs: ReadOnlyFileSystem, dirUri: Uri): Uri | und
     return undefined;
 }
 
+// Viper 扩展：在目录的一级子目录中查找 .vpj 文件。
+// 用于 LSP 模式下工作区根（如 Viper_VSCode）未直接包含 .vpj，
+// 但子目录（如 Test/）包含 Viper 项目配置的场景。
+// 仅扫描一级子目录（非递归），避免深层遍历开销。
+// 失败时返回 undefined。
+export function findVpjInChildDirs(fs: ReadOnlyFileSystem, dirUri: Uri): Uri | undefined {
+    try {
+        if (!fs.existsSync(dirUri)) {
+            return undefined;
+        }
+        const entries = fs.readdirEntriesSync(dirUri);
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                const childDir = dirUri.resolvePaths(entry.name);
+                const vpjFile = findVpjFileInDir(fs, childDir);
+                if (vpjFile) {
+                    return vpjFile;
+                }
+            }
+        }
+    } catch {
+        // 读取目录失败：跳过
+    }
+    return undefined;
+}
+
 // 校验 project.json / project.vpj 是否为 Viper（TransPyC）项目配置。
 // project.json 是常见文件名，仅当含 source_dir / compiler / linker 之一时才视为 Viper 配置。
 // 读取或解析失败时按非 Viper 项目处理，返回 false。

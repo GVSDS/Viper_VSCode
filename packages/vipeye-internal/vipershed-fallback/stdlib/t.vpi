@@ -1,8 +1,9 @@
 # Viper 类型系统模块 t 的存根。
 #
-# 姑息策略（完善版）：
-#   - 基本数值/字符类型使用 TypeAlias 别名（等价 Python 内置类型），
-#     使 `k: t.CInt = 1` 合法（1 是 int，CInt 别名 int）
+# 类型策略：
+#   - 所有 C 类型作为独立 class 继承 CType，保留类型语义信息（绿色高亮）。
+#   - typeEvaluator 中的 Viper 扩展允许 int/float/str/bool 值赋给 CType 子类，
+#     使 `k: t.CInt = 1` 合法（1 是 int，CInt 在底层等价 int）。
 #   - 指针/修饰符/命名类型作为独立 class 继承 CType，
 #     保持"类型"语义（绿色高亮）和联合类型 `T | t.CPtr` 支持
 #   - CPtr 支持泛型下标 `t.CPtr[t.CInt]`
@@ -15,6 +16,7 @@ from typing import Any, Generic, Optional, Type, TypeAlias, TypeVar
 from typing import Callable as CallableT
 
 T = TypeVar('T')
+N = TypeVar('N')
 
 
 # =============================================================================
@@ -57,90 +59,280 @@ class CTypeDefault(CType):
 
 
 # =============================================================================
-# 基本整数类型（TypeAlias 别名，等价 int）
+# 基本整数类型（独立 class，继承 CType）
+# Viper 语义：C 整数类型在底层等价于 int，但作为独立类型保留语义信息。
+# typeEvaluator 中的 Viper 扩展允许 int 值赋给 CType 子类。
 # =============================================================================
-CChar: TypeAlias = int
-CShort: TypeAlias = int
-CInt: TypeAlias = int
-CLong: TypeAlias = int
-CLongLong: TypeAlias = int
-CSignedChar: TypeAlias = int
-CUnsignedChar: TypeAlias = int
-CUnsignedShort: TypeAlias = int
-CUnsignedInt: TypeAlias = int
-CUnsignedLong: TypeAlias = int
-CUnsignedLongLong: TypeAlias = int
+class CChar(CType):
+    """char 类型。"""
+    pass
+
+class CShort(CType):
+    """short 类型。"""
+    pass
+
+class CInt(CType):
+    """int 类型。"""
+    pass
+
+class CLong(CType):
+    """long 类型。"""
+    pass
+
+class CLongLong(CType):
+    """long long 类型。"""
+    pass
+
+class CSignedChar(CType):
+    """signed char 类型。"""
+    pass
+
+class CUnsignedChar(CType):
+    """unsigned char 类型。"""
+    pass
+
+class CUnsignedShort(CType):
+    """unsigned short 类型。"""
+    pass
+
+class CUnsignedInt(CType):
+    """unsigned int 类型。"""
+    pass
+
+class CUnsignedLong(CType):
+    """unsigned long 类型。"""
+    pass
+
+class CUnsignedLongLong(CType):
+    """unsigned long long 类型。"""
+    pass
+
 
 # 固定宽度整数
-CInt8T: TypeAlias = int
-CInt16T: TypeAlias = int
-CInt32T: TypeAlias = int
-CInt64T: TypeAlias = int
-CUInt8T: TypeAlias = int
-CUInt16T: TypeAlias = int
-CUInt32T: TypeAlias = int
-CUInt64T: TypeAlias = int
+class CInt8T(CType):
+    """int8_t 类型。"""
+    pass
+
+class CInt16T(CType):
+    """int16_t 类型。"""
+    pass
+
+class CInt32T(CType):
+    """int32_t 类型。"""
+    pass
+
+class CInt64T(CType):
+    """int64_t 类型。"""
+    pass
+
+class CUInt8T(CType):
+    """uint8_t 类型。"""
+    pass
+
+class CUInt16T(CType):
+    """uint16_t 类型。"""
+    pass
+
+class CUInt32T(CType):
+    """uint32_t 类型。"""
+    pass
+
+class CUInt64T(CType):
+    """uint64_t 类型。"""
+    pass
+
 
 # 最小/最快宽度整数
-CIntLeast8T: TypeAlias = int
-CIntLeast16T: TypeAlias = int
-CIntLeast32T: TypeAlias = int
-CIntLeast64T: TypeAlias = int
-CIntFast8T: TypeAlias = int
-CIntFast16T: TypeAlias = int
-CIntFast32T: TypeAlias = int
-CIntFast64T: TypeAlias = int
-CUIntLeast8T: TypeAlias = int
-CUIntLeast16T: TypeAlias = int
-CUIntLeast32T: TypeAlias = int
-CUIntLeast64T: TypeAlias = int
-CUIntFast8T: TypeAlias = int
-CUIntFast16T: TypeAlias = int
-CUIntFast32T: TypeAlias = int
-CUIntFast64T: TypeAlias = int
+class CIntLeast8T(CType):
+    """int_least8_t 类型。"""
+    pass
+
+class CIntLeast16T(CType):
+    """int_least16_t 类型。"""
+    pass
+
+class CIntLeast32T(CType):
+    """int_least32_t 类型。"""
+    pass
+
+class CIntLeast64T(CType):
+    """int_least64_t 类型。"""
+    pass
+
+class CIntFast8T(CType):
+    """int_fast8_t 类型。"""
+    pass
+
+class CIntFast16T(CType):
+    """int_fast16_t 类型。"""
+    pass
+
+class CIntFast32T(CType):
+    """int_fast32_t 类型。"""
+    pass
+
+class CIntFast64T(CType):
+    """int_fast64_t 类型。"""
+    pass
+
+class CUIntLeast8T(CType):
+    """uint_least8_t 类型。"""
+    pass
+
+class CUIntLeast16T(CType):
+    """uint_least16_t 类型。"""
+    pass
+
+class CUIntLeast32T(CType):
+    """uint_least32_t 类型。"""
+    pass
+
+class CUIntLeast64T(CType):
+    """uint_least64_t 类型。"""
+    pass
+
+class CUIntFast8T(CType):
+    """uint_fast8_t 类型。"""
+    pass
+
+class CUIntFast16T(CType):
+    """uint_fast16_t 类型。"""
+    pass
+
+class CUIntFast32T(CType):
+    """uint_fast32_t 类型。"""
+    pass
+
+class CUIntFast64T(CType):
+    """uint_fast64_t 类型。"""
+    pass
+
 
 # 最大宽度整数
-CIntMaxT: TypeAlias = int
-CUIntMaxT: TypeAlias = int
+class CIntMaxT(CType):
+    """intmax_t 类型。"""
+    pass
+
+class CUIntMaxT(CType):
+    """uintmax_t 类型。"""
+    pass
+
 
 # 平台相关整数
-CSizeT: TypeAlias = int
-CIntPtrT: TypeAlias = int
-CUIntPtrT: TypeAlias = int
-CPtrDiffT: TypeAlias = int
+class CSizeT(CType):
+    """size_t 类型。"""
+    pass
+
+class CIntPtrT(CType):
+    """intptr_t 类型。"""
+    pass
+
+class CUIntPtrT(CType):
+    """uintptr_t 类型。"""
+    pass
+
+class CPtrDiffT(CType):
+    """ptrdiff_t 类型。"""
+    pass
+
 
 # 布尔
-CBool: TypeAlias = int
+class CBool(CType):
+    """bool 类型（_Bool）。"""
+    pass
+
 
 # 宽字符
-CWCharT: TypeAlias = int
-CChar8T: TypeAlias = int
-CChar16T: TypeAlias = int
-CChar32T: TypeAlias = int
+class CWCharT(CType):
+    """wchar_t 类型。"""
+    pass
 
-# LLVM 简写（直接作为类型别名，等价于固定宽度整数）
-i1: TypeAlias = int
-i8: TypeAlias = int
-i16: TypeAlias = int
-i32: TypeAlias = int
-i64: TypeAlias = int
-u1: TypeAlias = int
-u8: TypeAlias = int
-u16: TypeAlias = int
-u32: TypeAlias = int
-u64: TypeAlias = int
+class CChar8T(CType):
+    """char8_t 类型。"""
+    pass
+
+class CChar16T(CType):
+    """char16_t 类型。"""
+    pass
+
+class CChar32T(CType):
+    """char32_t 类型。"""
+    pass
+
+
+# LLVM 简写（独立 class，等价于固定宽度整数）
+class i1(CType):
+    """LLVM i1 类型（1 位整数）。"""
+    pass
+
+class i8(CType):
+    """LLVM i8 类型（8 位整数）。"""
+    pass
+
+class i16(CType):
+    """LLVM i16 类型（16 位整数）。"""
+    pass
+
+class i32(CType):
+    """LLVM i32 类型（32 位整数）。"""
+    pass
+
+class i64(CType):
+    """LLVM i64 类型（64 位整数）。"""
+    pass
+
+class u1(CType):
+    """LLVM u1 类型（1 位无符号整数）。"""
+    pass
+
+class u8(CType):
+    """LLVM u8 类型（8 位无符号整数）。"""
+    pass
+
+class u16(CType):
+    """LLVM u16 类型（16 位无符号整数）。"""
+    pass
+
+class u32(CType):
+    """LLVM u32 类型（32 位无符号整数）。"""
+    pass
+
+class u64(CType):
+    """LLVM u64 类型（64 位无符号整数）。"""
+    pass
 
 
 # =============================================================================
-# 浮点类型（TypeAlias 别名，等价 float）
+# 浮点类型（独立 class，继承 CType）
+# Viper 语义：C 浮点类型在底层等价于 float，但作为独立类型保留语义信息。
 # =============================================================================
-CFloat: TypeAlias = float
-CDouble: TypeAlias = float
-CFloat8T: TypeAlias = float
-CFloat16T: TypeAlias = float
-CFloat32T: TypeAlias = float
-CFloat64T: TypeAlias = float
-CFloat128T: TypeAlias = float
+class CFloat(CType):
+    """float 类型。"""
+    pass
+
+class CDouble(CType):
+    """double 类型。"""
+    pass
+
+class CFloat8T(CType):
+    """_Float8 类型。"""
+    pass
+
+class CFloat16T(CType):
+    """_Float16 类型。"""
+    pass
+
+class CFloat32T(CType):
+    """_Float32 类型。"""
+    pass
+
+class CFloat64T(CType):
+    """_Float64 类型。"""
+    pass
+
+class CFloat128T(CType):
+    """_Float128 类型。"""
+    pass
 
 
 # =============================================================================
@@ -181,14 +373,15 @@ class CArrayPtr(CType):
 # =============================================================================
 # 数组类型（支持下标）
 # =============================================================================
-class CArray(CType):
+class CArray(CType, Generic[T, N]):
     """栈上固定数组类型注解。
     用法: names: t.CArray[VOIDPTR, 32]  # void*[32]
           data: t.CArray[t.CInt, 64]    # int[64]
+    T 为元素类型，N 为数组长度（整数）。
     """
     def __class_getitem__(cls, item: Any) -> type: ...
-    def __getitem__(self, index: int) -> Any: ...
-    def __setitem__(self, index: int, value: Any) -> None: ...
+    def __getitem__(self, index: int) -> T: ...
+    def __setitem__(self, index: int, value: T) -> None: ...
 
 
 # =============================================================================
@@ -625,9 +818,9 @@ class ASM_DESCR:
 # =============================================================================
 # 函数指针
 # =============================================================================
-class Callable(CType):
-    """函数指针类型。"""
-    pass
+# Viper 的 Callable 等价于 typing.Callable，支持 Callable[[], TReturn] 订阅语法。
+# 直接赋值（不加 TypeAlias 注解），让 Pyright 识别为 typing.Callable 别名。
+Callable = CallableT
 
 
 # =============================================================================

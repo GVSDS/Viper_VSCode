@@ -40,6 +40,7 @@ import {
     StringNode,
     TypeAnnotationNode,
 } from '../parser/parseNodes';
+import { Token } from '../parser/tokenizerTypes';
 import { SemanticTokenModifiers, SemanticTokenTypes } from './semanticTokenTypes';
 
 // Node.js 文件系统模块（用于磁盘缓存）
@@ -56,11 +57,20 @@ const DISK_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
  */
 const BUILTIN_TYPE_NAMES = new Set<string>([
     // 基本类型（Viper 语义：int=i32, str=bytes=i8*, 等）
+    // 注意：这些类型在 semantic token 中作为 class 处理（非 builtin），
+    // 以便正确显示为 class 颜色而非 builtin 颜色。
     'int', 'str', 'bytes', 'bool', 'float', 'complex',
     'list', 'dict', 'set', 'tuple', 'frozenset', 'bytearray', 'memoryview',
     'type', 'object', 'None', 'True', 'False',
     // Viper 特有
     't', 'c',
+]);
+
+/** 内置类型类名（用于 semantic token 中作为 class 而非 builtin 处理） */
+const BUILTIN_CLASS_NAMES = new Set<string>([
+    'int', 'str', 'bytes', 'bool', 'float', 'complex',
+    'list', 'dict', 'set', 'tuple', 'frozenset', 'bytearray', 'memoryview',
+    'type', 'object',
 ]);
 
 /** LSP SemanticTokens 相对编码格式：[deltaLine, deltaStart, length, tokenType, tokenModifiers] */
@@ -146,7 +156,12 @@ export class SemanticTokenProvider {
                 return undefined;
             }
 
-            const tokens = this._collectTokens(parserOutput.parseTree, parserOutput.lines, evaluator);
+            const tokens = this._collectTokens(
+                parserOutput.parseTree,
+                parserOutput.lines,
+                evaluator,
+                parseResults.tokenizerOutput
+            );
             const data = this._encodeTokens(tokens);
 
             const entry: CacheEntry = {
@@ -214,28 +229,78 @@ export class SemanticTokenProvider {
     }
 
     /**
-     * 遍历 ParseTree 收集所有 NameNode 的语义 token。
-     * 使用 ParseTreeWalker 确保遍历完整性。
+     * 遍历 ParseTree 和 tokenizer token 流收集语义 token。
+     * ParseTree 遍历：NameNode、MemberAccess、String、Number、Decorator 等。
+     * Token 流遍历：关键字（KeywordToken）和注释（Comment）。
+     * Viper 扩展：在 TextMate 规则被清空后，通过 LSP 语义高亮为关键字和注释着色。
      */
     private _collectTokens(
         parseTree: ModuleNode,
         lines: TextRangeCollection<TextRange>,
-        evaluator: TypeEvaluator
+        evaluator: TypeEvaluator,
+        tokenizerOutput?: { tokens: TextRangeCollection<Token> }
     ): RawToken[] {
         const tokens: RawToken[] = [];
+
+        // 1. 遍历 tokenizer token 流，提取注释。
+        //    注意：关键字（def/class/pass 等）不由 LSP semantic token 处理，
+        //    而是由 TextMate 规则高亮（keyword.control.viper scope → 主题蓝色）。
+        //    这样即使 semanticTokenScopes 配置未完全加载，关键字也能正确着色。
+        if (tokenizerOutput) {
+            const tokenStream = tokenizerOutput.tokens;
+            const tokenCount = tokenStream.count;
+            for (let i = 0; i < tokenCount; i++) {
+                const tok = tokenStream.getItemAt(i);
+                // 注释（每个 token 前可能附带注释）
+                if (tok.comments) {
+                    for (const comment of tok.comments) {
+                        this._pushTokenFromRange(
+                            tokens, lines, comment.start, comment.length,
+                            SemanticTokenTypes.comment
+                        );
+                    }
+                }
+            }
+        }
+
+        // 2. 遍历 ParseTree，提取 NameNode、String、Number、Decorator 等
         const walker = new SemanticTokenWalker(evaluator, lines);
         walker.walk(parseTree);
-
-        // 按位置排序（LSP 要求）
         for (const token of walker.tokens) {
             tokens.push(token);
         }
+
+        // 按位置排序（LSP 要求）
         tokens.sort((a, b) => {
             if (a.line !== b.line) return a.line - b.line;
             return a.startChar - b.startChar;
         });
 
         return tokens;
+    }
+
+    /** 辅助：从 offset/length 创建 RawToken 并推入列表 */
+    private _pushTokenFromRange(
+        tokens: RawToken[],
+        lines: TextRangeCollection<TextRange>,
+        start: number,
+        length: number,
+        tokenType: number
+    ): void {
+        if (length <= 0) {
+            return;
+        }
+        const position = convertOffsetToPosition(start, lines);
+        if (!position) {
+            return;
+        }
+        tokens.push({
+            line: position.line,
+            startChar: position.character,
+            length,
+            tokenType,
+            tokenModifiers: 0,
+        });
     }
 
     /**
@@ -538,8 +603,11 @@ class SemanticTokenWalker extends ParseTreeWalker {
             switch (declType) {
                 case DeclarationType.Class:
                 case DeclarationType.SpecialBuiltInClass:
-                    // 内置类型（int/str/bytes 等）→ builtin 类型
-                    if (BUILTIN_TYPE_NAMES.has(nameText)) {
+                    // 内置类型类（int/str/bytes 等）→ class（非 builtin）
+                    // None/True/False/t/c 等非类型类 → builtin
+                    if (BUILTIN_CLASS_NAMES.has(nameText)) {
+                        tokenType = SemanticTokenTypes.class;
+                    } else if (BUILTIN_TYPE_NAMES.has(nameText)) {
                         tokenType = SemanticTokenTypes.builtin;
                     } else {
                         tokenType = SemanticTokenTypes.class;
@@ -576,11 +644,43 @@ class SemanticTokenWalker extends ParseTreeWalker {
                     tokenModifiers |= SemanticTokenModifiers.readonly;
                     break;
                 case DeclarationType.Variable: {
-                    // 检查是否是类型别名声明（`Name: TypeAlias = type`）
+                    // Viper 扩展：当声明被解析为 Variable 但实际类型为 Module 时，
+                    // 在类型注解上下文中实际引用的是模块名而非字段。
+                    // 覆盖场景：sheet: sheet.Sheet 中第二个 sheet 是模块名，
+                    // 但因同名字段遮蔽返回 Variable 声明。getType 返回 Module 类型。
+                    if (type && type.category === TypeCategory.Module) {
+                        tokenType = SemanticTokenTypes.namespace;
+                        tokenModifiers |= defMod;
+                        break;
+                    }
+                    // 检查是否是类型别名声明（`Name: TypeAlias = type` 或 `Name: t.CTypedef = type`）
                     const varDecl = decl as VariableDeclaration;
                     if (varDecl.typeAliasName && varDecl.typeAnnotationNode) {
                         const annNode = varDecl.typeAnnotationNode as any;
+                        // 标准 TypeAlias 注解
                         if (annNode.nodeType === ParseNodeType.Name && annNode.d?.value === 'TypeAlias') {
+                            tokenType = SemanticTokenTypes.type;
+                            tokenModifiers |= defMod;
+                            break;
+                        }
+                        // Viper 扩展：t.CTypedef 注解（MemberAccess，成员名为 CTypedef）
+                        if (
+                            annNode.nodeType === ParseNodeType.MemberAccess &&
+                            annNode.d?.member?.d?.value === 'CTypedef'
+                        ) {
+                            tokenType = SemanticTokenTypes.type;
+                            tokenModifiers |= defMod;
+                            break;
+                        }
+                    }
+                    // Viper 扩展：即使没有 typeAliasName，也检查 typeAnnotationNode 是否为 t.CTypedef
+                    // （CTypedef 声明可能不设置 typeAliasName，但仍是类型别名）
+                    if (varDecl.typeAnnotationNode) {
+                        const annNode = varDecl.typeAnnotationNode as any;
+                        if (
+                            annNode.nodeType === ParseNodeType.MemberAccess &&
+                            annNode.d?.member?.d?.value === 'CTypedef'
+                        ) {
                             tokenType = SemanticTokenTypes.type;
                             tokenModifiers |= defMod;
                             break;
@@ -599,9 +699,11 @@ class SemanticTokenWalker extends ParseTreeWalker {
                     // 根据推导类型进一步分类
                     if (type) {
                         if (type.category === TypeCategory.Class) {
-                            tokenType = BUILTIN_TYPE_NAMES.has(nameText)
-                                ? SemanticTokenTypes.builtin
-                                : SemanticTokenTypes.class;
+                            tokenType = BUILTIN_CLASS_NAMES.has(nameText)
+                                ? SemanticTokenTypes.class
+                                : (BUILTIN_TYPE_NAMES.has(nameText)
+                                    ? SemanticTokenTypes.builtin
+                                    : SemanticTokenTypes.class);
                         } else if (type.category === TypeCategory.Function ||
                                    type.category === TypeCategory.Overloaded) {
                             tokenType = SemanticTokenTypes.function;

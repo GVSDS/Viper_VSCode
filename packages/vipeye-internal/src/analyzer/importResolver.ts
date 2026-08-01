@@ -357,9 +357,19 @@ export class ImportResolver {
     getImportRoots(execEnv: ExecutionEnvironment, forLogging = false) {
         const roots = [];
 
-        // Viper 模式优先搜索 vipershed-fallback/stdlib（Viper 特有模块：t/c/stdio 等），
-        // 再搜索 typeshed-fallback/stdlib（Python 通用模块：builtins/typing 等）。
-        // typeshed root 已改为 typeshed-fallback，确保 builtins 可被隐式加载。
+        // Viper 模式：项目 includes（.vpj 中配置的真实 .vp 源文件路径）必须最优先，
+        // 让 LSP 直接解析真实源码生成注解，而非依赖预写的 .vpi 存根。
+        // The "default" workspace has a root-less execution environment; ignore it.
+        if (IsViperDialect(this._configOptions.dialect)) {
+            if (execEnv.root) {
+                roots.push(execEnv.root);
+            }
+            appendArray(roots, execEnv.extraPaths);
+        }
+
+        // vipershed-fallback/stdlib 作为回退：仅提供 t.vpi/c.vpi 等无真实 .vp 源码
+        // 的核心模块存根（t.py/c.py 是编译器实现，依赖内部模块无法被 LSP 解析）。
+        // 排在项目 includes 之后，确保有真实 .vp 的模块优先用源码。
         if (IsViperDialect(this._configOptions.dialect)) {
             const vipershed = PythonPathUtils.getVipershedFallbackPath(this.fileSystem);
             if (vipershed && !vipershed.isEmpty()) {
@@ -370,6 +380,8 @@ export class ImportResolver {
             }
         }
 
+        // typeshed-fallback/stdlib 提供 Python 通用模块（builtins/typing 等）。
+        // typeshed root 已改为 typeshed-fallback，确保 builtins 可被隐式加载。
         const stdTypeshed = this._getStdlibTypeshedPath(
             this._configOptions.typeshedPath,
             execEnv.pythonVersion,
@@ -379,12 +391,13 @@ export class ImportResolver {
             roots.push(stdTypeshed);
         }
 
-        // The "default" workspace has a root-less execution environment; ignore it.
-        if (execEnv.root) {
-            roots.push(execEnv.root);
+        // 非 Viper 模式：保持原有顺序（root 与 extraPaths 在 typeshed 之后）。
+        if (!IsViperDialect(this._configOptions.dialect)) {
+            if (execEnv.root) {
+                roots.push(execEnv.root);
+            }
+            appendArray(roots, execEnv.extraPaths);
         }
-
-        appendArray(roots, execEnv.extraPaths);
 
         if (this._configOptions.stubPath) {
             roots.push(this._configOptions.stubPath);
@@ -1546,19 +1559,14 @@ export class ImportResolver {
                         continue;
                     }
 
-                    if (IsViperDialect(execEnv.dialect)) {
-                        // Viper 模式：最后一部分目录存在但未找到模块文件
-                        // （__init__.vp 或 同名.vp），不退化为 namespace package，
-                        // 直接中断解析使 isImportFound=false，让 binder 在 import
-                        // 语句处报 reportMissingImports 错误。
-                        // Viper 是 AOT 静态语言，最终模块必须有实际源文件。
-                        importLogger?.log(`Viper import failed: directory '${dirPath}' has no module file`);
-                    } else {
-                        importLogger?.log(`Partially resolved import with directory '${dirPath}'`);
-                        resolvedPaths.push(Uri.empty());
-                        implicitImports = this.findImplicitImports(importName, dirPath, [pyFilePath, pyiFilePath]);
-                        isNamespacePackage = true;
-                    }
+                    // 最后一部分目录存在但未找到模块文件（__init__ 或同名 .vp），
+                    // 退化为 namespace package，使 isImportFound=true。
+                    // Viper 与 Python 均允许此行为：便于在编写时提示文件夹内的 .vp/.py 库。
+                    // findImplicitImports 会扫描目录内的 .vp/.vpi/.py/.pyi 文件作为隐式导入。
+                    importLogger?.log(`Partially resolved import with directory '${dirPath}'`);
+                    resolvedPaths.push(Uri.empty());
+                    implicitImports = this.findImplicitImports(importName, dirPath, [pyFilePath, pyiFilePath]);
+                    isNamespacePackage = true;
                 }
 
                 if (!pyTypedInfo && lookForPyTyped) {

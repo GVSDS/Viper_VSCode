@@ -59,10 +59,13 @@ import {
     isClass,
     isClassInstance,
     isCConstType,
+    isCDefineType,
     isCPtrType,
     isCStaticType,
+    isCTypeSubclassType,
     isCVoidType,
     isFunctionOrOverloaded,
+    isViperIntegerType,
     isInstantiableClass,
     isNever,
     isUnion,
@@ -393,7 +396,13 @@ export function getTypeOfBinaryOperation(
 
     if ((flags & EvalFlags.TypeExpression) !== 0) {
         // Exempt "|" because it might be a union operation involving unknowns.
-        if (node.d.operator !== OperatorType.BitwiseOr) {
+        // Viper 扩展：Viper 是 AOT 静态语言，类型表达式中的算术/位运算用于编译时常量
+        // （如 t.CArray[T, MAX_ORDER + 1] 的数组长度），放行不报 binaryOperationNotAllowed，
+        // 让其继续按常量表达式求值。
+        if (
+            node.d.operator !== OperatorType.BitwiseOr &&
+            !IsViperDialect(getFileInfo(node).executionEnvironment.dialect)
+        ) {
             evaluator.addDiagnostic(DiagnosticRule.reportInvalidTypeForm, LocMessage.binaryOperationNotAllowed(), node);
             return { type: UnknownType.create() };
         }
@@ -552,6 +561,24 @@ export function getTypeOfAugmentedAssignment(
                         }
 
                         const magicMethodName = operatorMap[node.d.operator][0];
+
+                        // Viper 扩展：CType 子类的增强赋值运算快速路径。
+                        // CInt/CUInt32T 等 CType 子类没有 __iadd__ 等魔法方法。
+                        // 当左操作数是 CType 子类，右操作数是 CType 子类或 Python
+                        // 内置数值/字符串类型时，直接返回左操作数类型，避免报错。
+                        // 这使得 `_next_sheet_id: t.CInt = 0; _next_sheet_id += 1` 合法。
+                        if (IsViperDialect(getFileInfo(node).executionEnvironment.dialect)) {
+                            const leftIsCType = isClassInstance(leftSubtypeUnexpanded) &&
+                                isCTypeSubclassType(leftSubtypeUnexpanded);
+                            const rightIsCType = isClassInstance(rightSubtypeUnexpanded) &&
+                                isCTypeSubclassType(rightSubtypeUnexpanded);
+                            const rightIsBuiltin = isClassInstance(rightSubtypeUnexpanded) &&
+                                ClassType.isBuiltIn(rightSubtypeUnexpanded, ['int', 'float', 'bool', 'bytes', 'str']);
+                            if (leftIsCType && (rightIsCType || rightIsBuiltin)) {
+                                return leftSubtypeUnexpanded;
+                            }
+                        }
+
                         let returnTypeResult = evaluator.getTypeOfMagicMethodCall(
                             leftSubtypeUnexpanded,
                             magicMethodName,
@@ -705,8 +732,21 @@ export function getTypeOfUnaryOperation(
         } else {
             const magicMethodName = unaryOperatorMap[node.d.operator];
             let isResultValid = true;
+            const isViperDialect = IsViperDialect(getFileInfo(node).executionEnvironment.dialect);
 
             type = evaluator.mapSubtypesExpandTypeVars(exprType, /* options */ undefined, (subtypeExpanded) => {
+                // Viper 扩展：CType 子类的一元算术/位运算。
+                // CFloat/CInt 等 CType 子类没有 __neg__/__pos__/__invert__ 魔法方法，
+                // 但在 C 语义中，一元负号/正号/按位取反对数值类型是合法的，结果类型不变。
+                if (
+                    isViperDialect &&
+                    node.d.operator !== OperatorType.Not &&
+                    isClassInstance(subtypeExpanded) &&
+                    isCTypeSubclassType(subtypeExpanded)
+                ) {
+                    return subtypeExpanded;
+                }
+
                 const typeResult = evaluator.getTypeOfMagicMethodCall(
                     subtypeExpanded,
                     magicMethodName,
@@ -1211,6 +1251,17 @@ function validateContainmentOperation(
                         return preserveUnknown(leftSubtype, rightSubtypeExpanded);
                     }
 
+                    // Viper 扩展：当右侧类型为 CPtr[T] 时，跳过 __contains__/__iter__ 检查。
+                    // C 语义中指针不支持 in 运算，但 Viper 可能扩展了指针的成员检查语义
+                    // （如检查 k 是否在指针指向的数组中）。具体语义由 Viper 编译器处理，
+                    // LSP 直接返回 bool，不报错。
+                    if (
+                        IsViperDialect(getFileInfo(errorNode).executionEnvironment.dialect) &&
+                        isCPtrType(rightSubtypeExpanded)
+                    ) {
+                        return evaluator.getBuiltInObject(errorNode, 'bool');
+                    }
+
                     let returnTypeResult = evaluator.getTypeOfMagicMethodCall(
                         rightSubtypeExpanded,
                         '__contains__',
@@ -1322,6 +1373,63 @@ function validateArithmeticOperation(
                             isCConstType(leftSubtypeUnexpanded) || isCConstType(rightSubtypeUnexpanded)
                         ) {
                             return UnknownType.create(isIncomplete);
+                        }
+                    }
+
+                    // Viper 扩展：CDefine 类型参与运算时，结果保持 CDefine 类型。
+                    // CDefine 是编译期宏定义（如 MAX_VOLUMES = 4），类型检查时视为任意类型，
+                    // 支持所有算术/位运算。运算结果仍为 CDefine（编译期内联展开后为具体值）。
+                    // 这使得 MAX_VOLUMES * MAX_PARTITIONS 等表达式不报 operatorNotSupported。
+                    if (isViperDialect) {
+                        const leftIsCDefine = isClassInstance(leftSubtypeUnexpanded) &&
+                            isCDefineType(leftSubtypeUnexpanded);
+                        const rightIsCDefine = isClassInstance(rightSubtypeUnexpanded) &&
+                            isCDefineType(rightSubtypeUnexpanded);
+                        if (leftIsCDefine || rightIsCDefine) {
+                            // 返回 CDefine 类型，保持"任意传参"语义
+                            return leftIsCDefine ? leftSubtypeUnexpanded : rightSubtypeUnexpanded;
+                        }
+                    }
+
+                    // Viper 扩展：CType 子类的算术/位运算。
+                    // CInt/CUInt32T 等 CType 子类在底层等价于 int，但作为独立 class
+                    // 没有 __add__ 等魔法方法。当左右操作数均为 CType 子类（或一方为
+                    // CType 子类，另一方为 int/float 等 Python 内置类型）时，直接返回
+                    // 左操作数类型（C 语义：运算结果类型由左操作数决定）。
+                    // 这使得 `_next_sheet_id: t.CInt = 0; _next_sheet_id += 1` 合法。
+                    if (isViperDialect) {
+                        const leftIsCType = isClassInstance(leftSubtypeExpanded) &&
+                            isCTypeSubclassType(leftSubtypeExpanded);
+                        const rightIsCType = isClassInstance(rightSubtypeExpanded) &&
+                            isCTypeSubclassType(rightSubtypeExpanded);
+                        const leftIsBuiltinNum = isClassInstance(leftSubtypeExpanded) &&
+                            ClassType.isBuiltIn(leftSubtypeExpanded, ['int', 'float', 'bool', 'bytes', 'str']);
+                        const rightIsBuiltinNum = isClassInstance(rightSubtypeExpanded) &&
+                            ClassType.isBuiltIn(rightSubtypeExpanded, ['int', 'float', 'bool', 'bytes', 'str']);
+                        // 任一方是 CType 子类，另一方是 CType 子类或 Python 内置数值/字符串类型
+                        if ((leftIsCType && (rightIsCType || rightIsBuiltinNum)) ||
+                            (rightIsCType && (leftIsCType || leftIsBuiltinNum))) {
+                            // 算术/位运算结果类型：优先返回 CType 子类（保持类型语义）
+                            if (leftIsCType) {
+                                return leftSubtypeExpanded;
+                            }
+                            if (rightIsCType) {
+                                return rightSubtypeExpanded;
+                            }
+                        }
+                    }
+
+                    // Viper 扩展：整数除法返回 int（C 语义）。
+                    // Python 中 / (.__truediv__) 对两个 int 返回 float，
+                    // 但 C 语言中整数 / 整数 返回整数（截断除法）。
+                    // 当左右操作数均为整数类型时，直接返回 int，不走 __truediv__。
+                    if (isViperDialect && operator === OperatorType.Divide) {
+                        const leftIsInt = isClassInstance(leftSubtypeExpanded) &&
+                            ClassType.isBuiltIn(leftSubtypeExpanded, 'int');
+                        const rightIsInt = isClassInstance(rightSubtypeExpanded) &&
+                            ClassType.isBuiltIn(rightSubtypeExpanded, 'int');
+                        if (leftIsInt && rightIsInt) {
+                            return evaluator.getBuiltInObject(errorNode, 'int');
                         }
                     }
 

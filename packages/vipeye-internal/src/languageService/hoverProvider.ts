@@ -18,6 +18,7 @@ import {
     VariableDeclaration,
     isUnresolvedAliasDeclaration,
 } from '../analyzer/declaration';
+import { getFileInfo } from '../analyzer/analyzerNodeInfo';
 import * as ParseTreeUtils from '../analyzer/parseTreeUtils';
 import { SourceMapper } from '../analyzer/sourceMapper';
 import { SynthesizedTypeInfo } from '../analyzer/symbol';
@@ -39,6 +40,7 @@ import {
 } from '../analyzer/types';
 import { throwIfCancellationRequested } from '../common/cancellationUtils';
 import { SignatureDisplayType } from '../common/configOptions';
+import { IsViperDialect } from '../common/dialect';
 import { assertNever, fail } from '../common/debug';
 import { ProgramView } from '../common/extensibility';
 import { convertOffsetToPosition, convertPositionToOffset } from '../common/positionUtils';
@@ -232,6 +234,22 @@ export function getVariableTypeText(
         }
     }
 
+    // Viper 扩展：t.CTypedef 声明的类型别名悬浮提示。
+    // 当变量声明带 t.CTypedef 注解时（如 `UINT32PTR: t.CTypedef = t.CUInt32T | t.CPtr`），
+    // 即使 typeAliasInfo 未被设置（跨模块 import 等场景），也显示类型别名格式。
+    // 格式：(type) name = actualType。不展开类型别名（expandTypeAlias: false），
+    // 保留原始 typedef 表达式中的类型名称（如 CUInt32T 而非 int）。
+    if (
+        declaration?.typeAnnotationNode &&
+        declaration.typeAnnotationNode.nodeType === ParseNodeType.MemberAccess &&
+        (declaration.typeAnnotationNode as any).d?.member?.d?.value === 'CTypedef'
+    ) {
+        const typeText = evaluator.printType(convertToInstance(getTypeForToolTip(evaluator, typeNode)), {
+            expandTypeAlias: false,
+        });
+        return `(type) ${name} = ` + typeText;
+    }
+
     if (
         type.category === TypeCategory.Function ||
         type.category === TypeCategory.Overloaded ||
@@ -250,6 +268,30 @@ export function getVariableTypeText(
     }
 
     const typeText = typeVarName ?? name + ': ' + evaluator.printType(getTypeForToolTip(evaluator, typeNode));
+
+    // Viper 扩展：变量类型是 typedef 别名时，附加 typedef 信息换行显示。
+    // 例如 `k: UINT16PTR` 悬浮显示：
+    //   (variable) k: UINT16PTR
+    //   (typedef) UINT16PTR = CPtr[CUInt16T]
+    // 仅当变量类型带有 typeAliasInfo 且别名名与变量名不同时触发
+    // （避免类型别名定义本身悬浮时重复显示）。
+    if (
+        typeNode.nodeType === ParseNodeType.Name &&
+        type.props?.typeAliasInfo
+    ) {
+        const aliasInfo = getTypeAliasInfo(type);
+        if (aliasInfo && aliasInfo.shared.name !== typeNode.d.value) {
+            const fileInfo = getFileInfo(typeNode);
+            if (IsViperDialect(fileInfo.executionEnvironment.dialect)) {
+                const aliasName = aliasInfo.shared.name;
+                const actualType = evaluator.printType(
+                    convertToInstance(getTypeForToolTip(evaluator, typeNode)),
+                    { expandTypeAlias: false }
+                );
+                return `(${label}) ` + typeText + `\n(typedef) ${aliasName} = ` + actualType;
+            }
+        }
+    }
 
     return `(${label}) ` + typeText;
 }
@@ -473,7 +515,26 @@ export class HoverProvider {
             }
 
             case DeclarationType.Param: {
-                this._addResultsPart(parts, '(parameter) ' + node.d.value + this._getTypeText(node), /* python */ true);
+                // Viper 扩展：参数类型是 typedef 别名时，附加 typedef 信息换行显示。
+                // 例如 `fb: UINT32PTR` 悬浮显示：
+                //   (parameter) fb: UINT32PTR
+                //   (typedef) UINT32PTR = CPtr[CUInt32T]
+                const paramType = this._getType(node);
+                let paramLine = '(parameter) ' + node.d.value + this._getTypeText(node);
+                if (paramType?.props?.typeAliasInfo && node.nodeType === ParseNodeType.Name) {
+                    const aliasInfo = getTypeAliasInfo(paramType);
+                    if (aliasInfo && aliasInfo.shared.name !== node.d.value) {
+                        const fileInfo = getFileInfo(node);
+                        if (IsViperDialect(fileInfo.executionEnvironment.dialect)) {
+                            const actualType = this._evaluator.printType(
+                                convertToInstance(getTypeForToolTip(this._evaluator, node)),
+                                { expandTypeAlias: false }
+                            );
+                            paramLine += `\n(typedef) ${aliasInfo.shared.name} = ` + actualType;
+                        }
+                    }
+                }
+                this._addResultsPart(parts, paramLine, /* python */ true);
                 addParameterResultsPart(this._program.serviceProvider, node, resolvedDecl, this._format, parts);
                 this._addDocumentationPart(parts, node, resolvedDecl);
                 break;

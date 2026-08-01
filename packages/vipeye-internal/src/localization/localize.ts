@@ -594,6 +594,22 @@ export namespace Localizer {
             new ParameterizedString<{ importName: string; venv: string }>(
                 getRawString('Diagnostic.importSourceResolveFailure')
             );
+        export const viperNamespacePackageIncomplete = () =>
+            new ParameterizedString<{ importName: string }>(
+                getRawString('Diagnostic.viperNamespacePackageIncomplete')
+            );
+        export const viperUnresolvedImportName = () =>
+            new ParameterizedString<{ name: string }>(
+                getRawString('Diagnostic.viperUnresolvedImportName')
+            );
+        export const viperUnknownMemberAccess = () =>
+            new ParameterizedString<{ memberName: string }>(
+                getRawString('Diagnostic.viperUnknownMemberAccess')
+            );
+        export const viperGlobalAssignmentWithoutGlobal = () =>
+            new ParameterizedString<{ name: string }>(
+                getRawString('Diagnostic.viperGlobalAssignmentWithoutGlobal')
+            );
         export const importSymbolUnknown = () =>
             new ParameterizedString<{ name: string }>(getRawString('Diagnostic.importSymbolUnknown'));
         export const incompatibleMethodOverride = () =>

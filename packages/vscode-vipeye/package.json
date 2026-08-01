@@ -54,6 +54,68 @@
                 "path": "./syntaxes/viper.tmLanguage.json"
             }
         ],
+        "configurationDefaults": {
+            "[viper]": {
+                "editor.semanticHighlighting.enabled": true
+            }
+        },
+        "semanticTokenScopes": [
+            {
+                "language": "viper",
+                "scopes": {
+                    "keyword": [
+                        "keyword.control",
+                        "keyword"
+                    ],
+                    "builtin": [
+                        "constant.language",
+                        "variable.language",
+                        "support.type.builtin",
+                        "support.function.builtin"
+                    ],
+                    "variable": [
+                        "variable"
+                    ],
+                    "function": [
+                        "entity.name.function"
+                    ],
+                    "class": [
+                        "entity.name.class",
+                        "entity.name.type"
+                    ],
+                    "type": [
+                        "entity.name.type",
+                        "support.type"
+                    ],
+                    "namespace": [
+                        "entity.name.namespace"
+                    ],
+                    "string": [
+                        "string"
+                    ],
+                    "number": [
+                        "constant.numeric"
+                    ],
+                    "comment": [
+                        "comment"
+                    ],
+                    "decorator": [
+                        "entity.name.function.decorator",
+                        "meta.decorator"
+                    ],
+                    "parameter": [
+                        "variable.parameter"
+                    ],
+                    "property": [
+                        "variable.other.property",
+                        "variable.other.member"
+                    ],
+                    "undefined": [
+                        "variable"
+                    ]
+                }
+            }
+        ],
         "commands": [
             {
                 "command": "viper.organizeimports",

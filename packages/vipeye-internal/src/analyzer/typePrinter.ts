@@ -99,6 +99,9 @@ export const enum PrintTypeFlags {
 
     // Omit TypeVar scopes.
     OmitTypeVarScope = 1 << 13,
+
+    // Viper 方言：将 NoneType 显示为 CVoid（C 语义 void）。
+    ViperDialect = 1 << 14,
 }
 
 export type FunctionReturnTypeCallback = (type: FunctionType) => Type;
@@ -736,7 +739,8 @@ function printUnionType(
     if (noneIndex >= 0 && !subtypeHandledSet.has(noneIndex)) {
         const typeWithoutNone = removeNoneFromUnion(type);
         if (isNever(typeWithoutNone)) {
-            return 'None';
+            // Viper 方言下 None 表示 CVoid（C 语义 void）。
+            return (printTypeFlags & PrintTypeFlags.ViperDialect) !== 0 ? 'CVoid' : 'None';
         }
 
         const optionalType = printTypeInternal(
@@ -1594,6 +1598,11 @@ export function getPrintTypeFlags(configOptions: ConfigOptions): PrintTypeFlags 
 
     if (configOptions.diagnosticRuleSet.pep604Printing) {
         flags |= PrintTypeFlags.PEP604;
+    }
+
+    // Viper 方言下 NoneType 显示为 CVoid。
+    if (configOptions.dialect === 'viper') {
+        flags |= PrintTypeFlags.ViperDialect;
     }
 
     return flags;

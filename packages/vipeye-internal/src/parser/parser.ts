@@ -16,7 +16,7 @@ import { appendArray } from '../common/collectionUtils';
 import { assert } from '../common/debug';
 import { Diagnostic, DiagnosticAddendum } from '../common/diagnostic';
 import { DiagnosticSink } from '../common/diagnosticSink';
-import { IsViperDialect, LanguageDialect } from '../common/dialect';
+import { LanguageDialect } from '../common/dialect';
 import { convertOffsetsToRange } from '../common/positionUtils';
 import {
     PythonVersion,
@@ -552,14 +552,6 @@ export class Parser {
     // type_alias_stmt: "type" name [type_param_seq] = expr
     private _parseTypeAliasStatement(): TypeAliasNode {
         const typeToken = this._getKeywordToken(KeywordType.Type);
-
-        if (
-            !this._parseOptions.isStubFile &&
-            !IsViperDialect(this._parseOptions.dialect) &&
-            PythonVersion.isLessThan(this._getLanguageVersion(), pythonVersion3_12)
-        ) {
-            this._addSyntaxError(LocMessage.typeAliasStatementIllegal(), typeToken);
-        }
 
         const nameToken = this._getTokenIfIdentifier();
         assert(nameToken !== undefined);
@@ -2055,7 +2047,6 @@ export class Parser {
 
             if (
                 !this._parseOptions.isStubFile &&
-                !IsViperDialect(this._parseOptions.dialect) &&
                 PythonVersion.isLessThan(this._getLanguageVersion(), pythonVersion3_12)
             ) {
                 this._addSyntaxError(LocMessage.functionTypeParametersIllegal(), typeParameters);
@@ -2558,7 +2549,6 @@ export class Parser {
 
             if (
                 !this._parseOptions.isStubFile &&
-                !IsViperDialect(this._parseOptions.dialect) &&
                 PythonVersion.isLessThan(this._getLanguageVersion(), pythonVersion3_12)
             ) {
                 this._addSyntaxError(LocMessage.classTypeParametersIllegal(), typeParameters);

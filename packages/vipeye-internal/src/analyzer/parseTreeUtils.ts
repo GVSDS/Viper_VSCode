@@ -855,7 +855,7 @@ export function getEvaluationNodeForAssignmentExpression(
 function isInClassMemberTypeAnnotation(node: ParseNode): boolean {
     let curNode: ParseNode | undefined = node;
     while (curNode) {
-        const parent = curNode.parent;
+        const parent: ParseNode | undefined = curNode.parent;
         if (
             parent?.nodeType === ParseNodeType.TypeAnnotation &&
             parent.d.annotation === curNode
@@ -895,7 +895,7 @@ function isInClassMethodSignatureAnnotation(node: ParseNode): boolean {
     // Walk up to find whether the node lives within a parameter annotation or
     // a function return annotation.
     while (curNode) {
-        const parent = curNode.parent;
+        const parent: ParseNode | undefined = curNode.parent;
         if (parent?.nodeType === ParseNodeType.Parameter && parent.d.annotation === curNode) {
             // Parameter annotation: the enclosing function is the parameter's parent.
             funcNode = parent.parent ?? undefined;

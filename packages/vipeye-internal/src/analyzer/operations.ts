@@ -396,13 +396,9 @@ export function getTypeOfBinaryOperation(
 
     if ((flags & EvalFlags.TypeExpression) !== 0) {
         // Exempt "|" because it might be a union operation involving unknowns.
-        // Viper 扩展：Viper 是 AOT 静态语言，类型表达式中的算术/位运算用于编译时常量
-        // （如 t.CArray[T, MAX_ORDER + 1] 的数组长度），放行不报 binaryOperationNotAllowed，
-        // 让其继续按常量表达式求值。
-        if (
-            node.d.operator !== OperatorType.BitwiseOr &&
-            !IsViperDialect(getFileInfo(node).executionEnvironment.dialect)
-        ) {
+        // Viper 是 AOT 静态语言，类型表达式中的算术/位运算用于编译时常量
+        // （如 t.CArray[T, MAX_ORDER + 1] 的数组长度），放行不报 binaryOperationNotAllowed。
+        if (node.d.operator !== OperatorType.BitwiseOr) {
             evaluator.addDiagnostic(DiagnosticRule.reportInvalidTypeForm, LocMessage.binaryOperationNotAllowed(), node);
             return { type: UnknownType.create() };
         }
@@ -575,6 +571,20 @@ export function getTypeOfAugmentedAssignment(
                             const rightIsBuiltin = isClassInstance(rightSubtypeUnexpanded) &&
                                 ClassType.isBuiltIn(rightSubtypeUnexpanded, ['int', 'float', 'bool', 'bytes', 'str']);
                             if (leftIsCType && (rightIsCType || rightIsBuiltin)) {
+                                return leftSubtypeUnexpanded;
+                            }
+                        }
+
+                        // Viper 扩展：str/bytes 指针增强赋值（C 指针算术）。
+                        // Viper 中 str/bytes 是 i8* 指针，`dest += 1`（指针递增）是合法的
+                        // C 指针算术，结果类型保持 str/bytes。Python 中 str 不可变故无此语义。
+                        // 仅当运算符为 + 且右操作数是整数时生效。
+                        if (IsViperDialect(getFileInfo(node).executionEnvironment.dialect)) {
+                            const leftIsStrBytes = isClassInstance(leftSubtypeUnexpanded) &&
+                                ClassType.isBuiltIn(leftSubtypeUnexpanded, ['str', 'bytes']);
+                            const rightIsInt = isClassInstance(rightSubtypeUnexpanded) &&
+                                ClassType.isBuiltIn(rightSubtypeUnexpanded, 'int');
+                            if (leftIsStrBytes && rightIsInt) {
                                 return leftSubtypeUnexpanded;
                             }
                         }
@@ -929,43 +939,9 @@ function createUnionType(
         newUnion = TypeBase.cloneWithTypeForm(newUnion, newTypeForm);
     }
 
-    // Check for "stringified" forward reference type expressions. The "|" operator
-    // doesn't support these except in certain circumstances. Notably, it can't be used
-    // with other strings or with types that are not specialized using an index form.
-    // Viper 扩展：跳过此检查。Viper 中 `'ClassName' | t.CPtr` 是合法的 TypeSet 语法，
+    // Viper 扩展：跳过 stringified forward reference 检查。
+    // Viper 中 `'ClassName' | t.CPtr` 是合法的 TypeSet 语法，
     // 表示"指向 ClassName 的指针"（前向引用字符串 + CPtr 组合）。
-    if (!fileInfo.isStubFile && !IsViperDialect(fileInfo.executionEnvironment.dialect)) {
-        let stringNode: ExpressionNode | undefined;
-        let otherNode: ExpressionNode | undefined;
-        let otherType: Type | undefined;
-
-        if (leftExpression.nodeType === ParseNodeType.StringList) {
-            stringNode = leftExpression;
-            otherNode = rightExpression;
-            otherType = rightTypeResult.type;
-        } else if (rightExpression.nodeType === ParseNodeType.StringList) {
-            stringNode = rightExpression;
-            otherNode = leftExpression;
-            otherType = leftTypeResult.type;
-        }
-
-        if (stringNode && otherNode && otherType) {
-            let isAllowed = true;
-            if (isClass(otherType)) {
-                if (!otherType.priv.isTypeArgExplicit || isClassInstance(otherType)) {
-                    isAllowed = false;
-                }
-            }
-
-            if (!isAllowed) {
-                evaluator.addDiagnostic(
-                    DiagnosticRule.reportGeneralTypeIssues,
-                    LocMessage.unionForwardReferenceNotAllowed(),
-                    stringNode
-                );
-            }
-        }
-    }
 
     return { type: newUnion };
 }
@@ -1416,6 +1392,35 @@ function validateArithmeticOperation(
                             if (rightIsCType) {
                                 return rightSubtypeExpanded;
                             }
+                        }
+                    }
+
+                    // Viper 扩展：str/bytes 指针算术（C 指针算术）。
+                    // Viper 中 str/bytes 是 i8* 指针：
+                    //   - `ptr + n`（指针偏移）：一方是 str/bytes、另一方是 int → 结果保持 str/bytes
+                    //   - `ptr - ptr`（指针差）：双方都是 str/bytes → 结果为 t.CSizeT（ptrdiff_t）
+                    //   - `ptr - n`（指针回退）：str/bytes - int → 结果保持 str/bytes
+                    if (isViperDialect && (operator === OperatorType.Add || operator === OperatorType.Subtract)) {
+                        const leftIsStrBytes = isClassInstance(leftSubtypeExpanded) &&
+                            ClassType.isBuiltIn(leftSubtypeExpanded, ['str', 'bytes']);
+                        const rightIsStrBytes = isClassInstance(rightSubtypeExpanded) &&
+                            ClassType.isBuiltIn(rightSubtypeExpanded, ['str', 'bytes']);
+                        const leftIsInt = isClassInstance(leftSubtypeExpanded) &&
+                            ClassType.isBuiltIn(leftSubtypeExpanded, 'int');
+                        const rightIsInt = isClassInstance(rightSubtypeExpanded) &&
+                            ClassType.isBuiltIn(rightSubtypeExpanded, 'int');
+                        if (operator === OperatorType.Add) {
+                            if ((leftIsStrBytes && rightIsInt) || (leftIsInt && rightIsStrBytes)) {
+                                // 返回指针类型（str/bytes）
+                                return leftIsStrBytes ? leftSubtypeExpanded : rightSubtypeExpanded;
+                            }
+                        } else if (leftIsStrBytes && rightIsStrBytes) {
+                            // 指针差：str - str → int（t.CSizeT 的底层类型，元素数量）
+                            // t.CSizeT 是 CType 子类，赋值给 t.CSizeT 声明时通过隐式转换兼容。
+                            return evaluator.getBuiltInObject(errorNode, 'int');
+                        } else if (leftIsStrBytes && rightIsInt) {
+                            // 指针回退：str - n → str
+                            return leftSubtypeExpanded;
                         }
                     }
 

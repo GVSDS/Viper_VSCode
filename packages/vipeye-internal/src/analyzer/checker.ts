@@ -711,25 +711,6 @@ export class Checker extends ParseTreeWalker {
             }
         }
 
-        // If we're at the module level within a stub file, report a diagnostic
-        // if there is a '__getattr__' function defined when in strict mode.
-        // This signifies an incomplete stub file that obscures type errors.
-        // Viper has no module-level __getattr__ semantics, so skip this check.
-        if (
-            !IsViperDialect(this._fileInfo.executionEnvironment.dialect) &&
-            this._fileInfo.isStubFile &&
-            node.d.name.d.value === '__getattr__'
-        ) {
-            const scope = getScopeForNode(node);
-            if (scope?.type === ScopeType.Module) {
-                this._evaluator.addDiagnostic(
-                    DiagnosticRule.reportIncompleteStub,
-                    LocMessage.stubUsesGetAttr(),
-                    node.d.name
-                );
-            }
-        }
-
         this._scopedNodes.push(node);
 
         if (
@@ -1559,22 +1540,9 @@ export class Checker extends ParseTreeWalker {
             this._evaluator.evaluateTypesForStatement(node);
 
             const importInfo = AnalyzerNodeInfo.getImportInfo(node.d.module);
-            if (
-                importInfo &&
-                importInfo.isImportFound &&
-                importInfo.importType !== ImportType.Local &&
-                !this._fileInfo.isStubFile &&
-                // Viper 模式：`from stdint import *` 是常见用法（导入 C 类型别名），
-                // 不报告 wildcard import 警告
-                !IsViperDialect(this._fileInfo.executionEnvironment.dialect)
-            ) {
-                this._evaluator.addDiagnosticForTextRange(
-                    this._fileInfo,
-                    DiagnosticRule.reportWildcardImportFromLibrary,
-                    LocMessage.wildcardLibraryImport(),
-                    node.d.wildcardToken || node
-                );
-            }
+            // Viper 模式：`from stdint import *` 是常见用法（导入 C 类型别名），
+            // 不报告 wildcard import 警告。
+            void importInfo;
         }
 
         return true;
@@ -4989,20 +4957,9 @@ export class Checker extends ParseTreeWalker {
 
             // Enum members should not have type annotations.
             // Viper 扩展：CEnum 子类允许类型注解成员（如 FR_OK: t.State = 0），
-            // 跳过此错误报告。
+            // 不报告类型注解错误。
             const typedDecls = symbol.getTypedDeclarations();
             if (typedDecls.length > 0) {
-                if (
-                    !IsViperDialect(this._fileInfo.executionEnvironment.dialect) &&
-                    typedDecls[0].type === DeclarationType.Variable &&
-                    typedDecls[0].inferredTypeSource
-                ) {
-                    this._evaluator.addDiagnostic(
-                        DiagnosticRule.reportGeneralTypeIssues,
-                        LocMessage.enumMemberTypeAnnotation(),
-                        typedDecls[0].node
-                    );
-                }
                 return;
             }
 
@@ -5024,7 +4981,7 @@ export class Checker extends ParseTreeWalker {
 
             // Look for an enum attribute annotated with "Final".
             // Viper 扩展：CEnum 子类允许类型注解成员，跳过 Final 注解错误。
-            if (decls[0].isFinal && !IsViperDialect(this._fileInfo.executionEnvironment.dialect)) {
+            if (decls[0].isFinal) {
                 this._evaluator.addDiagnostic(
                     DiagnosticRule.reportGeneralTypeIssues,
                     LocMessage.enumMemberTypeAnnotation(),

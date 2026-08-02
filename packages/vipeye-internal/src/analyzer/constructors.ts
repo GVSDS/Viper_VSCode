@@ -55,6 +55,7 @@ import {
     getTypeVarArgsRecursive,
     getTypeVarScopeId,
     getTypeVarScopeIds,
+    isNoneInstance,
     isTupleClass,
     lookUpClassMember,
     mapSubtypes,
@@ -284,10 +285,21 @@ function validateNewAndInitMethods(
         newMethodReturnType = newCallResult.returnType;
     }
 
-    if (!newMethodReturnType || isDefaultNewMethod(newMethodTypeResult?.type)) {
+    if (
+        !newMethodReturnType ||
+        isNoneInstance(newMethodReturnType) ||
+        isDefaultNewMethod(newMethodTypeResult?.type)
+    ) {
         // If there is no __new__ method or it uses a default signature,
         // (cls, *args, **kwargs) -> Self, allow the __init__ method to
         // determine the specialized type of the class.
+        //
+        // Viper 扩展：Viper 中类的 `__new__` 无返回注解时（如 `_list.vp` 的
+        // `def __new__(self, pool, elem_size=0)` 返回 `pool.alloc(...)` 裸指针），
+        // typeEvaluator 会把返回类型推断为 None。但 Viper 是 C++ 式语义，
+        // 构造调用 `list[str](pool)` 必须返回类实例（list[str]）而非 None。
+        // 因此 __new__ 返回 None 时同样回退到类实例类型，保证
+        // `result = list[str](self.__mbuddy__)` 后 `result.append(...)` 可用。
         newMethodReturnType = ClassType.cloneAsInstance(type);
     } else if (isUnknown(newMethodReturnType) || (newMethodTypeResult && isAny(newMethodTypeResult.type))) {
         // If the __new__ method returns Unknown, we'll ignore its return

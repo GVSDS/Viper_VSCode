@@ -16,7 +16,10 @@ from typing import Any, Generic, Optional, Type, TypeAlias, TypeVar
 from typing import Callable as CallableT
 
 T = TypeVar('T')
-N = TypeVar('N')
+# N 为数组长度。提供默认值（None 表示不定长数组），使 `t.CArray[T]`（单参数）合法，
+# 与真实编译器 CArray.__class_getitem__ 接受任意参数的行为一致。
+# 例如 `result: t.CArray[str]` 表示 char* 数组（不定长，None 结尾）。
+N = TypeVar('N', default=None)
 
 
 # =============================================================================

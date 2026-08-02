@@ -10,7 +10,7 @@
 
 import { appendArray, flatten, getMapValues, getOrAdd } from '../common/collectionUtils';
 import { ConfigOptions, ExecutionEnvironment, matchFileSpecs } from '../common/configOptions';
-import { IsPythonDialect, IsViperDialect } from '../common/dialect';
+import { IsViperDialect } from '../common/dialect';
 import { Host } from '../common/host';
 import { stubsSuffix } from '../common/pathConsts';
 import { getFileExtension, stripFileExtension } from '../common/pathUtils';
@@ -1498,46 +1498,6 @@ export class ImportResolver {
                 ) {
                     isNativeLib = true;
                     importLogger?.log(`Did not find file '${pyiFilePath}' or '${pyFilePath}'`);
-                } else if (
-                    !allowPyi &&
-                    allowNativeLib &&
-                    isLastPart &&
-                    IsPythonDialect(execEnv.dialect) &&
-                    this.fileExistsCached(dirPath.addExtension('.pyc'))
-                ) {
-                    // Sourceless distribution: a compiled `.pyc` module sits where the `.py`
-                    // source would be (e.g. `mod.pyc` beside `mod.pyi`, with no `mod.py`) -- placed
-                    // directly in the package directory, not under `__pycache__`. Python imports
-                    // such a `.pyc` directly, so the module exists at runtime even though it has no
-                    // Python source.
-                    //
-                    // Viper 模式短路：Viper 无 `.pyc` 字节码缓存（AOT 编译型语言），
-                    // 通过 `IsPythonDialect(execEnv.dialect)` 跳过此分支。
-                    //
-                    // This branch only runs during the non-stub resolution (`allowPyi === false`),
-                    // whose result becomes `nonStubImportResult`. Pushing the `.pyc` onto
-                    // `resolvedPaths` makes that non-stub result report `isImportFound === true`,
-                    // and the checker's `_addMissingModuleSourceDiagnosticIfNeeded` short-circuits
-                    // on `nonStubImportResult.isImportFound` -- so the misleading
-                    // `reportMissingModuleSource` warning is suppressed via the `isImportFound`
-                    // path (not via `isNativeLib`, whose check the checker never reaches once
-                    // `isImportFound` is true).
-                    //
-                    // Gating mirrors the native-lib branch above: a compiled module is a native
-                    // artifact with no Python source, so it is only recognized where native libs are
-                    // allowed (`allowNativeLib`), ensuring a stray `.pyc` in a stub-only root is not
-                    // mistaken for the real module. `isNativeLib = true` is set purely for symmetry
-                    // with that branch; it does not drive the suppression here. The `.pyc` is
-                    // likewise kept out of `getSourceFilesFromStub` by that method's `.py`/`.pyi`
-                    // extension filter, independent of `isNativeLib`.
-                    //
-                    // The `.pyc` Uri is built inside this branch's guard (rather than unconditionally
-                    // alongside `pyFilePath`/`pyiFilePath`) so the allocation only happens for the
-                    // rare last-part library imports that fall through to here.
-                    const pycFilePath = dirPath.addExtension('.pyc');
-                    importLogger?.log(`Resolved import with compiled file '${pycFilePath}'`);
-                    resolvedPaths.push(pycFilePath);
-                    isNativeLib = true;
                 } else if (foundDirectory) {
                     if (!isLastPart) {
                         // We are not at the last part, and we found a directory,

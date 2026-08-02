@@ -3266,9 +3266,14 @@ export function createTypeEvaluator(
                         }
                         return UnknownType.create(isIncomplete);
                     }
-                    // Viper 扩展：str 类型迭代返回 int（CChar）。
-                    // Viper 语义：str = bytes | CPtr（const char*），迭代返回单个字符 CChar = int。
-                    if (ClassType.isBuiltIn(subtype, 'str')) {
+                    // Viper 扩展：str/bytes 类型迭代返回 t.CChar（字符）。
+                    // Viper 语义：str/bytes = i8* 指针（const char*），迭代返回单个字符 CChar。
+                    // 使用 getViperCCharType 而非裸 int，保持与 s[i] 下标访问一致（t.CChar 显示）。
+                    if (ClassType.isBuiltIn(subtype, ['str', 'bytes'])) {
+                        const ccharType = getViperCCharType(errorNode);
+                        if (ccharType) {
+                            return ccharType;
+                        }
                         return getBuiltInObject(errorNode, 'int');
                     }
                     // 检查联合类型中是否包含 CPtr
@@ -5093,6 +5098,41 @@ export function createTypeEvaluator(
             // scope, there's no need to use code flow analysis.
             if (symbolWithScope.scope.type === ScopeType.Builtin) {
                 useCodeFlowAnalysis = false;
+
+                // Viper 扩展：模拟编译器的自动 import 机制。
+                // Viper 编译器的 Phase2 会自动检测 list/dict 容器的使用并注入
+                // `import _list` / `import _dict`（见 TransPyC Phase2Translator._inject_auto_imports），
+                // 因此用户源码无需手写 import。
+                // LSP 若不模拟此机制，裸名 list/dict 会解析到 Python builtins 的
+                // `list.__init__(iterable: Iterable[_T])`，把内存分配器实参（如
+                // memhub.MemBuddy）当作可迭代对象检查而误报。
+                // 这里在解析到 builtin 的 list/dict 时，尝试用 includes 中的
+                // _list.vp / _dict.vp 真实定义替换（容器构造签名是
+                // `__init__(self, pool: memhub.MemManager | t.CPtr, ...)`）。
+                const viperBuiltinModule =
+                    IsViperDialect(fileInfo.executionEnvironment.dialect) &&
+                    (name === 'list' || name === 'dict')
+                        ? (name === 'list' ? '_list' : '_dict')
+                        : undefined;
+                if (viperBuiltinModule) {
+                    const lookupResult = importLookup({
+                        nameParts: [viperBuiltinModule],
+                        importingFileUri: fileInfo.fileUri,
+                    });
+                    if (lookupResult) {
+                        const containerSymbol = lookupResult.symbolTable.get(name);
+                        if (containerSymbol) {
+                            symbolWithScope = {
+                                symbol: containerSymbol,
+                                isOutsideCallerModule: false,
+                                isBeyondExecutionScope: false,
+                                usesNonlocalBinding: false,
+                                usesGlobalBinding: false,
+                                scope: symbolWithScope.scope,
+                            };
+                        }
+                    }
+                }
             }
 
             symbol = symbolWithScope.symbol;
@@ -5281,14 +5321,6 @@ export function createTypeEvaluator(
                 // Viper 是 AOT 语言，结构体/函数不在乎定义顺序（类似 C 语言的前向声明）。
                 // 当符号未找到时（可能在更后方定义），不报 undefinedVariable 错误，
                 // 而是返回 UnknownType，允许后续定义的符号被引用。
-                if (!IsViperDialect(fileInfo.executionEnvironment.dialect)) {
-                    addDiagnostic(
-                        DiagnosticRule.reportUndefinedVariable,
-                        LocMessage.symbolIsUndefined().format({ name }),
-                        node
-                    );
-                }
-
                 type = UnknownType.create();
             }
         }
@@ -6412,30 +6444,7 @@ export function createTypeEvaluator(
                         );
                     }
                 } else {
-                    // Does the module export a top-level __getattr__ function?
-                    // Viper has no module-level __getattr__ (PEP 562) semantics,
-                    // so skip this dynamic attribute resolution entirely.
-                    if (usage.method === 'get' && !IsViperDialect(fileInfo.executionEnvironment.dialect)) {
-                        const getAttrSymbol = ModuleType.getField(baseType, '__getattr__');
-                        if (getAttrSymbol) {
-                            const isModuleGetAttrSupported =
-                                PythonVersion.isGreaterOrEqualTo(
-                                    fileInfo.executionEnvironment.pythonVersion,
-                                    pythonVersion3_7
-                                ) || getAttrSymbol.getDeclarations().some((decl) => decl.uri.hasExtension('.vpi'));
-
-                            if (isModuleGetAttrSupported) {
-                                const getAttrTypeResult = getEffectiveTypeOfSymbolForUsage(getAttrSymbol);
-                                if (isFunction(getAttrTypeResult.type)) {
-                                    const returnTypeResult = getEffectiveReturnTypeResult(getAttrTypeResult.type);
-                                    type = returnTypeResult.type;
-                                    if (getAttrTypeResult.isIncomplete || returnTypeResult.isIncomplete) {
-                                        isIncomplete = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // Viper 扩展：模块级 __getattr__（PEP 562）语义不存在，跳过动态属性解析。
 
                     // If the field was not found and the module type is marked
                     // such that all fields should be Any/Unknown, return that type.
@@ -7504,46 +7513,7 @@ export function createTypeEvaluator(
             }
         }
 
-        // Check for builtin classes that will generate runtime exceptions if subscripted.
-        if ((flags & EvalFlags.ForwardRefs) === 0) {
-            // We can skip this check if the class is used within a PEP 526 variable
-            // type annotation within a class or function. For some undocumented reason,
-            // they don't result in runtime exceptions when used in this manner.
-            let skipSubscriptCheck = (flags & EvalFlags.VarTypeAnnotation) !== 0;
-            if (skipSubscriptCheck) {
-                const scopeNode = ParseTreeUtils.getExecutionScopeNode(node);
-                if (scopeNode?.nodeType === ParseNodeType.Module) {
-                    skipSubscriptCheck = false;
-                }
-            }
-
-            if (!skipSubscriptCheck) {
-                const fileInfo = AnalyzerNodeInfo.getFileInfo(node);
-                // Viper is an AOT static language with no PEP 585 subscript
-                // restrictions, so skip the runtime-subscriptable check.
-                if (
-                    !IsViperDialect(fileInfo.executionEnvironment.dialect) &&
-                    isInstantiableClass(baseTypeResult.type) &&
-                    ClassType.isBuiltIn(baseTypeResult.type) &&
-                    !baseTypeResult.type.priv.aliasName
-                ) {
-                    const minPythonVersion = nonSubscriptableBuiltinTypes.get(baseTypeResult.type.shared.fullName);
-                    if (
-                        minPythonVersion !== undefined &&
-                        PythonVersion.isLessThan(fileInfo.executionEnvironment.pythonVersion, minPythonVersion) &&
-                        !fileInfo.isStubFile
-                    ) {
-                        addDiagnostic(
-                            DiagnosticRule.reportIndexIssue,
-                            LocMessage.classNotRuntimeSubscriptable().format({
-                                name: baseTypeResult.type.priv.aliasName || baseTypeResult.type.shared.name,
-                            }),
-                            node.d.leftExpr
-                        );
-                    }
-                }
-            }
-        }
+        // Viper 扩展：AOT 静态语言无 PEP 585 运行时 subscript 限制，跳过检查。
 
         const indexTypeResult = getTypeOfIndexWithBaseType(node, baseTypeResult, { method: 'get' }, flags);
 
@@ -8415,13 +8385,12 @@ export function createTypeEvaluator(
                         return concreteSubtype;
                     }
                     // Viper 扩展：str/bytes 表示 C 字符串指针（i8* / i8*）。
-                    // 即使不是 TypeSet 联合（纯 str/bytes 注解），下标赋值 a[i] = v 也是
-                    // 合法的指针写字节操作（C 语义），不应报 __setitem__ 不存在。
-                    // 下标读取 a[i] 复用 str 的 __getitem__（返回 int/CChar）。
+                    // 无论读写，下标访问 a[i] 都是指针解引用操作（C 语义）：
+                    //   - 读取 a[i] 返回 t.CChar（i8 字节），而非 Python str.__getitem__ 的 str
+                    //   - 赋值 a[i] = v 是合法的指针写字节操作，不报 __setitem__ 不存在
                     if (
                         IsViperDialect(viperIndexFileInfo.executionEnvironment.dialect) &&
-                        ClassType.isBuiltIn(concreteSubtype, ['str', 'bytes']) &&
-                        usage.method !== 'get'
+                        ClassType.isBuiltIn(concreteSubtype, ['str', 'bytes'])
                     ) {
                         // 构造带 CChar 别名信息的 int 类型作为下标访问的目标类型
                         const ccharType = getViperCCharType(node);
@@ -8615,10 +8584,10 @@ export function createTypeEvaluator(
     }
 
     // Viper 扩展：构造带 t.CChar 类型别名信息的 int 类型（表示 C 的 char 类型）。
-    // Viper 中 str/bytes 是 i8* 指针，下标访问返回 t.CChar（int 别名）。
+    // Viper 中 str/bytes 是 i8* 指针，下标访问/迭代/字符运算返回 t.CChar（int 别名）。
     // 优先从 t 模块查找 CChar 类型别名以保留显示信息；找不到时回退为
     // 构造带 typeAliasInfo 的 int 类型。查找失败返回 undefined。
-    function getViperCCharType(node: IndexNode): Type | undefined {
+    function getViperCCharType(node: ExpressionNode): Type | undefined {
         const tSymbolWithScope = lookUpSymbolRecursive(node, 't', /* honorCodeFlow */ true);
         if (tSymbolWithScope) {
             const tEffectiveType = getEffectiveTypeOfSymbolForUsage(
@@ -13719,13 +13688,34 @@ export function createTypeEvaluator(
                 }
 
                 if (expectedType && requiresSpecialization(expectedType)) {
+                    // Viper 扩展：str/bytes 实参传给可迭代协议参数（Iterable[_T]/Iterator[_T] 等）
+                    // 时，泛型参数 _T 应从 str.__iter__ 的声明返回类型（Iterator[str]）推断。
+                    // 但 Viper 中 str 是 i8* 指针，迭代元素应为 t.CChar 而非 str。
+                    // 因此将 argType 替换为 Iterator[CChar] 实例，使协议匹配把 _T 绑定为 CChar，
+                    // 修复 `for i, ch in enumerate(src)` 中 ch 被推断为 str 的问题
+                    // （同样覆盖 zip/map/filter/reversed/sorted/list() 等 Iterable 参数场景）。
+                    let argTypeForConstraint = argType;
+                    if (
+                        IsViperDialect(AnalyzerNodeInfo.getFileInfo(argParam.errorNode).executionEnvironment.dialect) &&
+                        isClassInstance(argType) &&
+                        ClassType.isBuiltIn(argType, ['str', 'bytes'])
+                    ) {
+                        const ccharType = getViperCCharType(argParam.errorNode);
+                        const iteratorClass = getTypingType(argParam.errorNode, 'Iterator');
+                        if (ccharType && iteratorClass && isInstantiableClass(iteratorClass)) {
+                            argTypeForConstraint = ClassType.cloneAsInstance(
+                                ClassType.specialize(iteratorClass, [ccharType])
+                            );
+                        }
+                    }
+
                     // Assign the argument type back to the expected type to assign
                     // values to any unification variables.
                     const clonedConstraints = constraints.clone();
                     if (
                         assignType(
                             expectedType,
-                            argType,
+                            argTypeForConstraint,
                             /* diag */ undefined,
                             clonedConstraints,
                             options?.isArgFirstPass ? AssignTypeFlags.ArgAssignmentFirstPass : AssignTypeFlags.Default
@@ -21300,26 +21290,7 @@ export function createTypeEvaluator(
                 if (importLookupInfo) {
                     reportError = true;
 
-                    // Handle PEP 562 support for module-level __getattr__ function,
-                    // introduced in Python 3.7.
-                    // Viper has no module-level __getattr__ semantics; skip it.
-                    if (
-                        !IsViperDialect(fileInfo.executionEnvironment.dialect) &&
-                        (PythonVersion.isGreaterOrEqualTo(
-                            fileInfo.executionEnvironment.pythonVersion,
-                            pythonVersion3_7
-                        ) ||
-                            fileInfo.isStubFile)
-                    ) {
-                        const getAttrSymbol = importLookupInfo.symbolTable.get('__getattr__');
-                        if (getAttrSymbol) {
-                            const getAttrType = getEffectiveTypeOfSymbol(getAttrSymbol);
-                            if (isFunction(getAttrType)) {
-                                symbolType = getEffectiveReturnType(getAttrType);
-                                reportError = false;
-                            }
-                        }
-                    }
+                    // Viper 扩展：模块级 __getattr__（PEP 562）语义不存在，跳过动态符号解析。
                 } else if (resolvedPath.isEmpty()) {
                     // This corresponds to the "from . import a" form.
                     reportError = true;

@@ -8396,50 +8396,12 @@ export function createTypeEvaluator(
                         isViperTypeSetIndex &&
                         ClassType.isBuiltIn(concreteSubtype, ['str', 'bytes'])
                     ) {
-                        // 从 t 模块中查找 CChar 类型别名，保留 t.CChar 显示信息。
-                        const tSymbolWithScope = lookUpSymbolRecursive(node, 't', /* honorCodeFlow */ true);
-                        if (tSymbolWithScope) {
-                            const tEffectiveType = getEffectiveTypeOfSymbolForUsage(
-                                tSymbolWithScope.symbol,
-                                /* usageNode */ undefined,
-                                /* useLastDecl */ true
-                            ).type;
-                            if (tEffectiveType && isModule(tEffectiveType)) {
-                                const ccharSymbol = ModuleType.getField(tEffectiveType, 'CChar');
-                                if (ccharSymbol) {
-                                    // 优先使用声明类型（保留 typeAliasInfo）
-                                    const ccharDeclType = getDeclaredTypeOfSymbol(ccharSymbol)?.type;
-                                    if (ccharDeclType) {
-                                        return convertToInstance(ccharDeclType);
-                                    }
-                                    // 回退到有效类型
-                                    const ccharType = getEffectiveTypeOfSymbolForUsage(
-                                        ccharSymbol,
-                                        /* usageNode */ undefined,
-                                        /* useLastDecl */ true
-                                    ).type;
-                                    if (ccharType) {
-                                        return convertToInstance(ccharType);
-                                    }
-                                }
-                            }
+                        // 构造带 CChar 别名信息的 int 类型（保留 t.CChar 显示信息）
+                        const ccharType = getViperCCharType(node);
+                        if (ccharType) {
+                            return ccharType;
                         }
-                        // 回退：构造带 CChar 别名信息的 int 类型
-                        const intType = getBuiltInObject(node, 'int');
-                        const ccharAliasInfo: TypeAliasInfo = {
-                            shared: {
-                                name: 'CChar',
-                                fullName: 't.CChar',
-                                moduleName: 't',
-                                fileUri: viperIndexFileInfo.fileUri,
-                                typeVarScopeId: '',
-                                isTypeAliasType: false,
-                                typeParams: undefined,
-                                computedVariance: undefined,
-                            },
-                            typeArgs: undefined,
-                        };
-                        return TypeBase.cloneForTypeAlias(intType, ccharAliasInfo);
+                        return concreteSubtype;
                     }
                     // Viper TypeSet：非修饰基本类型（int/float/bool 等）在类型组合中
                     // 表示指针指向的目标类型（如 CConst | int | CPtr = const int*），
@@ -8450,6 +8412,22 @@ export function createTypeEvaluator(
                             'int', 'float', 'bool', 'complex', 'object',
                         ])
                     ) {
+                        return concreteSubtype;
+                    }
+                    // Viper 扩展：str/bytes 表示 C 字符串指针（i8* / i8*）。
+                    // 即使不是 TypeSet 联合（纯 str/bytes 注解），下标赋值 a[i] = v 也是
+                    // 合法的指针写字节操作（C 语义），不应报 __setitem__ 不存在。
+                    // 下标读取 a[i] 复用 str 的 __getitem__（返回 int/CChar）。
+                    if (
+                        IsViperDialect(viperIndexFileInfo.executionEnvironment.dialect) &&
+                        ClassType.isBuiltIn(concreteSubtype, ['str', 'bytes']) &&
+                        usage.method !== 'get'
+                    ) {
+                        // 构造带 CChar 别名信息的 int 类型作为下标访问的目标类型
+                        const ccharType = getViperCCharType(node);
+                        if (ccharType) {
+                            return ccharType;
+                        }
                         return concreteSubtype;
                     }
                     const typeResult = getTypeOfIndexedObjectOrClass(node, concreteSubtype, selfType, usage);
@@ -8634,6 +8612,57 @@ export function createTypeEvaluator(
             assert(usage.method === 'del');
             return '__delitem__';
         }
+    }
+
+    // Viper 扩展：构造带 t.CChar 类型别名信息的 int 类型（表示 C 的 char 类型）。
+    // Viper 中 str/bytes 是 i8* 指针，下标访问返回 t.CChar（int 别名）。
+    // 优先从 t 模块查找 CChar 类型别名以保留显示信息；找不到时回退为
+    // 构造带 typeAliasInfo 的 int 类型。查找失败返回 undefined。
+    function getViperCCharType(node: IndexNode): Type | undefined {
+        const tSymbolWithScope = lookUpSymbolRecursive(node, 't', /* honorCodeFlow */ true);
+        if (tSymbolWithScope) {
+            const tEffectiveType = getEffectiveTypeOfSymbolForUsage(
+                tSymbolWithScope.symbol,
+                /* usageNode */ undefined,
+                /* useLastDecl */ true
+            ).type;
+            if (tEffectiveType && isModule(tEffectiveType)) {
+                const ccharSymbol = ModuleType.getField(tEffectiveType, 'CChar');
+                if (ccharSymbol) {
+                    // 优先使用声明类型（保留 typeAliasInfo）
+                    const ccharDeclType = getDeclaredTypeOfSymbol(ccharSymbol)?.type;
+                    if (ccharDeclType) {
+                        return convertToInstance(ccharDeclType);
+                    }
+                    // 回退到有效类型
+                    const ccharType = getEffectiveTypeOfSymbolForUsage(
+                        ccharSymbol,
+                        /* usageNode */ undefined,
+                        /* useLastDecl */ true
+                    ).type;
+                    if (ccharType) {
+                        return convertToInstance(ccharType);
+                    }
+                }
+            }
+        }
+        // 回退：构造带 CChar 别名信息的 int 类型
+        const fileInfo = AnalyzerNodeInfo.getFileInfo(node);
+        const intType = getBuiltInObject(node, 'int');
+        const ccharAliasInfo: TypeAliasInfo = {
+            shared: {
+                name: 'CChar',
+                fullName: 't.CChar',
+                moduleName: 't',
+                fileUri: fileInfo.fileUri,
+                typeVarScopeId: '',
+                isTypeAliasType: false,
+                typeParams: undefined,
+                computedVariance: undefined,
+            },
+            typeArgs: undefined,
+        };
+        return TypeBase.cloneForTypeAlias(intType, ccharAliasInfo);
     }
 
     function getTypeOfIndexedObjectOrClass(
@@ -25803,13 +25832,19 @@ export function createTypeEvaluator(
         // None（NULL 函数指针语义），允许 def isr0() -> irq_handler_t: pass 或 return None。
         // 返回类型包含 C 声明标记（t.State/t.CExport 等）的也接受 None（无返回值），
         // 允许 def CloseHandle() -> BOOL | t.State: pass 这类声明性函数的隐式 None。
+        // str/bytes 在 Viper 中表示 C 字符串指针（i8*），同样接受 None（NULL 字符串指针），
+        // 允许 def strcpy(...) -> str: ... return None 这类返回 str 的函数返回空指针。
         if (isNoneInstance(srcType)) {
             if (isPureCModifierType(destType)) {
                 return true;
             }
             const destVariants = isUnion(destType) ? destType.priv.subtypes : [destType];
             const hasPtrLike = destVariants.some(
-                (variant) => isCPtrType(variant) || isCVoidType(variant) || isFunction(variant)
+                (variant) =>
+                    isCPtrType(variant) ||
+                    isCVoidType(variant) ||
+                    isFunction(variant) ||
+                    (isClassInstance(variant) && ClassType.isBuiltIn(variant, ['str', 'bytes']))
             );
             if (hasPtrLike) {
                 return true;

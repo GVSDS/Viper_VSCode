@@ -647,6 +647,10 @@ export function getOffDiagnosticRuleSet(dialect?: LanguageDialect): DiagnosticRu
         // Viper 扩展：当泛型参数为 Unknown 时省略类型参数显示
         // （如 t.CPtr 不带泛型参数时显示为 CPtr，而非 CPtr[Unknown]）
         diagSettings.omitTypeArgsIfUnknown = true;
+        // Viper 扩展：None 是空指针（CPtr null），常作为指针类型参数默认值。
+        // 禁用 strictParameterNoneValue，使 "T = None" 自动扩展为 "T | None"（PEP 484），
+        // 避免 short: str = None 这类合法的 Viper 指针默认值被误报为类型不兼容。
+        diagSettings.strictParameterNoneValue = false;
     }
 
     return diagSettings;
@@ -768,6 +772,10 @@ export function getBasicDiagnosticRuleSet(dialect?: LanguageDialect): Diagnostic
         // Viper 扩展：当泛型参数为 Unknown 时省略类型参数显示
         // （如 t.CPtr 不带泛型参数时显示为 CPtr，而非 CPtr[Unknown]）
         diagSettings.omitTypeArgsIfUnknown = true;
+        // Viper 扩展：None 是空指针（CPtr null），常作为指针类型参数默认值。
+        // 禁用 strictParameterNoneValue，使 "T = None" 自动扩展为 "T | None"（PEP 484），
+        // 避免 short: str = None 这类合法的 Viper 指针默认值被误报为类型不兼容。
+        diagSettings.strictParameterNoneValue = false;
     }
 
     return diagSettings;
@@ -889,6 +897,10 @@ export function getStandardDiagnosticRuleSet(dialect?: LanguageDialect): Diagnos
         // Viper 扩展：当泛型参数为 Unknown 时省略类型参数显示
         // （如 t.CPtr 不带泛型参数时显示为 CPtr，而非 CPtr[Unknown]）
         diagSettings.omitTypeArgsIfUnknown = true;
+        // Viper 扩展：None 是空指针（CPtr null），常作为指针类型参数默认值。
+        // 禁用 strictParameterNoneValue，使 "T = None" 自动扩展为 "T | None"（PEP 484），
+        // 避免 short: str = None 这类合法的 Viper 指针默认值被误报为类型不兼容。
+        diagSettings.strictParameterNoneValue = false;
     }
 
     return diagSettings;
@@ -1010,6 +1022,10 @@ export function getStrictDiagnosticRuleSet(dialect?: LanguageDialect): Diagnosti
         // Viper 扩展：当泛型参数为 Unknown 时省略类型参数显示
         // （如 t.CPtr 不带泛型参数时显示为 CPtr，而非 CPtr[Unknown]）
         diagSettings.omitTypeArgsIfUnknown = true;
+        // Viper 扩展：None 是空指针（CPtr null），常作为指针类型参数默认值。
+        // 禁用 strictParameterNoneValue，使 "T = None" 自动扩展为 "T | None"（PEP 484），
+        // 避免 short: str = None 这类合法的 Viper 指针默认值被误报为类型不兼容。
+        diagSettings.strictParameterNoneValue = false;
     }
 
     return diagSettings;

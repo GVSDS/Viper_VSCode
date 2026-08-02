@@ -357,18 +357,19 @@ export class ImportResolver {
     getImportRoots(execEnv: ExecutionEnvironment, forLogging = false) {
         const roots = [];
 
-        // Viper 模式：项目 includes（.vpj 中配置的真实 .vp 源文件路径）必须最优先，
-        // 让 LSP 直接解析真实源码生成注解，而非依赖预写的 .vpi 存根。
+        // 全局优先：项目 includes（execEnv.extraPaths）与 workspace root 必须排在所有
+        // fallback 之前，确保 .vpj 中配置的真实 .vp 源码遮蔽 vipershed-fallback /
+        // typeshed-fallback 中的 .vpi 存根。不再依赖 dialect === 'viper' 判断 —— 只要
+        // .vpj includes 被解析进 extraPaths（由 _initializeFromViperProjectJson 完成），
+        // 即优先于所有 fallback，符合"按需过滤，不用存根"原则。
         // The "default" workspace has a root-less execution environment; ignore it.
-        if (IsViperDialect(this._configOptions.dialect)) {
-            if (execEnv.root) {
-                roots.push(execEnv.root);
-            }
-            appendArray(roots, execEnv.extraPaths);
+        if (execEnv.root) {
+            roots.push(execEnv.root);
         }
+        appendArray(roots, execEnv.extraPaths);
 
-        // vipershed-fallback/stdlib 作为回退：仅提供 t.vpi/c.vpi 等无真实 .vp 源码
-        // 的核心模块存根（t.py/c.py 是编译器实现，依赖内部模块无法被 LSP 解析）。
+        // vipershed-fallback/stdlib 作为回退：仅 Viper 模式下提供 t.vpi/c.vpi 等
+        // 无真实 .vp 源码的核心模块存根（t.py/c.py 是编译器实现，依赖内部模块无法被 LSP 解析）。
         // 排在项目 includes 之后，确保有真实 .vp 的模块优先用源码。
         if (IsViperDialect(this._configOptions.dialect)) {
             const vipershed = PythonPathUtils.getVipershedFallbackPath(this.fileSystem);
@@ -389,14 +390,6 @@ export class ImportResolver {
         );
         if (stdTypeshed) {
             roots.push(stdTypeshed);
-        }
-
-        // 非 Viper 模式：保持原有顺序（root 与 extraPaths 在 typeshed 之后）。
-        if (!IsViperDialect(this._configOptions.dialect)) {
-            if (execEnv.root) {
-                roots.push(execEnv.root);
-            }
-            appendArray(roots, execEnv.extraPaths);
         }
 
         if (this._configOptions.stubPath) {

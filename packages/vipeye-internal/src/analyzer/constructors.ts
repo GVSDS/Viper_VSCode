@@ -35,6 +35,7 @@ import {
     isAny,
     isClass,
     isClassInstance,
+    isCPtrType,
     isFunction,
     isFunctionOrOverloaded,
     isInstantiableClass,
@@ -337,6 +338,19 @@ function validateNewAndInitMethods(
             initMethodBindToType.priv.typeArgs &&
             initMethodBindToType.priv.typeArgs.some((typeArg) => isUnknown(typeArg))
         ) {
+            initMethodBindToType = ClassType.cloneAsInstance(type);
+        }
+
+        // Viper 扩展：`__new__` 返回 CPtr[...]（裸指针分配语义）时，
+        // `__init__` 应绑定到类实例而非 CPtr（CPtr 上没有 `__init__` 方法）。
+        // 这样 `list[str](pool)` 的构造调用结果保持类实例 `list[str]`。
+        let isNewReturnPtr = false;
+        doForEachSubtype(newMethodReturnType, (subtype) => {
+            if (isCPtrType(subtype)) {
+                isNewReturnPtr = true;
+            }
+        });
+        if (isNewReturnPtr) {
             initMethodBindToType = ClassType.cloneAsInstance(type);
         }
 
@@ -1076,6 +1090,22 @@ function shouldSkipNewAndInitEvaluation(
 // type.__call__ runtime behavior.
 function shouldSkipInitEvaluation(evaluator: TypeEvaluator, classType: ClassType, newMethodReturnType: Type): boolean {
     const returnType = evaluator.makeTopLevelTypeVarsConcrete(newMethodReturnType);
+
+    // Viper 扩展：`__new__` 返回 CPtr[...]（裸指针）时不跳过 `__init__` 验证。
+    // Viper 中 `__new__` 负责分配内存并返回裸指针（如 `_list.vp` 的
+    // `def __new__(self, pool, elem_size=0): return pool.alloc(48)`，返回
+    // `t.CVoid | t.CPtr`），但构造调用 `list[str](pool)` 的结果仍是类实例
+    // `list[str]`（由 `__init__` 的 self 类型确定）。CPtr 是 Viper 特有指针类型，
+    // 检测到 CPtr 返回即视为 Viper 分配语义，不应跳过 `__init__`。
+    let isViperPtrAlloc = false;
+    doForEachSubtype(returnType, (subtype) => {
+        if (isCPtrType(subtype)) {
+            isViperPtrAlloc = true;
+        }
+    });
+    if (isViperPtrAlloc) {
+        return false;
+    }
 
     let skipInitCheck = false;
     doForEachSubtype(returnType, (subtype) => {

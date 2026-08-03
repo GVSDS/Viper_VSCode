@@ -8583,6 +8583,37 @@ export function createTypeEvaluator(
         }
     }
 
+    // Viper 扩展：从 t 模块获取 CPtr 类型的实例类型。
+    // Viper 中 `T | t.CPtr` 表示指向 T 的指针（如 `MemBuddy | t.CPtr`），
+    // CPtr 是裸指针类型的基类。用于构造 `__new__` 无返回注解时的默认返回类型。
+    // 返回特殊化为 Unknown 的 CPtr[Unknown] 实例，使任何 CPtr[X] 特殊化指针
+    // 都能通过泛型匹配赋值（Unknown 匹配一切类型参数）。
+    // 查找失败返回 undefined。
+    function getViperCPtrType(node: ExpressionNode): Type | undefined {
+        const tSymbolWithScope = lookUpSymbolRecursive(node, 't', /* honorCodeFlow */ true);
+        if (tSymbolWithScope) {
+            const tEffectiveType = getEffectiveTypeOfSymbolForUsage(
+                tSymbolWithScope.symbol,
+                /* usageNode */ undefined,
+                /* useLastDecl */ true
+            ).type;
+            if (tEffectiveType && isModule(tEffectiveType)) {
+                const cptrSymbol = ModuleType.getField(tEffectiveType, 'CPtr');
+                if (cptrSymbol) {
+                    const cptrType = getEffectiveTypeOfSymbolForUsage(
+                        cptrSymbol,
+                        /* usageNode */ undefined,
+                        /* useLastDecl */ true
+                    ).type;
+                    if (cptrType && isInstantiableClass(cptrType)) {
+                        return convertToInstance(ClassType.specialize(cptrType, [UnknownType.create()]));
+                    }
+                }
+            }
+        }
+        return undefined;
+    }
+
     // Viper 扩展：构造带 t.CChar 类型别名信息的 int 类型（表示 C 的 char 类型）。
     // Viper 中 str/bytes 是 i8* 指针，下标访问/迭代/字符运算返回 t.CChar（int 别名）。
     // 优先从 t 模块查找 CChar 类型别名以保留显示信息；找不到时回退为
@@ -20341,6 +20372,24 @@ export function createTypeEvaluator(
                     }
                     if (cReturnTupleType) {
                         functionType.shared.declaredReturnType = cReturnTupleType;
+                    } else if (node.d.name.d.value === '__new__' && functionType.shared.methodClass) {
+                        // Viper 扩展：`__new__` 无返回注解时，默认期望返回 `T | t.CPtr`。
+                        // Viper 中 `__new__` 负责分配对象并返回裸指针（如 `_list.vp` 的
+                        // `def __new__(self, pool, elem_size=0): return pool.alloc(48)`，
+                        // pool.alloc 返回 `t.CVoid | t.CPtr`）。
+                        // 返回类型设为「类实例 | 指针」的联合，使 `pool.alloc(...)` 这类
+                        // 裸指针返回可通过同级指针隐式转换合法化，不再报
+                        // "类型不可分配给返回类型 None"。
+                        const methodClassInstance = convertToInstance(functionType.shared.methodClass);
+                        const cptrType = getViperCPtrType(node.d.name);
+                        if (cptrType) {
+                            functionType.shared.declaredReturnType = combineTypes([
+                                methodClassInstance,
+                                cptrType,
+                            ]);
+                        } else {
+                            functionType.shared.declaredReturnType = methodClassInstance;
+                        }
                     } else {
                         // 无返回类型注解的函数默认返回 None（显示为 CVoid）。
                         // C 语义：空返回的函数等价于 void 函数。
@@ -23375,11 +23424,38 @@ export function createTypeEvaluator(
                             symbol = member.symbol;
                         }
                     } else if (isClassInstance(subtype)) {
+                        // Viper 扩展：CPtr[T] 指针解引用转发。
+                        // 当 baseType 是 `T | t.CPtr`（折叠为 CPtr[T]，如
+                        // `args: ParsedArgs | t.CPtr`）时，成员访问 `args._set_int(...)`
+                        // 应转发到 T 的成员（模拟 C 的 ptr->field 语义）。
+                        // 否则 lookUpObjectMember 会在 CPtr 上找 `_set_int`，找不到时
+                        // 走 CPtr.__getattr__ 返回 variable 声明，导致方法显示为变量颜色。
+                        let subtypeForLookup: ClassType = subtype;
+                        if (
+                            isCPtrType(subtypeForLookup) &&
+                            subtypeForLookup.priv.typeArgs &&
+                            subtypeForLookup.priv.typeArgs.length > 0
+                        ) {
+                            const pointeeType = subtypeForLookup.priv.typeArgs[0];
+                            if (isClassInstance(pointeeType)) {
+                                subtypeForLookup = pointeeType;
+                            } else if (isInstantiableClass(pointeeType)) {
+                                const converted = convertToInstance(pointeeType);
+                                if (isClassInstance(converted)) {
+                                    subtypeForLookup = converted;
+                                }
+                            }
+                        }
+
                         // Try to find a member that has a declared type. If so, that
                         // overrides any inferred types.
-                        let member = lookUpObjectMember(subtype, memberName, MemberAccessFlags.DeclaredTypesOnly);
+                        let member = lookUpObjectMember(
+                            subtypeForLookup,
+                            memberName,
+                            MemberAccessFlags.DeclaredTypesOnly
+                        );
                         if (!member) {
-                            member = lookUpObjectMember(subtype, memberName);
+                            member = lookUpObjectMember(subtypeForLookup, memberName);
                         }
                         if (member) {
                             symbol = member.symbol;
@@ -24592,7 +24668,20 @@ export function createTypeEvaluator(
         // cases where a property symbol is redefined to add a setter, deleter,
         // etc.
         let exceedsMaxDecls = false;
-        if (usageNode && typedDecls.length > 1) {
+        // Viper 扩展：跳过 flow 可达性过滤（AOT 静态类型语义）。
+        // Viper 是 AOT 静态语言，变量类型在声明时确定（如 `arg: Argument | t.CPtr`），
+        // 不应因 flow 路径未建立而过滤 typed declarations。否则函数内多赋值变量
+        // 的第一个使用点可能拿到 Unbound（如 argparse.vp 的 `arg.action` 报
+        // "Cannot access member on unresolved type"），而后续使用点才正常。
+        // 命中场景：parse_args 内 `arg: Argument | t.CPtr` 被循环内多次赋值，
+        // 第一个 `arg.action` 访问时 flow 图尚未覆盖声明节点。
+        let isViperTypedDecl = false;
+        if (usageNode) {
+            const usageFileInfo = AnalyzerNodeInfo.getFileInfo(usageNode);
+            isViperTypedDecl =
+                IsViperDialect(usageFileInfo.executionEnvironment.dialect) && typedDecls.length > 0;
+        }
+        if (usageNode && typedDecls.length > 1 && !isViperTypedDecl) {
             if (typedDecls.length > maxTypedDeclsPerSymbol) {
                 // If there are too many typed decls, don't bother filtering them
                 // because this can be very expensive. Simply use the last one
@@ -25941,6 +26030,21 @@ export function createTypeEvaluator(
             }
         }
 
+        // Viper 扩展：str ↔ bytes 隐式互转（C 字符串指针语义）。
+        // Viper 中 str/bytes/t.CChar|t.CPtr 都是 i8*（C 字符串指针），
+        // 本质是同一类型的别名，应忽略区别。覆盖场景：
+        //   def a2b_hex(hexstr: str, length: t.CInt) -> str
+        //   def unhexlify(data: str, length: t.CInt) -> bytes:
+        //       return a2b_hex(data, length)   # str 返回赋给 bytes 注解
+        // 仅对 str/bytes 内置类型之间允许，不影响其他类型。
+        if (
+            isClassInstance(srcType) && isClassInstance(destType) &&
+            ((ClassType.isBuiltIn(srcType, 'str') && ClassType.isBuiltIn(destType, 'bytes')) ||
+                (ClassType.isBuiltIn(srcType, 'bytes') && ClassType.isBuiltIn(destType, 'str')))
+        ) {
+            return true;
+        }
+
         // Viper 扩展：TypeSet 类型组合赋值语义。
         // 在 Viper 中，`|` 表示类型组合（TypeSet），而非 Python 的联合类型。
         // TypeSet 中的每个子类型都是"同一值的不同视角"，因此：
@@ -25985,6 +26089,40 @@ export function createTypeEvaluator(
             isTypeVar(srcType) && TypeVarType.isSelf(srcType)
         ) {
             return true;
+        }
+
+        // Viper 扩展：类实例 → CPtr[T] 隐式取地址语义（堆对象即指针）。
+        // Viper 中 `T | t.CPtr` 注解表示 T*（指向 T 的指针），构造调用返回的是
+        // 堆上分配的类实例（如 `HashTable(mb)` 返回 HashTable 实例）。
+        // 允许类实例赋值给 CPtr[同类]（相当于 C 的 `HashTable* p = &obj`，Viper
+        // 中实例本身就是指针），覆盖场景：
+        //   self._ht: hashtable.HashTable | t.CPtr = hashtable.HashTable(mb)
+        // 仅当 CPtr 的目标类型是源类实例的同类/基类时允许（保证指针类型安全）。
+        if (
+            isClassInstance(destType) && isCPtrType(destType) &&
+            destType.priv.typeArgs && destType.priv.typeArgs.length > 0 &&
+            isClassInstance(srcType)
+        ) {
+            const pointeeType = destType.priv.typeArgs[0];
+            // 目标可以是实例或可实例化形式，统一转成可比较形式。
+            let pointeeAsClass: ClassType | undefined;
+            if (isClassInstance(pointeeType)) {
+                pointeeAsClass = pointeeType;
+            } else if (isInstantiableClass(pointeeType)) {
+                const converted = convertToInstance(pointeeType);
+                pointeeAsClass = isClassInstance(converted) ? converted : undefined;
+            }
+            if (pointeeAsClass) {
+                const inheritanceChain: InheritanceChain = [];
+                const isDerivedFrom = ClassType.isDerivedFrom(
+                    srcType,
+                    pointeeAsClass,
+                    inheritanceChain
+                );
+                if (isDerivedFrom) {
+                    return true;
+                }
+            }
         }
 
         // Viper 扩展：字符串字面量 → int（CChar）转换语义。

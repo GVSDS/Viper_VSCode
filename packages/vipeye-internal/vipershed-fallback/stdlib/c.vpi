@@ -27,12 +27,13 @@ def Set(target: Any, value: T) -> None:
     """target = value。"""
     ...
 
-def Asm(asm: str, *args: Any, op: Any = None) -> Any:
-    """内联汇编。op 为破坏描述符列表。"""
+def Asm(asm: str, *args: Any, inp: Any = None, out: Any = None, op: Any = None) -> Any:
+    """内联汇编。inp 为输入操作数描述符列表，out 为输出操作数描述符列表，
+    op 为破坏描述符列表。"""
     ...
 
-def LLVMIR(ir: str, *args: Any, op: Any = None) -> Any:
-    """LLVM IR 内联。op 为破坏描述符列表。"""
+def LLVMIR(ir: str, *args: Any, inp: Any = None, out: Any = None, op: Any = None) -> Any:
+    """LLVM IR 内联。inp/out/op 为操作数描述符列表。"""
     ...
 
 def LInp(expr: Any, constraint: Any = None) -> Any:

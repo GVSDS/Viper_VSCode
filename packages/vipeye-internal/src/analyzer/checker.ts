@@ -7288,20 +7288,25 @@ export class Checker extends ParseTreeWalker {
 
         if (methodName === '__new__') {
             // __new__ overrides should have a "cls" parameter.
-            if (node.d.params.length === 0 || !node.d.params[0].d.name) {
-                this._evaluator.addDiagnostic(
-                    DiagnosticRule.reportSelfClsParameterName,
-                    LocMessage.newClsParam(),
-                    node.d.name
-                );
-            } else {
-                const paramName = node.d.params[0].d.name.d.value;
-                if (!clsNames.includes(paramName) && !(isMetaclass && clsNamesMetaclass.includes(paramName))) {
+            // Viper 扩展：Viper 中 `__new__` 的第一个参数就是 self（栈位置，
+            // 如 `_list.vp` 的 `def __new__(self, pool, elem_size=0)`），
+            // 与 Python 的 cls 语义不同，跳过参数名校验。
+            if (!IsViperDialect(this._fileInfo.executionEnvironment.dialect)) {
+                if (node.d.params.length === 0 || !node.d.params[0].d.name) {
                     this._evaluator.addDiagnostic(
                         DiagnosticRule.reportSelfClsParameterName,
                         LocMessage.newClsParam(),
-                        node.d.params[0]
+                        node.d.name
                     );
+                } else {
+                    const paramName = node.d.params[0].d.name.d.value;
+                    if (!clsNames.includes(paramName) && !(isMetaclass && clsNamesMetaclass.includes(paramName))) {
+                        this._evaluator.addDiagnostic(
+                            DiagnosticRule.reportSelfClsParameterName,
+                            LocMessage.newClsParam(),
+                            node.d.params[0]
+                        );
+                    }
                 }
             }
 

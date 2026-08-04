@@ -10956,6 +10956,29 @@ export function createTypeEvaluator(
             return { returnType: UnknownType.create(), argumentErrors: false, overloadsUsedForCall };
         }
 
+        // Viper 扩展：类型变量调用 `T(v)` 是 C 风格强转语义。
+        // 泛型类方法中 `self.value = T(v)` 用类型参数做类型转换函数。
+        // PEP 695 type param `T` 在值表达式（调用位置）求值为 `type[T]`：
+        // - callTypeResult.type 是 Class 类别、printType 为 type[TypeVar]
+        // - 其 props.typeForm 是 TypeVar 类的 instantiable Class 形式
+        //   （shared.name === 'TypeVar'，见 getTypeOfTypeParam 的 runtimeClassName）
+        // 若走 validateCallForInstantiableClass/validateCallForClassInstance 会查
+        // `__call__` 成员并误报 "Object of type TypeVar is not callable"。
+        // Viper 方言下放行并返回 Unknown，转换结果在泛型实例化时才确定。
+        const typeFormType = callTypeResult.type.props?.typeForm;
+        const isTypeParamTypeForm =
+            typeFormType !== undefined &&
+            isClass(typeFormType) &&
+            typeFormType.shared.name === 'TypeVar';
+        const isTypeVarClassType =
+            isClass(callTypeResult.type) && (callTypeResult.type as any).shared?.name === 'TypeVar';
+        if (
+            (isTypeVar(callTypeResult.type) || isTypeParamTypeForm || isTypeVarClassType) &&
+            IsViperDialect(AnalyzerNodeInfo.getFileInfo(errorNode).executionEnvironment.dialect)
+        ) {
+            return { returnType: UnknownType.create(), argumentErrors: false, overloadsUsedForCall };
+        }
+
         // Special forms are not callable.
         if (callTypeResult.type.props?.specialForm) {
             const exprNode = errorNode.nodeType === ParseNodeType.Call ? errorNode.d.leftExpr : errorNode;
@@ -11130,6 +11153,15 @@ export function createTypeEvaluator(
             // T is a constrained type that contains a union. We also
             // need to handle recursive type aliases.
             case TypeCategory.TypeVar: {
+                // Viper 扩展：类型变量调用 `T(v)` 是 C 风格强转语义。
+                // 泛型类方法中 `self.value = T(v)` 用类型参数做类型转换函数，
+                // T 在方法内是未实例化的 TypeVar，不可调用属正常；转换结果
+                // 在泛型实例化时才确定。因此 Viper 方言下放行并返回 Unknown，
+                // 避免误报 "Object of type TypeVar is not callable"。
+                if (IsViperDialect(AnalyzerNodeInfo.getFileInfo(errorNode).executionEnvironment.dialect)) {
+                    return { returnType: UnknownType.create(), argumentErrors: false, overloadsUsedForCall: [] };
+                }
+
                 return validateCallArgs(
                     errorNode,
                     argList,
@@ -11407,6 +11439,25 @@ export function createTypeEvaluator(
 
             // Handle a call to a metaclass explicitly.
             if (isInstantiableMetaclass(expandedCallType)) {
+                // Viper 扩展：类型变量调用 `T(v)` 是 C 风格强转语义。
+                // 泛型类方法中 `self.value = T(v)` 用类型参数做类型转换函数，
+                // T 在方法内是未实例化的 TypeVar，求值结果为 type[T]（instantiable），
+                // isInstantiableMetaclass 会误判为 metaclass 调用并报
+                // "Object of type TypeVar is not callable"。Viper 方言下放行
+                // 并返回 Unknown，转换结果在泛型实例化时才确定。
+                if (IsViperDialect(AnalyzerNodeInfo.getFileInfo(errorNode).executionEnvironment.dialect)) {
+                    // 参数仍按普通参数校验（避免参数表达式未求值导致漏报），
+                    // 但不校验可调用性，返回 Unknown。
+                    if (argList) {
+                        argList.forEach((arg) => {
+                            if (arg.valueExpression && !isSpeculativeModeInUse(arg.valueExpression)) {
+                                getTypeOfArg(arg, /* inferenceContext */ undefined);
+                            }
+                        });
+                    }
+                    return { returnType: UnknownType.create(), argumentErrors: false };
+                }
+
                 if (expandedCallType.priv.typeArgs && expandedCallType.priv.isTypeArgExplicit) {
                     addDiagnostic(
                         DiagnosticRule.reportCallIssue,

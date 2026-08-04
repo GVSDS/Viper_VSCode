@@ -631,9 +631,24 @@ export class Binder extends ParseTreeWalker {
 
         // Don't walk the body of the function until we're done analyzing
         // the current scope.
+        // Viper 扩展：泛型类的方法需要能引用类的类型参数（如 `self.value = T(v)`）。
+        // Python 默认把方法的 parent scope 设为最近的非 Class scope（跳过 Class 与
+        // typeParamScope），导致方法内 `T` 解析到模块级符号而非本类 type param。
+        // 当 enclosingClass 声明了 typeParams（PEP 695 `class Box[T]`）时，将方法
+        // parent 设为 Class scope，使查找链 Function → Class → typeParamScope 可达
+        // 类型参数。类成员（如 `value: T`）仍通过 self 访问，不受影响。
+        let methodParentScope: Scope | undefined;
+        if (
+            containingClassNode &&
+            containingClassNode.d.typeParams &&
+            IsViperDialect(this._fileInfo.executionEnvironment.dialect)
+        ) {
+            methodParentScope = AnalyzerNodeInfo.getScope(containingClassNode);
+        }
+
         this._createNewScope(
             ScopeType.Function,
-            typeParamScope ?? this._getNonClassParentScope(),
+            methodParentScope ?? typeParamScope ?? this._getNonClassParentScope(),
             /* proxyScope */ undefined,
             /* chainedModuleLevelScopeLookup */ undefined,
             () => {

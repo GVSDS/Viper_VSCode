@@ -901,6 +901,9 @@ export function getStandardDiagnosticRuleSet(dialect?: LanguageDialect): Diagnos
         // 禁用 strictParameterNoneValue，使 "T = None" 自动扩展为 "T | None"（PEP 484），
         // 避免 short: str = None 这类合法的 Viper 指针默认值被误报为类型不兼容。
         diagSettings.strictParameterNoneValue = false;
+        // Viper 扩展：不存在的成员访问（属性未知）用黄色波浪线（warning）提示，
+        // 而非默认的红色 error。LSP 诊断级别 warning 对应 VS Code 的黄色波浪线。
+        diagSettings.reportAttributeAccessIssue = 'warning';
     }
 
     return diagSettings;
@@ -1026,6 +1029,9 @@ export function getStrictDiagnosticRuleSet(dialect?: LanguageDialect): Diagnosti
         // 禁用 strictParameterNoneValue，使 "T = None" 自动扩展为 "T | None"（PEP 484），
         // 避免 short: str = None 这类合法的 Viper 指针默认值被误报为类型不兼容。
         diagSettings.strictParameterNoneValue = false;
+        // Viper 扩展：不存在的成员访问（属性未知）用黄色波浪线（warning）提示，
+        // 而非默认的红色 error。LSP 诊断级别 warning 对应 VS Code 的黄色波浪线。
+        diagSettings.reportAttributeAccessIssue = 'warning';
     }
 
     return diagSettings;

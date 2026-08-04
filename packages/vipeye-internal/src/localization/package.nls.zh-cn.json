@@ -161,6 +161,7 @@
         "enumMemberDelete": "无法删除 Enum 成员 \"{name}\"",
         "enumMemberSet": "无法分配 Enum 成员 \"{name}\"",
         "enumMemberTypeAnnotation": "enum 成员不允许使用类型批注",
+        "viperBeforeInitReserved": "\"__before_init__\" 由编译器自动生成，不允许手动定义",
         "exceptGroupMismatch": "Try 语句不能同时包含 \"except\" 和 \"except*\"",
         "exceptGroupRequiresType": "异常组语法(\"except*\")需要异常类型",
         "exceptRequiresParens": "在 Python 3.14 之前的版本中，多个异常类型必须用括号括起来",

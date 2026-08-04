@@ -592,7 +592,15 @@ class SemanticTokenWalker extends ParseTreeWalker {
             ? SemanticTokenModifiers.declaration | SemanticTokenModifiers.definition
             : 0;
 
-        if (!declInfo || !declInfo.decls || declInfo.decls.length === 0) {
+        // Viper 扩展：`__before_init__` 由编译器自动生成，所有类隐式存在。
+        // 成员访问 `obj.__before_init__()` 时应显示为方法（函数颜色）。
+        // 注意：必须在 declInfo 查询之前优先处理，因为 CPtr 解引用转发
+        // 可能让 getDeclInfoForNameNode 返回 CPtr.__getattr__ 的 variable
+        // 声明（VariableDeclaration），导致误显示为变量颜色。
+        if (nameText === '__before_init__' && this._isViperMemberAccess(node)) {
+            tokenType = SemanticTokenTypes.function;
+            tokenModifiers = 0;
+        } else if (!declInfo || !declInfo.decls || declInfo.decls.length === 0) {
             // 未定义符号 → 白色（默认前景）
             tokenType = SemanticTokenTypes.undefined;
         } else {
@@ -774,5 +782,19 @@ class SemanticTokenWalker extends ParseTreeWalker {
         }
 
         return false;
+    }
+
+    /**
+     * 判断 NameNode 是否是 Viper 成员访问（obj.__before_init__）中的成员名。
+     * `__before_init__` 是 Viper 编译器自动生成的方法，成员访问时无真实
+     * symbol/declaration，但应显示为函数颜色而非未定义白色。
+     */
+    private _isViperMemberAccess(node: NameNode): boolean {
+        const parent = node.parent;
+        return (
+            parent !== undefined &&
+            parent.nodeType === ParseNodeType.MemberAccess &&
+            (parent as MemberAccessNode).d.member === node
+        );
     }
 }

@@ -416,6 +416,20 @@ export class Checker extends ParseTreeWalker {
         const functionTypeResult = this._evaluator.getTypeOfFunction(node);
         const containingClassNode = ParseTreeUtils.getEnclosingClass(node, /* stopAtFunction */ true);
 
+        // Viper 扩展：`__before_init__` 由编译器自动生成（见 TransPyC wiki/06-oop.md），
+        // 所有类都隐式存在该默认成员方法，不允许用户手动定义。
+        if (
+            containingClassNode &&
+            node.d.name.d.value === '__before_init__' &&
+            IsViperDialect(this._fileInfo.executionEnvironment.dialect)
+        ) {
+            this._evaluator.addDiagnostic(
+                DiagnosticRule.reportGeneralTypeIssues,
+                LocMessage.viperBeforeInitReserved(),
+                node.d.name
+            );
+        }
+
         if (functionTypeResult) {
             // Track whether we have seen a *args: P.args parameter. Named
             // parameters after this need to be flagged as an error.
@@ -3657,6 +3671,20 @@ export class Checker extends ParseTreeWalker {
                         // It's OK if they both have the same declared type.
                         const otherType = this._evaluator.getTypeForDeclaration(otherDecl)?.type;
                         if (primaryType && otherType && isTypeSame(primaryType, otherType)) {
+                            duplicateIsOk = true;
+                        }
+
+                        // Viper 扩展：允许互斥分支（if/else 等不同 suite）中
+                        // 的同名变量声明。与函数分支的处理逻辑一致：两个声明
+                        // 不在同一个 statement suite（例如一个在 "if" 分支、
+                        // 另一个在 "else" 或函数体后续），运行时只执行其一，
+                        // 不应判定为遮蔽。socket.vp accept 方法中
+                        // `client_fd: u64`（if 分支）与 `client_fd: INT`
+                        // （else 路径）即为此场景。
+                        const suite1 = ParseTreeUtils.getEnclosingSuite(primaryDecl.node);
+                        const suite2 = ParseTreeUtils.getEnclosingSuite(otherDecl.node);
+                        const isInSameStatementList = suite1 === suite2;
+                        if (!isInSameStatementList) {
                             duplicateIsOk = true;
                         }
 

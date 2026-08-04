@@ -4136,12 +4136,20 @@ export function combineTypes(subtypes: Type[], options?: CombineTypesOptions): T
     // 例外：State 不过滤——State 是声明标记（C extern 语义），非类型修饰符。
     //       保留 State 使 isPureCModifierType 能识别声明性函数返回类型
     //       （如 BOOL | t.State: pass 的 extern 声明，过滤后仍为 BOOL | State 联合类型）。
-    // 若过滤后无剩余类型，则保留原数组（避免空数组异常）。
+    // 关键：过滤后若仅剩一个子类型，则保留修饰符（不丢弃），使
+    //       `u64 | CExtern | CExport` 这类"数据 + 声明标记"的返回类型
+    //       仍为联合，isPureCModifierType 可识别为声明性函数（允许 pass/None）。
+    //       否则 CExtern/CExport 被过滤后只剩 u64，会误报
+    //       "must return value on all code paths"。
     if (subtypes.length > 1) {
         const nonModifierTypes = subtypes.filter(
             (t) => !isCModifierType(t) || (isClass(t) && t.shared.name === 'State')
         );
-        if (nonModifierTypes.length > 0 && nonModifierTypes.length < subtypes.length) {
+        if (
+            nonModifierTypes.length > 0 &&
+            nonModifierTypes.length < subtypes.length &&
+            nonModifierTypes.length > 1
+        ) {
             subtypes = nonModifierTypes;
         }
     }

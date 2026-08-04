@@ -2604,6 +2604,32 @@ export function createTypeEvaluator(
             diag.addAddendum(subDiag);
         }
 
+        // Viper 扩展：`__before_init__` 是编译器自动生成的默认成员方法
+        // （在 __init__ 之前自动填充成员默认值，见 TransPyC wiki/06-oop.md），
+        // 所有类都隐式存在，无需在源码中定义。因此当成员查找失败且目标
+        // 成员名是 `__before_init__` 时，合成一个 `() -> None` 的方法，
+        // 避免报 "attribute is unknown"。同时该成员不允许手动定义，手动
+        // 定义会在 checker 中报错。
+        if (
+            memberName === '__before_init__' &&
+            isClass(objectType) &&
+            errorNode &&
+            IsViperDialect(AnalyzerNodeInfo.getFileInfo(errorNode).executionEnvironment.dialect) &&
+            (flags & MemberAccessFlags.SkipAttributeAccessOverride) === 0
+        ) {
+            // 合成 `() -> None` 方法。注意：成员访问 `obj.__before_init__()`
+            // 已绑定实例，因此签名不包含 self 参数（与 __getattr__ 等
+            // 动态成员的绑定行为一致），避免调用时误报 "missing self"。
+            const beforeInitType = FunctionType.createSynthesizedInstance('__before_init__');
+            beforeInitType.shared.declaredReturnType = getNoneType();
+
+            return {
+                type: beforeInitType,
+                isIncomplete: false,
+                isAsymmetricAccessor: false,
+            };
+        }
+
         return undefined;
     }
 

@@ -31,6 +31,7 @@ import {
 import { CodeFlowReferenceExpressionNode } from './codeFlowTypes';
 import { addConstraintsForExpectedType } from './constraintSolver';
 import { ConstraintTracker } from './constraintTracker';
+import { DeclarationType } from './declaration';
 import { getTypeVarScopesForNode, isMatchingExpression } from './parseTreeUtils';
 import { getTypedDictMembersForClass } from './typedDicts';
 import { EvalFlags, TypeEvaluator, TypeResult } from './typeEvaluatorTypes';
@@ -54,6 +55,9 @@ import {
     isAnyOrUnknown,
     isClass,
     isClassInstance,
+    isCPtrType,
+    isCTypeSubclassType,
+    isCVoidType,
     isInstantiableClass,
     isNever,
     isSameWithoutLiteralValue,
@@ -662,6 +666,42 @@ function getPositionalMatchArgNames(evaluator: TypeEvaluator, type: ClassType): 
                 return tupleArgs.map((arg) => (arg.type as ClassType).priv.literalValue as string);
             }
         }
+    }
+
+    // Viper 扩展：REnum 变体类的 match 位置参数。
+    // Viper 的 REnum（t.REnum）嵌套类变体（如 class LLVMType 内的 class Ptr）
+    // 没有 __match_args__，但 match 模式 `LLVMType.Ptr(pointee)` 允许按声明顺序
+    // 解构其类型注解字段。Pyright 默认对无 __match_args__ 的类只允许 0 个位置参数，
+    // 会把 `LLVMType.Ptr(pointee)` 误报为"位置模式太多"。
+    // 此处返回类中所有类型注解字段名作为位置参数名。
+    // 判断依据：类自身是 CType 子类（CPtr/CVoid），或声明在 CType 子类内部
+    // （REnum 的嵌套类变体）。
+    const isNestedInCType =
+        (() => {
+            const decl = type.shared.declaration;
+            const classNode = decl?.type === DeclarationType.Class ? decl.node : undefined;
+            if (!classNode) {
+                return false;
+            }
+            // 嵌套类的直接父节点是外层类的 Suite（nodeType=50），
+            // Suite 的父节点才是外层 ClassNode（nodeType=10）。
+            const parentNode = classNode.parent;
+            const grandparentNode =
+                parentNode?.nodeType === ParseNodeType.Suite ? parentNode.parent : undefined;
+            return grandparentNode?.nodeType === ParseNodeType.Class;
+        })();
+    if (isCTypeSubclassType(type) || isCPtrType(type) || isCVoidType(type) || isNestedInCType) {
+        const fieldNames: string[] = [];
+        const fields = type.shared.fields;
+        if (fields) {
+            for (const [name, symbol] of fields) {
+                const decls = symbol.getDeclarations();
+                if (decls.some((decl) => decl.type === DeclarationType.Variable)) {
+                    fieldNames.push(name);
+                }
+            }
+        }
+        return fieldNames;
     }
 
     return [];

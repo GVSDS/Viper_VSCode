@@ -2655,7 +2655,6 @@ export function createTypeEvaluator(
         if (!boundMethodResult || boundMethodResult.typeErrors) {
             return undefined;
         }
-
         if (isFunctionOrOverloaded(boundMethodResult.type)) {
             return boundMethodResult.type;
         }
@@ -5343,10 +5342,19 @@ export function createTypeEvaluator(
             if (name === 'reveal_type' || name === 'reveal_locals') {
                 type = AnyType.create();
             } else {
-                // Viper 扩展：前向引用支持。
-                // Viper 是 AOT 语言，结构体/函数不在乎定义顺序（类似 C 语言的前向声明）。
-                // 当符号未找到时（可能在更后方定义），不报 undefinedVariable 错误，
-                // 而是返回 UnknownType，允许后续定义的符号被引用。
+                // Viper 扩展：前向引用支持（收紧版）。
+                // Viper 是 AOT 语言，函数/类的定义顺序无关（类似 C 语言的前向声明），
+                // 但绑定器在分析开始前已预扫描全部声明，真实的前向引用目标
+                // （如 viperlib.vp 中 sprintf 引用后方的 vsnprintf）会出现在符号表中
+                // （symbolWithScope 非空），不会进入此分支。
+                // 走到这里的名字（symbolWithScope 为空）在整个文件+可见作用域中
+                // 均无任何声明，属于真正的未定义符号（如拼写错误 count1），
+                // 此时应报 undefined variable，而不是静默返回 Unknown。
+                addDiagnostic(
+                    DiagnosticRule.reportUndefinedVariable,
+                    LocMessage.symbolIsUndefined().format({ name }),
+                    node
+                );
                 type = UnknownType.create();
             }
         }
@@ -8615,7 +8623,7 @@ export function createTypeEvaluator(
     // 返回特殊化为 Unknown 的 CPtr[Unknown] 实例，使任何 CPtr[X] 特殊化指针
     // 都能通过泛型匹配赋值（Unknown 匹配一切类型参数）。
     // 查找失败返回 undefined。
-    function getViperCPtrType(node: ExpressionNode): Type | undefined {
+    function getViperCPtrType(node: ParseNode): Type | undefined {
         const tSymbolWithScope = lookUpSymbolRecursive(node, 't', /* honorCodeFlow */ true);
         if (tSymbolWithScope) {
             const tEffectiveType = getEffectiveTypeOfSymbolForUsage(
@@ -8638,6 +8646,28 @@ export function createTypeEvaluator(
             }
         }
         return undefined;
+    }
+
+    // Viper 扩展：判断类型是否为 REnum 变体类。
+    // Viper 的 REnum（t.REnum）类内部定义嵌套类变体（如 class LLVMType 内的
+    // class Int/Ptr/Func/Struct 等）。这些嵌套类不继承 CType，但语义上是
+    // REnum 的 tagged-union 变体：match 模式 `LLVMType.Ptr(pointee)` 按字段
+    // 顺序解构，构造调用 `LLVMType.Int(bits)` 按字段顺序传参。
+    // 判断依据：类声明嵌套在另一个类（外层 REnum）的 suite 中。
+    function isViperREnumVariantType(type: Type): boolean {
+        if (!isClass(type)) {
+            return false;
+        }
+        const decl = type.shared.declaration;
+        const classNode = decl?.type === DeclarationType.Class ? decl.node : undefined;
+        if (!classNode) {
+            return false;
+        }
+        // 嵌套类的直接父节点是外层类的 Suite（nodeType=50），
+        // Suite 的父节点才是外层 ClassNode（nodeType=10）。
+        const parentNode = classNode.parent;
+        const grandparentNode = parentNode?.nodeType === ParseNodeType.Suite ? parentNode.parent : undefined;
+        return grandparentNode?.nodeType === ParseNodeType.Class;
     }
 
     // Viper 扩展：构造带 t.CChar 类型别名信息的 int 类型（表示 C 的 char 类型）。
@@ -9285,6 +9315,34 @@ export function createTypeEvaluator(
         return false;
     }
 
+    // Viper 扩展：判断调用节点是否为 stdarg.va_arg 调用。
+    // va_arg 通过 `from stdarg import va_arg` 引入，baseTypeResult 为 FunctionType，
+    // 其 shared.name 为 'va_arg'。TPV 将 va_arg 视为 builtin，第二参数是类型名。
+    function isViperVaArgCall(node: CallNode, baseTypeResult: TypeResult): boolean {
+        return (
+            isFunction(baseTypeResult.type) &&
+            baseTypeResult.type.shared.name === 'va_arg' &&
+            baseTypeResult.type.shared.moduleName === 'stdarg'
+        );
+    }
+
+    // Viper 扩展：判断调用节点是否为 c 模块的 Deref/Load/DerefAs/Set 调用。
+    // 这些函数在 c.vpi 存根中声明为 int 参数，但 Viper 语义接受任意指针表达式。
+    function isViperCDerefCall(node: CallNode, baseTypeResult: TypeResult): boolean {
+        const leftExpr = node.d.leftExpr;
+        if (leftExpr.nodeType !== ParseNodeType.MemberAccess) {
+            return false;
+        }
+        const memberName = leftExpr.d.member.d.value;
+        if (memberName !== 'Deref' && memberName !== 'Load' && memberName !== 'DerefAs' && memberName !== 'Set') {
+            return false;
+        }
+        return (
+            isFunction(baseTypeResult.type) &&
+            baseTypeResult.type.shared.moduleName === 'c'
+        );
+    }
+
     // Viper 扩展：检查类型注解 AST 节点是否包含 CPtr 引用。
     // 用于判断循环引用是否被指针打破（如 next: 'Node' | t.CPtr）。
     // 递归遍历类型注解表达式，查找名称为 CPtr/CNeedPtr/CAutoPtr/CArrayPtr 的标识符。
@@ -9619,6 +9677,18 @@ export function createTypeEvaluator(
                     typeResult.type = instanceType;
                 }
             } else if (
+                // Viper 扩展：拦截 REnum 变体类构造调用。
+                // Viper 的 REnum 变体（如 LLVMType.Int(bits)、LLVMType.Struct(fields, fcount, name)）
+                // 没有 __init__，但构造调用按字段声明顺序接收参数（tagged-union 语义）。
+                // Pyright 默认对无 __init__ 的类只允许 0 个位置参数，会把
+                // `LLVMType.Int(1)` 误报为"应为 0 个位置参数"。
+                // 此处跳过参数校验，直接返回变体类的实例类型。
+                IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                isInstantiableClass(baseTypeResult.type) &&
+                isViperREnumVariantType(baseTypeResult.type)
+            ) {
+                typeResult.type = ClassType.cloneAsInstance(baseTypeResult.type);
+            } else if (
                 // Viper 扩展：拦截 __sizeof__ 调用。
                 // Viper 中 __sizeof__ 语义是 C 语言的 sizeof(Type) -> int，
                 // 是类方法/静态方法，不需要 self 参数。但 object.__sizeof__ 是实例方法，
@@ -9630,6 +9700,48 @@ export function createTypeEvaluator(
                 // Viper 的 __sizeof__ 是类方法（sizeof(Type)），返回类型大小（字节数）。
                 // 跳过 object.__sizeof__ 的实例方法参数检查，直接返回 int。
                 typeResult.type = getBuiltInObject(node, 'int');
+            } else if (
+                // Viper 扩展：拦截 stdarg.va_arg 调用。
+                // TPV 将 va_arg 视为 builtin（见 HandlesExprBuiltin._HandleVaArgLlvm），
+                // 第二参数是类型名（如 t.CInt64T / t.CPtr / t.CInt64T | t.CPtr），
+                // 而非 CPtr 值。若按 stdarg.vp 的声明 `va_arg(args: t.CPtr, type: t.CPtr)`
+                // 做普通参数校验，会把类型名当作 CPtr 值检查而误报。
+                // 返回类型 = 第二参数类型形式对应的实例类型；无第二参数时返回 Unknown
+                // （由赋值上下文注解推断，如 `ptr_i: t.CInt = va_arg(ap)`）。
+                IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                isViperVaArgCall(node, baseTypeResult)
+            ) {
+                if (node.d.args.length >= 2) {
+                    const typeExpr = node.d.args[1].d.valueExpr;
+                    const typeFormResult = getTypeOfExpression(typeExpr, EvalFlags.TypeExpression);
+                    const typeFormType = stripTypeForm(typeFormResult.type);
+                    typeResult.type = isInstantiableClass(typeFormType)
+                        ? convertToInstance(typeFormType)
+                        : typeFormType;
+                } else {
+                    typeResult.type = UnknownType.create();
+                }
+            } else if (
+                // Viper 扩展：拦截 c.Deref / c.Load / c.DerefAs / c.Set 调用。
+                // TPV 将 Deref 等视为 builtin（见 lib/core/Handles/HandlesSpecialCall.py），
+                // 指针参数接受任意指针表达式（str/bytes/t.CPtr 等，i8*）。
+                // c.vpi 存根中 `Deref(ptr: int)` 的 int 参数声明与 Viper 语义不符
+                // （Viper 中 str 是 i8*，str→int 不允许隐式转换），
+                // 按普通校验会误报 "str 不可分配给 int"。
+                // 此处跳过参数检查，返回：Deref → 类型参数 T 或 Unknown；其余 → Unknown。
+                IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                isViperCDerefCall(node, baseTypeResult)
+            ) {
+                if (node.d.leftExpr.nodeType === ParseNodeType.MemberAccess &&
+                    node.d.leftExpr.d.member.d.value === 'Deref' &&
+                    node.d.args.length >= 1) {
+                    // c.Deref(ptr) → 解引用结果。返回类型为 c.Deref 的 T 类型参数
+                    // 对应的实例类型（从 c.vpi 的 `def Deref(ptr: int) -> T` 推导）。
+                    // 简化：返回 Unknown，由赋值上下文推断（如 `v: int = c.Deref(p)`）。
+                    typeResult.type = UnknownType.create();
+                } else {
+                    typeResult.type = UnknownType.create();
+                }
             } else {
                 const callResult = validateCallArgs(
                     node,
@@ -20534,7 +20646,27 @@ export function createTypeEvaluator(
             !isOptionalType(type) &&
             !AnalyzerNodeInfo.getFileInfo(param).diagnosticRuleSet.strictParameterNoneValue
         ) {
-            return combineTypes([type, getNoneType()]);
+            // Viper 扩展：None 在 Viper 中对应 C 的 NULL（空指针），而不是
+            // Python 语义下的 Optional 标记。当参数注解本身就是指针类类型
+            // （str/bytes 是 i8*、CPtr、CVoid、函数指针、纯 C 修饰符），
+            // `= None` 只是表示默认值为空指针，无需展开为 `X | None`。
+            // 若展开，`app_deps: str = None` 会变成 `str | None`，
+            // 导致函数体内 app_deps[0] 这类下标访问误报 reportOptionalSubscript。
+            // 仅对值类型（int/bool/float 等）保留 PEP 484 展开语义。
+            const isViperPtrLike = (() => {
+                const variants = isUnion(type) ? type.priv.subtypes : [type];
+                return variants.some(
+                    (variant) =>
+                        isCPtrType(variant) ||
+                        isCVoidType(variant) ||
+                        isPureCModifierType(variant) ||
+                        isFunction(variant) ||
+                        (isClassInstance(variant) && ClassType.isBuiltIn(variant, ['str', 'bytes']))
+                );
+            })();
+            if (!isViperPtrLike) {
+                return combineTypes([type, getNoneType()]);
+            }
         }
 
         return type;
@@ -20699,6 +20831,19 @@ export function createTypeEvaluator(
 
                 if (isUnpackedClass(type)) {
                     return ClassType.cloneForPacked(type);
+                }
+
+                // Viper 扩展：`*args` 在函数体内绑定为 `va_list`（即 `CPtr[Unknown]`，
+                // 对应 LLVM 的 i8*），而非 Python 语义下的 tuple。TPV 在函数入口对
+                // `*args` 变量执行 va_start 并注册为裸指针（见 HandlesFunctions.py：
+                // `Gen._direct_values[vararg_name] = va_list_ptr`），因此函数体内
+                // 直接传递 `args` 给另一个 variadic 函数（如 vsnprintf 的 `ap` 参数）
+                // 是合法的指针透传，不应报 tuple 类型不兼容。
+                if (IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect)) {
+                    const cptrType = getViperCPtrType(node);
+                    if (cptrType) {
+                        return cptrType;
+                    }
                 }
 
                 return makeTupleObject(evaluatorInterface, [{ type, isUnbounded: !isTypeVarTuple(type) }]);
@@ -21276,11 +21421,20 @@ export function createTypeEvaluator(
             }
 
             if (isClass(subtype)) {
+                // Viper 扩展：`__exit__` 无需异常参数（Viper 无异常机制），
+                // 签名仅为 `def __exit__(self):`。若按 CPython 惯例传
+                // (exc_type, exc_val, exc_tb) 三个参数会报参数过多，
+                // 导致 magic method 调用失败并误报 "not usable with"。
                 const anyArg: TypeResult = { type: AnyType.create() };
+                const exitArgList: TypeResult[] = IsViperDialect(
+                    AnalyzerNodeInfo.getFileInfo(node.d.expr).executionEnvironment.dialect
+                )
+                    ? []
+                    : [anyArg, anyArg, anyArg];
                 const exitTypeResult = getTypeOfMagicMethodCall(
                     subtype,
                     exitMethodName,
-                    [anyArg, anyArg, anyArg],
+                    exitArgList,
                     node.d.expr,
                     /* inferenceContext */ undefined,
                     exitDiag
@@ -23104,7 +23258,23 @@ export function createTypeEvaluator(
                     }
 
                     if (usageScopeNode === declScopeNode) {
-                        if (!isFlowPathBetweenNodes(declNode, node)) {
+                        // Viper 扩展：类/函数声明的引用不受代码流可达性限制。
+                        // Viper 是 AOT 语言，支持前向引用（类似 C 语言的前向声明）。
+                        // 例如 `class ParamNode(GSListNode[ParamNode])` 中基类类型参数
+                        // 引用自身（ParamNode 声明节点在引用节点之后，代码流不可达），
+                        // 以及函数体引用后方定义的函数/类。这些都应视为合法引用，
+                        // 跳过代码流过滤，否则会误报未定义。
+                        const declIsClassOrFunc =
+                            decl.type === DeclarationType.Class ||
+                            decl.type === DeclarationType.Function ||
+                            decl.type === DeclarationType.TypeAlias;
+                        if (
+                            !isFlowPathBetweenNodes(declNode, node) &&
+                            !(
+                                IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                                declIsClassOrFunc
+                            )
+                        ) {
                             // If there was no control flow path from the usage back
                             // to the source, see if the usage node is reachable by
                             // any path.
@@ -24102,13 +24272,47 @@ export function createTypeEvaluator(
                 }
             }
 
-            return applyLoaderActionsToModuleType(
-                moduleType,
+            // Viper 扩展：合并同一符号的所有多段 import 声明的 implicitImports。
+            // 例如 `import os.path` + `import os._win32` + `import os._posix` 时，
+            // os 符号有多个 Alias 声明，每个声明只记录各自的子模块。Python/Viper
+            // 的模块加载器会把所有子模块都挂载到父模块命名空间，因此这里把所有
+            // 声明的 implicitImports 合并后再应用 loader actions，避免 `os._win32`
+            // 被误报为"不是模块 os 的已知属性"。
+            const baseLoader =
                 resolvedDecl.symbolName && resolvedDecl.submoduleFallback
                     ? resolvedDecl.submoduleFallback
-                    : resolvedDecl,
-                importLookup
-            );
+                    : resolvedDecl;
+            const mergedImplicitImports = new Map(baseLoader.implicitImports ?? []);
+            symbol.getDeclarations().forEach((siblingDecl) => {
+                if (siblingDecl.type !== DeclarationType.Alias) {
+                    return;
+                }
+                const siblingResolved = resolveAliasDeclaration(siblingDecl, /* resolveLocalNames */ true, {
+                    allowExternallyHiddenAccess: AnalyzerNodeInfo.getFileInfo(siblingDecl.node).isStubFile,
+                });
+                if (!siblingResolved || siblingResolved.type !== DeclarationType.Alias) {
+                    return;
+                }
+                const siblingLoader =
+                    siblingResolved.symbolName && siblingResolved.submoduleFallback
+                        ? siblingResolved.submoduleFallback
+                        : siblingResolved;
+                siblingLoader.implicitImports?.forEach((action, name) => {
+                    if (!mergedImplicitImports.has(name)) {
+                        mergedImplicitImports.set(name, action);
+                    }
+                });
+            });
+
+            let mergedLoaderActions = baseLoader;
+            if (mergedImplicitImports.size > (baseLoader.implicitImports?.size ?? 0)) {
+                mergedLoaderActions = {
+                    ...baseLoader,
+                    implicitImports: mergedImplicitImports,
+                };
+            }
+
+            return applyLoaderActionsToModuleType(moduleType, mergedLoaderActions, importLookup);
         }
 
         const declaredType = getTypeForDeclaration(resolvedDecl);
@@ -25999,6 +26203,59 @@ export function createTypeEvaluator(
             if (destIsStrBytes) {
                 return true;
             }
+
+            // Viper 扩展：数组名退化为指向首元素的指针（C 语义 array-to-pointer decay）。
+            // 栈上数组 t.CArray[T, N] 作为实参传递时退化为 T*（CPtr[T]），如
+            // `transform(block: CPtr[CUInt8T])` 接收 `buf: CArray[CUInt8T, CDefine]`。
+            // 目标可以是 CPtr[T] 或 CVoid（void* 通用指针）。
+            if (isClassInstance(destType) && (isCPtrType(destType) || isCVoidType(destType))) {
+                const destTypeArgs = destType.priv.typeArgs;
+                if (isCVoidType(destType)) {
+                    return true;
+                }
+                const srcTypeArgs = (srcType as ClassType).priv.typeArgs;
+                const srcElemType = srcTypeArgs && srcTypeArgs.length > 0 ? srcTypeArgs[0] : undefined;
+                const destPointee =
+                    destTypeArgs && destTypeArgs.length > 0 ? destTypeArgs[0] : undefined;
+                if (srcElemType && destPointee) {
+                    // 数组元素类型与指针目标类型兼容即可（同类或可隐式转换）。
+                    return assignType(
+                        destPointee,
+                        srcElemType,
+                        diag,
+                        constraints,
+                        flags | AssignTypeFlags.SkipRecursiveTypeCheck,
+                        recursionCount + 1
+                    );
+                }
+                return srcElemType !== undefined;
+            }
+        }
+
+        // Viper 扩展：指针 → CArray 形参调整（C 语义 parameter adjustment，与
+        // array-to-pointer decay 互逆）。C 中函数参数声明为数组 T[N] 时自动调整为
+        // 指针 T*，因此实参指针（CPtr[T] / void*）可以传给"数组"形参。例如
+        // `transform(block: t.CArray[t.CUInt8T, N])` 接收 `data: t.CUInt8T | t.CPtr`。
+        if (isCArrayType(destType) && isClassInstance(srcType) && (isCPtrType(srcType) || isCVoidType(srcType))) {
+            if (isCVoidType(srcType)) {
+                return true;
+            }
+            const srcTypeArgs = srcType.priv.typeArgs;
+            const srcPointee = srcTypeArgs && srcTypeArgs.length > 0 ? srcTypeArgs[0] : undefined;
+            const destTypeArgs = (destType as ClassType).priv.typeArgs;
+            const destElemType = destTypeArgs && destTypeArgs.length > 0 ? destTypeArgs[0] : undefined;
+            if (srcPointee && destElemType) {
+                // 指针目标类型与数组元素类型兼容即可。
+                return assignType(
+                    destElemType,
+                    srcPointee,
+                    diag,
+                    constraints,
+                    flags | AssignTypeFlags.SkipRecursiveTypeCheck,
+                    recursionCount + 1
+                );
+            }
+            return srcPointee !== undefined;
         }
 
         // Viper 扩展：函数名退化为函数指针（C 语义）。
@@ -26191,11 +26448,15 @@ export function createTypeEvaluator(
             }
             if (pointeeAsClass) {
                 const inheritanceChain: InheritanceChain = [];
-                const isDerivedFrom = ClassType.isDerivedFrom(
-                    srcType,
-                    pointeeAsClass,
-                    inheritanceChain
-                );
+                // 统一比较形式：baseClasses 里存的是 instantiable 基类，
+                // 与 destPointee 统一转成 instantiable 形式再比较，避免
+                // isSameGenericClass 因 instance/instantiable 差异误判。
+                const srcForCompare = convertToInstantiable(srcType);
+                const pointeeForCompare = convertToInstantiable(pointeeAsClass);
+                const isDerivedFrom =
+                    isInstantiableClass(srcForCompare) &&
+                    isInstantiableClass(pointeeForCompare) &&
+                    ClassType.isDerivedFrom(srcForCompare, pointeeForCompare, inheritanceChain);
                 if (isDerivedFrom) {
                     return true;
                 }

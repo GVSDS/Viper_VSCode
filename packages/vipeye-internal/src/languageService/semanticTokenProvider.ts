@@ -14,10 +14,11 @@
  *  - 基础类型分类：class/function/parameter/namespace
  */
 
+import * as AnalyzerNodeInfo from '../analyzer/analyzerNodeInfo';
 import { Declaration, DeclarationType, VariableDeclaration } from '../analyzer/declaration';
 import { ParseTreeWalker } from '../analyzer/parseTreeWalker';
 import { isWithinTypeAnnotation } from '../analyzer/parseTreeUtils';
-import { TypeCategory } from '../analyzer/types';
+import { TypeCategory, isCDefineType } from '../analyzer/types';
 import { TypeEvaluator } from '../analyzer/typeEvaluatorTypes';
 import { LogTracker } from '../common/logTracker';
 import { ProgramView } from '../common/extensibility';
@@ -468,9 +469,14 @@ class SemanticTokenWalker extends ParseTreeWalker {
         return true;
     }
 
-    /** 访问 ModuleNameNode：import 语句中的模块名路径部分 → namespace。
+    /** 访问 ModuleNameNode：import 语句中的模块名路径部分。
+     *  解析成功的模块 → namespace（绿色）；未解析的模块（如不存在的
+     *  `from .visitor import ...`）→ undefined（白色，与诊断一致）。
      *  返回 false 阻止遍历 nameParts（避免重复 token，因 visitName 也会处理） */
     override visitModuleName(node: ModuleNameNode): boolean {
+        const importInfo = AnalyzerNodeInfo.getImportInfo(node);
+        // 模块整体未解析：每个 namePart 都视为未定义（白色）
+        const isUnresolved = !!importInfo && !importInfo.isImportFound && !importInfo.isNativeLib;
         for (const part of node.d.nameParts) {
             const position = convertOffsetToPosition(part.start, this._lines);
             if (position && part.length > 0) {
@@ -478,7 +484,9 @@ class SemanticTokenWalker extends ParseTreeWalker {
                     line: position.line,
                     startChar: position.character,
                     length: part.length,
-                    tokenType: SemanticTokenTypes.namespace,
+                    tokenType: isUnresolved
+                        ? SemanticTokenTypes.undefined
+                        : SemanticTokenTypes.namespace,
                     tokenModifiers: 0,
                 });
             }
@@ -634,8 +642,43 @@ class SemanticTokenWalker extends ParseTreeWalker {
                     }
                     break;
                 case DeclarationType.Alias:
-                    // import 的模块别名
-                    tokenType = SemanticTokenTypes.namespace;
+                    // import 的模块别名。按别名实际指向的类型分类：
+                    // `from .base import AST` 中 AST 实际是类 → class；
+                    // `import os.path` 中 os 是模块 → namespace。
+                    // 避免"无论实际上是什么都显示成绿色（namespace）"。
+                    if (type) {
+                        if (type.category === TypeCategory.Unknown ||
+                            type.category === TypeCategory.Any ||
+                            type.category === TypeCategory.Unbound) {
+                            // 未解析的导入（如 `from .visitor import ASTVisitor`，
+                            // visitor 模块不存在）：标 undefined（白色），与诊断一致。
+                            tokenType = SemanticTokenTypes.undefined;
+                        } else if (isCDefineType(type)) {
+                            // t.CDefine 常量（如 FLAG_IS_ASYNC: t.CDefine = 1）：
+                            // 编译时元指令，按常量显示（variable + readonly）。
+                            tokenType = SemanticTokenTypes.variable;
+                            tokenModifiers |= SemanticTokenModifiers.readonly;
+                        } else if (type.category === TypeCategory.Class) {
+                            tokenType = BUILTIN_CLASS_NAMES.has(nameText)
+                                ? SemanticTokenTypes.class
+                                : (BUILTIN_TYPE_NAMES.has(nameText)
+                                    ? SemanticTokenTypes.builtin
+                                    : SemanticTokenTypes.class);
+                        } else if (
+                            type.category === TypeCategory.Function ||
+                            type.category === TypeCategory.Overloaded
+                        ) {
+                            tokenType = SemanticTokenTypes.function;
+                        } else if (type.category === TypeCategory.Module) {
+                            tokenType = SemanticTokenTypes.namespace;
+                        } else if (type.category === TypeCategory.TypeVar) {
+                            tokenType = SemanticTokenTypes.type;
+                        } else {
+                            tokenType = SemanticTokenTypes.variable;
+                        }
+                    } else {
+                        tokenType = SemanticTokenTypes.namespace;
+                    }
                     tokenModifiers |= defMod;
                     break;
                 case DeclarationType.TypeAlias:

@@ -9,6 +9,7 @@
  */
 
 import { appendArray } from '../common/collectionUtils';
+import { IsViperDialect } from '../common/dialect';
 import { ArgCategory, CallNode, DecoratorNode, FunctionNode, ParamCategory, ParseNodeType } from '../parser/parseNodes';
 import { getDeclaration, getFileInfo } from './analyzerNodeInfo';
 import {
@@ -411,6 +412,22 @@ function getTypeOfDecorator(evaluator: TypeEvaluator, node: DecoratorNode, funct
     }
 
     const decoratorTypeResult = evaluator.getTypeOfExpression(node.d.expr, flags);
+
+    // Viper 扩展：t.CVTable / t.Object / t.NoVTable 是类型透传装饰器
+    // （签名 `(cls: Type[T]) -> Type[T]`）。在 Viper 方言下，泛型 `Type[T]`
+    // 的参数绑定在 stub 求值中可能退化为裸 `Type`，导致被装饰类被解析为
+    // `Type` 而非 `type[Class]`，进而丢失全部成员（如 __enter__/__exit__）。
+    // 这些装饰器语义上就是"返回原类"，因此直接透传输入类型。
+    if (IsViperDialect(getFileInfo(node).executionEnvironment.dialect)) {
+        const decExpr = node.d.expr as any;
+        const decName =
+            decExpr?.nodeType === 'Call'
+                ? decExpr?.d?.leftExpr?.d?.member?.d?.value ?? decExpr?.d?.leftExpr?.d?.value
+                : decExpr?.d?.member?.d?.value ?? decExpr?.d?.value;
+        if (decName === 'CVTable' || decName === 'Object' || decName === 'NoVTable') {
+            return functionOrClassType;
+        }
+    }
 
     // Special-case the combination of a classmethod decorator applied
     // to a property. This is allowed in Python 3.9, but it's not reflected

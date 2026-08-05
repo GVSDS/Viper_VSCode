@@ -635,6 +635,7 @@ export function getOffDiagnosticRuleSet(dialect?: LanguageDialect): DiagnosticRu
         diagSettings.reportDeprecated = 'none';
         diagSettings.reportMissingTypeStubs = 'none';
         diagSettings.reportMissingModuleSource = 'none';
+        diagSettings.reportMissingImports = 'warning';
         diagSettings.reportTypeCommentUsage = 'none';
         diagSettings.reportIncompleteStub = 'none';
         diagSettings.reportInvalidStubStatement = 'none';
@@ -742,7 +743,7 @@ export function getBasicDiagnosticRuleSet(dialect?: LanguageDialect): Diagnostic
         reportImplicitStringConcatenation: 'none',
         reportUnboundVariable: 'error',
         reportUnhashable: 'error',
-        reportUndefinedVariable: 'error',
+        reportUndefinedVariable: 'warning',
         reportInvalidStubStatement: 'none',
         reportIncompleteStub: 'none',
         reportUnsupportedDunderAll: 'warning',
@@ -867,7 +868,7 @@ export function getStandardDiagnosticRuleSet(dialect?: LanguageDialect): Diagnos
         reportImplicitStringConcatenation: 'none',
         reportUnboundVariable: 'error',
         reportUnhashable: 'error',
-        reportUndefinedVariable: 'error',
+        reportUndefinedVariable: 'warning',
         reportInvalidStubStatement: 'none',
         reportIncompleteStub: 'none',
         reportUnsupportedDunderAll: 'warning',
@@ -885,6 +886,7 @@ export function getStandardDiagnosticRuleSet(dialect?: LanguageDialect): Diagnos
         diagSettings.reportDeprecated = 'none';
         diagSettings.reportMissingTypeStubs = 'none';
         diagSettings.reportMissingModuleSource = 'none';
+        diagSettings.reportMissingImports = 'warning';
         diagSettings.reportTypeCommentUsage = 'none';
         diagSettings.reportIncompleteStub = 'none';
         diagSettings.reportInvalidStubStatement = 'none';
@@ -995,7 +997,7 @@ export function getStrictDiagnosticRuleSet(dialect?: LanguageDialect): Diagnosti
         reportImplicitStringConcatenation: 'none',
         reportUnboundVariable: 'error',
         reportUnhashable: 'error',
-        reportUndefinedVariable: 'error',
+        reportUndefinedVariable: 'warning',
         reportInvalidStubStatement: 'error',
         reportIncompleteStub: 'error',
         reportUnsupportedDunderAll: 'error',
@@ -1013,6 +1015,7 @@ export function getStrictDiagnosticRuleSet(dialect?: LanguageDialect): Diagnosti
         diagSettings.reportDeprecated = 'none';
         diagSettings.reportMissingTypeStubs = 'none';
         diagSettings.reportMissingModuleSource = 'none';
+        diagSettings.reportMissingImports = 'warning';
         diagSettings.reportTypeCommentUsage = 'none';
         diagSettings.reportIncompleteStub = 'none';
         diagSettings.reportInvalidStubStatement = 'none';

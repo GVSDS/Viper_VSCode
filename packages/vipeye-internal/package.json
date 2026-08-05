@@ -2,7 +2,7 @@
     "name": "vipeye-internal",
     "displayName": "vipeye",
     "description": "Type checker for the Viper language",
-    "version": "1.1.411",
+    "version": "1.1.412",
     "license": "MIT",
     "private": true,
     "files": [

@@ -6,6 +6,7 @@ const rspack = createRequire(__filename)('@rspack/core');
 const outPath = path.resolve(__dirname, 'dist');
 const typeshedFallback = path.resolve(__dirname, '..', 'vipeye-internal', 'typeshed-fallback');
 const vipershedFallback = path.resolve(__dirname, '..', 'vipeye-internal', 'vipershed-fallback');
+const viperCore = path.resolve(__dirname, '..', 'viper');
 
 /** @type {(env: any, argv: { mode: 'production' | 'development' | 'none' }) => any} */
 module.exports = (_, { mode }) => {
@@ -59,6 +60,11 @@ module.exports = (_, { mode }) => {
                 patterns: [
                     { from: typeshedFallback, to: 'typeshed-fallback' },
                     { from: vipershedFallback, to: 'vipershed-fallback' },
+                    // Viper 核心（packages/viper）的静态资源：
+                    // .vpj 图标与语法文件（活动栏图标复用本包 images/viper-icon.svg）。
+                    // 源码不复制，仅构建产物引用。
+                    { from: path.join(viperCore, 'images', 'vpj-icon.svg'), to: 'images/vpj-icon.svg' },
+                    { from: path.join(viperCore, 'syntaxes', 'vpj.tmLanguage.json'), to: 'syntaxes/vpj.tmLanguage.json' },
                 ],
             }),
         ],

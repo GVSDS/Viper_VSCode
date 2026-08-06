@@ -9,7 +9,7 @@ variables:
   - name: SigningType
     value: 'real'
   - name: TeamName
-    value: Pyright
+    value: Vipeye
 extends:
   template: azure-pipelines/MicroBuild.1ES.Official.yml@MicroBuildTemplate
   parameters:
@@ -53,10 +53,10 @@ extends:
                 inputs:
                   script: |
                     npm run package
-                  workingDirectory: packages/vscode-pyright
+                  workingDirectory: packages/vscode-vipeye
               - task: CopyFiles@2
                 displayName: 'Copy vsix to: build_output'
                 inputs:
-                  SourceFolder: packages/vscode-pyright
+                  SourceFolder: packages/vscode-vipeye
                   Contents: '*.vsix'
                   TargetFolder: build_output

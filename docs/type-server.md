@@ -1,6 +1,6 @@
-# Pyright Type Server
+# Vipeye Type Server
 
-In addition to the [command-line tool](command-line.md) and the [language server](settings.md), Pyright ships a **type server** that speaks the Type Server Protocol (TSP). It is distributed as a separate npm package, `pyright-typeserver`, and is exposed through the `pyright-typeserver` executable.
+In addition to the [command-line tool](command-line.md) and the [language server](settings.md), Vipeye ships a **type server** that speaks the Type Server Protocol (TSP). It is distributed as a separate npm package, `vipeye-typeserver`, and is exposed through the `vipeye-typeserver` executable.
 
 ## What is the Type Server Protocol?
 
@@ -20,7 +20,7 @@ The Type Server Protocol is a JSON-RPC protocol, layered on top of the same tran
 The type server communicates over stdio, just like the language server:
 
 ```bash
-pyright-typeserver --stdio
+vipeye-typeserver --stdio
 ```
 
 It is not intended to be run interactively; it is started by a client (for example, an editor extension or a code-generation tool) that drives it over the protocol.
@@ -31,19 +31,19 @@ The type server understands Jupyter notebooks. When a client sends `notebookDocu
 
 ## Virtual file redirection
 
-The type server supports redirecting the contents of a file on disk to a virtual document supplied by the client. This is used, for example, by stub generators that synthesize a merged view of a module and want the type server to analyze the synthesized contents in place of the file on disk. Clients drive this through the `pyright/setVirtualFileRedirect` and `pyright/removeVirtualFileRedirect` notifications.
+The type server supports redirecting the contents of a file on disk to a virtual document supplied by the client. This is used, for example, by stub generators that synthesize a merged view of a module and want the type server to analyze the synthesized contents in place of the file on disk. Clients drive this through the `viper/setVirtualFileRedirect` and `viper/removeVirtualFileRedirect` notifications.
 
-## Relationship to Pyright
+## Relationship to Vipeye
 
-The type server is built on the same analyzer, binder, and type evaluator as the Pyright command-line tool and language server. It reuses Pyright's `Service` / `Program` / `SourceFile` infrastructure, so type results are identical to what Pyright's other front ends produce.
+The type server is built on the same analyzer, binder, and type evaluator as the Vipeye command-line tool and language server. It reuses Vipeye's `Service` / `Program` / `SourceFile` infrastructure, so type results are identical to what Vipeye's other front ends produce.
 
 ### Code layout: two packages
 
-The type server is split across two packages, following the same convention Pyright uses for its command-line tool and language server:
+The type server is split across two packages, following the same convention Vipeye uses for its command-line tool and language server:
 
 | Package | Role |
 | --- | --- |
-| `packages/pyright-internal/src/typeServer/` | **All of the actual code.** The server, protocol definitions, notebook support, virtual-file redirection, the file system layer, and the tests all live here. This is the only package with real implementation. |
-| `packages/pyright-typeserver/` | **The distributable wrapper.** A thin bundling shim (rspack config, `package.json`, and a bin entry point) that packages the code above into the publishable `pyright-typeserver` npm package. It contains no logic — its `nodeMain.ts` simply calls `main()` from `pyright-internal`. |
+| `packages/vipeye-internal/src/typeServer/` | **All of the actual code.** The server, protocol definitions, notebook support, virtual-file redirection, the file system layer, and the tests all live here. This is the only package with real implementation. |
+| `packages/vipeye-typeserver/` | **The distributable wrapper.** A thin bundling shim (rspack config, `package.json`, and a bin entry point) that packages the code above into the publishable `vipeye-typeserver` npm package. It contains no logic — its `nodeMain.ts` simply calls `main()` from `vipeye-internal`. |
 
-This mirrors how `pyright-internal` holds all of the parser/checker/evaluator logic while the `pyright` package is just the thin CLI and language-server bundle. Keeping the code in `pyright-internal` means the type server shares the exact same `vscode-languageserver` copy and analyzer internals as the rest of Pyright, rather than pulling in a duplicate or mismatched set of dependencies.
+This mirrors how `vipeye-internal` holds all of the parser/checker/evaluator logic while the `vipeye` package is just the thin CLI and language-server bundle. Keeping the code in `vipeye-internal` means the type server shares the exact same `vscode-languageserver` copy and analyzer internals as the rest of Vipeye, rather than pulling in a duplicate or mismatched set of dependencies.

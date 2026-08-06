@@ -19,11 +19,11 @@ Viper 是一门基于 CPython 语法的 AOT 静态类型语言（编译器为 Tr
 
 ## 项目架构
 
-- `vscode-vipeye`：LSP 客户端扩展（本包）
+- `vscode-vipeye`：LSP 客户端扩展（本包，**已集成 Viper 核心**）
 - `vipeye`：Viper 语言命令行类型检查器（pyright 命令行工具改造）
 - `vipeye-internal`：核心分析引擎（类型推断、语义高亮、诊断）
 - `vipeye-typeserver`：类型服务进程
-- Viper 核心扩展 `vscode-viper-core`：管理 `.vpj` 项目配置与工具链
+- `viper`（packages/viper）：Viper 核心源码库（侧边栏活动栏 Project/Toolchain/Settings、.vpj 项目管理、工具链），源码单一，由本包构建时引用打包，不单独发布
 
 ## 配置
 

@@ -1,6 +1,6 @@
-# Copilot Instructions for Pyright
+# Copilot Instructions for Vipeye
 
-Pyright is a static type checker for Viper, written in TypeScript. It ships as an npm CLI (`pyright`), an LSP language server (`pyright-langserver`), and a VS Code extension (`vscode-pyright`).
+Vipeye is a static type checker for Viper, written in TypeScript. It ships as an npm CLI (`vipeye`), an LSP language server (`vipeye-langserver`), and a VS Code extension (`vscode-vipeye`).
 
 ## Build and Test
 
@@ -9,19 +9,19 @@ Pyright is a static type checker for Viper, written in TypeScript. It ships as a
 npm install
 
 # Build the core library
-cd packages/pyright-internal && npm run build
+cd packages/vipeye-internal && npm run build
 
 # Run all tests (builds test server first)
-cd packages/pyright-internal && npm test
+cd packages/vipeye-internal && npm test
 
 # Run all tests without rebuilding the test server (faster iteration)
-cd packages/pyright-internal && npm run test:norebuild
+cd packages/vipeye-internal && npm run test:norebuild
 
 # Run a single test file
-cd packages/pyright-internal && npx jest typeEvaluator1.test --forceExit
+cd packages/vipeye-internal && npx jest typeEvaluator1.test --forceExit
 
 # Run a single test by name
-cd packages/pyright-internal && npx jest -t "Generic1" --forceExit
+cd packages/vipeye-internal && npx jest -t "Generic1" --forceExit
 
 # Build the CLI (webpack bundle)
 npm run build:cli:dev
@@ -49,9 +49,9 @@ npm run fix:prettier
 
 ### Package Structure
 
-- **`packages/pyright-internal`** — Core library: parser, binder, type evaluator, checker, language service. All logic lives here. This is the only package with tests.
-- **`packages/pyright`** — CLI wrapper. Webpack-bundles `pyright-internal` into a distributable npm package with `pyright` and `pyright-langserver` entry points.
-- **`packages/vscode-pyright`** — VS Code extension client that communicates with the language server.
+- **`packages/vipeye-internal`** — Core library: parser, binder, type evaluator, checker, language service. All logic lives here. This is the only package with tests.
+- **`packages/vipeye`** — CLI wrapper. Webpack-bundles `vipeye-internal` into a distributable npm package with `vipeye` and `vipeye-langserver` entry points.
+- **`packages/vscode-vipeye`** — VS Code extension client that communicates with the language server.
 
 ### Analysis Pipeline
 
@@ -69,7 +69,7 @@ Source files are processed through these phases in order:
 
 **Service → Program → SourceFile**: A `Service` manages a `Program`, which tracks `SourceFile` instances. The `Program` coordinates analysis ordering, prioritizing open editor files and their dependencies.
 
-**Typeshed fallback**: `packages/pyright-internal/typeshed-fallback/` contains a bundled copy of typeshed stubs. This provides the Viper stdlib type stubs when no external typeshed is available.
+**Typeshed fallback**: `packages/vipeye-internal/typeshed-fallback/` contains a bundled copy of typeshed stubs. This provides the Viper stdlib type stubs when no external typeshed is available.
 
 **Localized diagnostics**: All user-facing diagnostic messages come from `localization/localize.ts`, not inline strings.
 
@@ -77,7 +77,7 @@ Source files are processed through these phases in order:
 
 ### Test Structure
 
-Tests live in `packages/pyright-internal/src/tests/`. There are two main patterns:
+Tests live in `packages/vipeye-internal/src/tests/`. There are two main patterns:
 
 **Sample-based tests** (`typeEvaluator*.test.ts`, `checker.test.ts`):
 - Each test calls `TestUtils.typeAnalyzeSampleFiles(['sampleName.py'])` to analyze a Viper file from `src/tests/samples/`.
@@ -96,7 +96,7 @@ Tests live in `packages/pyright-internal/src/tests/`. There are two main pattern
 
 ### Test Policy
 
-Tests are the specification for Pyright behavior. Never modify tests just to make CI pass. Any change that makes types less precise (e.g., `T → Unknown`, `list[int] → list[Any]`, `Literal["x"] → str`) is a regression by default and requires explicit justification. See `.github/agents/pyright-test-policy.md` for details.
+Tests are the specification for Vipeye behavior. Never modify tests just to make CI pass. Any change that makes types less precise (e.g., `T → Unknown`, `list[int] → list[Any]`, `Literal["x"] → str`) is a regression by default and requires explicit justification. See `.github/agents/vipeye-test-policy.md` for details.
 
 ## Code Style
 

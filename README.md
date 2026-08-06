@@ -1,41 +1,42 @@
-![Pyright](https://github.com/microsoft/pyright/blob/main/docs/img/PyrightLarge.png)
+![Vipeye](docs/img/PyrightLarge.png)
 
 # Static Type Checker for Viper
 
-Pyright is a full-featured, standards-based static type checker for Viper. It is designed for high performance and can be used with large Viper source bases.
+Vipeye is a full-featured, standards-based static type checker for Viper, written in TypeScript. It is designed for high performance and can be used with large Viper source bases.
 
-Pyright includes both a [command-line tool](https://microsoft.github.io/pyright/#/command-line) and an [extension for Visual Studio Code](https://marketplace.visualstudio.com/items?itemName=ms-pyright.pyright).
+Vipeye includes both a [command-line tool](docs/command-line.md) and an [extension for Visual Studio Code](packages/vscode-vipeye). It is built on the Pyright codebase, adapted from the ground up to Viper semantics (AOT compilation, C-style types, pointer and memory semantics), and no longer type-checks Python.
 
+## Packages
 
-## Pyright Playground
+- **`packages/vipeye-internal`** — Core analysis engine: parser, binder, type evaluator, checker, and language service. All logic lives here.
+- **`packages/vipeye`** — CLI wrapper. Bundles `vipeye-internal` into a distributable npm package with `vipeye` and `vipeye-langserver` entry points.
+- **`packages/vipeye-typeserver`** — Type server process for long-running editor sessions.
+- **`packages/vscode-vipeye`** — VS Code extension client (Vipeye LSP), with the Viper core source (`packages/viper`) bundled at build time.
+- **`packages/viper`** — Viper core source library: project (`.vpj`) management, toolchain, and the activity bar UI (Project / Toolchain / Settings).
 
-Try Pyright in your browser using the [Pyright Playground](https://pyright-play.net/?code=MQAgKgFglgziMEMC2AHANgUxAEw0g9gHYwAuATgiRnBPgO4gDG%2BSBhIGZZ%2BZcjC7AEZZcVRlWzwSlKPzRoAniEFKUCslADmEEgDoAUPtwAzEAmzYAFAA8AXCGNp8lADQgF9x85IBKW-pBAkDIMEgBXMnZrEABqd0NQAAUEGBgoQk0zKTIQdNIBRiwUkBIILBgMZkJJBDJNMKQMQhJg6jC0Ejh0rLIw5qhGjmtClBIoIgNzKwBGNwAiOZ99IA).
+## Key Differences from Pyright
 
+- Viper dialect: `viperconfig.json` instead of `pyrightconfig.json`; config namespace `viper.*`.
+- Viper stdlib stubs bundled in `vipeye-internal/vipershed-fallback`.
+- Type semantics follow Viper rules: implicit conversions, pointer (`CPtr`/`CArray`), `t.CTypedef`/`t.CDefine`/`t.CEnum`, `T | t.CPtr` pointer folding, global-variable access rules, and more.
+- Semantic highlighting and diagnostics are tailored to Viper syntax.
+
+## Building and Testing
+
+See [docs/build-debug.md](docs/build-debug.md).
 
 ## Documentation
 
-Refer to [the documentation](https://microsoft.github.io/pyright) for installation, configuration, and usage details.
-
+Refer to [the documentation](docs/README.md) for installation, configuration, and usage details.
 
 ## Environment variables
 
-If Pyright fails to create a temporary directory (for example in remote/server environments where the OS temp directory doesn't exist or isn't writable), you can override the temp directory root:
+If Vipeye fails to create a temporary directory (for example in remote/server environments where the OS temp directory doesn't exist or isn't writable), you can override the temp directory root:
 
-- `PYRIGHT_TMPDIR`: Absolute path to a directory that Pyright can use for temporary files/directories. Pyright will create it if needed.
+- `VIPEYE_TMPDIR`: Absolute path to a directory that Vipeye can use for temporary files/directories. Vipeye will create it if needed.
 
-Pyright otherwise relies on the platform temp directory (for example `TMPDIR`, `TMP`, `TEMP`, or the OS default).
+Vipeye otherwise relies on the platform temp directory (for example `TMPDIR`, `TMP`, `TEMP`, or the OS default).
 
+## License
 
-## Community
-Do you have questions about Pyright or Viper type annotations in general? Post your questions in [the discussion section](https://github.com/microsoft/pyright/discussions).
-
-If you would like to report a bug or request an enhancement, file a new issue in either the [pyright](https://github.com/microsoft/pyright/issues) or [pylance-release](https://github.com/microsoft/pylance-release/issues) issue tracker. In general, core type checking functionality is associated with Pyright while language service functionality is associated with Pylance, but the same contributors monitor both repos. For best results, provide the information requested in the issue template.
-
-
-## Contributing
-
-This project welcomes contributions and suggestions. For feature and complex bug fix contributions, it is recommended that you first discuss the proposed change with Pyright’s maintainers before submitting the pull request. Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us the rights to use your contribution. For details, visit https://cla.microsoft.com.
-
-When you submit a pull request, a CLA-bot will automatically determine whether you need to provide a CLA and decorate the PR appropriately (e.g., label, comment). Simply follow the instructions provided by the bot. You will only need to do this once across all repos using our CLA.
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/). For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+MIT

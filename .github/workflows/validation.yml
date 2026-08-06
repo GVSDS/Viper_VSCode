@@ -14,7 +14,7 @@ on:
 
 jobs:
   typecheck:
-    if: github.repository == 'microsoft/pyright'
+    if: github.repository == 'TermiNexus/Viper_VSCode'
     runs-on: ubuntu-latest
     name: Typecheck
 
@@ -34,7 +34,7 @@ jobs:
       - run: npx lerna exec --stream --no-bail -- "tsc --noEmit"
 
   style:
-    if: github.repository == 'microsoft/pyright'
+    if: github.repository == 'TermiNexus/Viper_VSCode'
     runs-on: ubuntu-latest
     name: Style
 
@@ -79,9 +79,9 @@ jobs:
 
       - run: npm run install:all
 
-      - name: npm test (pyright-internal)
+      - name: npm test (vipeye-internal)
         run: npm test
-        working-directory: packages/pyright-internal
+        working-directory: packages/vipeye-internal
 
       # Install python so we can create a VENV for tests
       - name: Use Python ${{env.PYTHON_VERSION}}
@@ -117,13 +117,13 @@ jobs:
           CI_IMPORT_TEST_VENVPATH: '../../'
           CI_IMPORT_TEST_VENV: '.venv'
         run: npm run test:imports
-        working-directory: packages/pyright-internal
+        working-directory: packages/vipeye-internal
 
       - name: Run import tests with pythonpath
         env:
           CI_IMPORT_TEST_PYTHONPATH: ${{env.python_venv_path}}
         run: npm run test:imports
-        working-directory: packages/pyright-internal
+        working-directory: packages/vipeye-internal
 
   build:
     runs-on: ubuntu-latest
@@ -145,13 +145,13 @@ jobs:
       - uses: ./.github/actions/choose-npm-install
 
       - run: npm publish --dry-run
-        working-directory: packages/pyright
+        working-directory: packages/vipeye
 
       - run: npm publish --dry-run
-        working-directory: packages/pyright-typeserver
+        working-directory: packages/vipeye-typeserver
 
       - run: npm run package
-        working-directory: packages/vscode-pyright
+        working-directory: packages/vscode-vipeye
 
   required:
     runs-on: ubuntu-latest

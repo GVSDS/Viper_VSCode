@@ -1,11 +1,11 @@
 ---
-name: pyright-test-policy
-description: Enforces Pyright test policy, preserving type precision and requiring justification for test changes.
+name: vipeye-test-policy
+description: Enforces Vipeye test policy, preserving type precision and requiring justification for test changes.
 ---
 
-# Pyright Test Policy
+# Vipeye Test Policy
 
-Tests are the specification for Pyright behavior.
+Tests are the specification for Vipeye behavior.
 
 Agents must **not modify tests simply to make CI pass**.
 
@@ -18,7 +18,7 @@ The goal is to **preserve or improve type precision** unless a justified upstrea
 Agents may modify tests only when one of the following is true:
 
 1. A **typeshed stub change** legitimately alters the expected type.
-2. A **Pyright diagnostic message format** changed but the semantic meaning is the same.
+2. A **Vipeye diagnostic message format** changed but the semantic meaning is the same.
 3. A test relied on unstable formatting or ordering.
 
 ---
@@ -49,11 +49,11 @@ These regressions are **allowed only with justification**.
    - or an upstream typing change
 
 2. **Reasoning**
-   - why Pyright cannot infer the previous precision
+   - why Vipeye cannot infer the previous precision
 
 3. **Classification**
    - A) typeshed became less precise  
-   - B) Pyright limitation  
+   - B) Vipeye limitation  
    - C) test fragility  
    - D) harness issue
 
@@ -81,7 +81,7 @@ without the justification process above.
 
 Agents must attempt fixes in this order:
 
-1. **Fix Pyright behavior**
+1. **Fix Vipeye behavior**
 2. **Fix incorrect typeshed stub**
 3. **Adjust tests (last resort)**
 

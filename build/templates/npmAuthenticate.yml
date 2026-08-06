@@ -5,12 +5,12 @@ steps:
 
   - task: npmAuthenticate@0
     inputs:
-      workingFile: packages/pyright/.npmrc
+      workingFile: packages/vipeye/.npmrc
 
   - task: npmAuthenticate@0
     inputs:
-      workingFile: packages/pyright-internal/.npmrc
+      workingFile: packages/vipeye-internal/.npmrc
 
   - task: npmAuthenticate@0
     inputs:
-      workingFile: packages/vscode-pyright/.npmrc
+      workingFile: packages/vscode-vipeye/.npmrc

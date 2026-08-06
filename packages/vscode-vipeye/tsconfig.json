@@ -13,6 +13,7 @@
     "include": [
         "src/**/*",
         "**/*.js",
+        "../viper/src/**/*",
         "../vipeye-internal/typings/**/*.d.ts"
     ],
     "exclude": [

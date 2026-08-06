@@ -1,30 +1,30 @@
-## Pyright Configuration
+## Vipeye Configuration
 
-Pyright offers flexible configuration options specified in a JSON-formatted text configuration. By default, the file is called “pyrightconfig.json” and is located within the root directory of your project. Multi-root workspaces (“Add Folder to Workspace…”) are supported, and each workspace root can have its own “pyrightconfig.json” file. For a sample pyrightconfig.json file, see [below](configuration.md#sample-config-file).
+Vipeye offers flexible configuration options specified in a JSON-formatted text configuration. By default, the file is called “viperconfig.json” and is located within the root directory of your project. Multi-root workspaces (“Add Folder to Workspace…”) are supported, and each workspace root can have its own “viperconfig.json” file. For a sample viperconfig.json file, see [below](configuration.md#sample-config-file).
 
-Pyright settings can also be specified in a `[tool.pyright]` section of a “pyproject.toml” file. A “pyrightconfig.json” file always takes precedent over “pyproject.toml” if both are present. For a sample pyproject.toml file, see [below](configuration.md#sample-pyprojecttoml-file).
+Vipeye settings can also be specified in a `[tool.viper]` section of a “pyproject.toml” file. A “viperconfig.json” file always takes precedent over “pyproject.toml” if both are present. For a sample pyproject.toml file, see [below](configuration.md#sample-pyprojecttoml-file).
 
 Relative paths specified within the config file are relative to the config file’s location. Paths with shell variables (including `~`) are not supported. Paths within a config file should generally be relative paths so the config file can be shared by other developers who contribute to the project.
 
 ## Environment Options
 
-The following settings control the *environment* in which Pyright will check for diagnostics. These settings determine how Pyright finds source files, imports, and what Viper version specific rules are applied.
+The following settings control the *environment* in which Vipeye will check for diagnostics. These settings determine how Vipeye finds source files, imports, and what Viper version specific rules are applied.
 
-- **include** [array of paths, optional]: Paths of directories or files that should be considered part of the project. If no paths are specified, pyright defaults to the directory that contains the config file. Paths may contain wildcard characters ** (a directory or multiple levels of directories), * (a sequence of zero or more characters), or ? (a single character). If no include paths are specified, the root path for the workspace is assumed.
+- **include** [array of paths, optional]: Paths of directories or files that should be considered part of the project. If no paths are specified, vipeye defaults to the directory that contains the config file. Paths may contain wildcard characters ** (a directory or multiple levels of directories), * (a sequence of zero or more characters), or ? (a single character). If no include paths are specified, the root path for the workspace is assumed.
 
-- **exclude** [array of paths, optional]: Paths of directories or files that should not be considered part of the project. These override the directories and files that `include` matched, allowing specific subdirectories to be excluded. Note that files in the exclude paths may still be included in the analysis if they are referenced (imported) by source files that are not excluded. Paths may contain wildcard characters ** (a directory or multiple levels of directories), * (a sequence of zero or more characters), or ? (a single character). If no exclude paths are specified, Pyright automatically excludes the following: `**/node_modules`, `**/__pycache__`, `**/.*`. Pylance also excludes any virtual environment directories regardless of the exclude paths specified. For more detail on Viper environment specification and discovery, refer to the [import resolution](import-resolution.md#configuring-your-viper-environment) documentation.
+- **exclude** [array of paths, optional]: Paths of directories or files that should not be considered part of the project. These override the directories and files that `include` matched, allowing specific subdirectories to be excluded. Note that files in the exclude paths may still be included in the analysis if they are referenced (imported) by source files that are not excluded. Paths may contain wildcard characters ** (a directory or multiple levels of directories), * (a sequence of zero or more characters), or ? (a single character). If no exclude paths are specified, Vipeye automatically excludes the following: `**/node_modules`, `**/__pycache__`, `**/.*`. Pylance also excludes any virtual environment directories regardless of the exclude paths specified. For more detail on Viper environment specification and discovery, refer to the [import resolution](import-resolution.md#configuring-your-viper-environment) documentation.
 
-- **strict** [array of paths, optional]: Paths of directories or files that should use “strict” analysis if they are included. This is the same as manually adding a “# pyright: strict” comment. In strict mode, most type-checking rules are enabled. Refer to [this table](configuration.md#diagnostic-settings-defaults) for details about which rules are enabled in strict mode. Paths may contain wildcard characters ** (a directory or multiple levels of directories), * (a sequence of zero or more characters), or ? (a single character).
+- **strict** [array of paths, optional]: Paths of directories or files that should use “strict” analysis if they are included. This is the same as manually adding a “# viper: strict” comment. In strict mode, most type-checking rules are enabled. Refer to [this table](configuration.md#diagnostic-settings-defaults) for details about which rules are enabled in strict mode. Paths may contain wildcard characters ** (a directory or multiple levels of directories), * (a sequence of zero or more characters), or ? (a single character).
 
 - **extends** [path, optional]: Path to another `.json` or `.toml` file that is used as a “base configuration”, allowing this configuration to inherit configuration settings. Top-level keys within this configuration overwrite top-level keys in the base configuration. Multiple levels of inheritance are supported. Relative paths specified in a configuration file are resolved relative to the location of that configuration file.
 
-- **defineConstant** [map of constants to values (boolean or string), optional]: Set of identifiers that should be assumed to contain a constant value wherever used within this program. For example, `{ "DEBUG": true }` indicates that pyright should assume that the identifier `DEBUG` will always be equal to `True`. If this identifier is used within a conditional expression (such as `if not DEBUG:`) pyright will use the indicated value to determine whether the guarded block is reachable or not. Member expressions that reference one of these constants (e.g. `my_module.DEBUG`) are also supported.
+- **defineConstant** [map of constants to values (boolean or string), optional]: Set of identifiers that should be assumed to contain a constant value wherever used within this program. For example, `{ "DEBUG": true }` indicates that vipeye should assume that the identifier `DEBUG` will always be equal to `True`. If this identifier is used within a conditional expression (such as `if not DEBUG:`) vipeye will use the indicated value to determine whether the guarded block is reachable or not. Member expressions that reference one of these constants (e.g. `my_module.DEBUG`) are also supported.
 
-- **typeshedPath** [path, optional]: Path to a directory that contains typeshed type stub files. Pyright ships with a bundled copy of typeshed type stubs. If you want to use a different version of typeshed stubs, you can clone the [typeshed github repo](https://github.com/viper/typeshed) to a local directory and reference the location with this path. This option is useful if you’re actively contributing updates to typeshed.
+- **typeshedPath** [path, optional]: Path to a directory that contains typeshed type stub files. Vipeye ships with a bundled copy of typeshed type stubs. If you want to use a different version of typeshed stubs, you can clone the [typeshed github repo](https://github.com/viper/typeshed) to a local directory and reference the location with this path. This option is useful if you’re actively contributing updates to typeshed.
 
 - **stubPath** [path, optional]: Path to a directory that contains custom type stubs. Each package's type stub file(s) are expected to be in its own subdirectory. The default value of this setting is "./typings". (typingsPath is now deprecated)
 
-- **venvPath** [path, optional]: Path to a directory containing one or more subdirectories, each of which contains a virtual environment. When used in conjunction with a **venv** setting (see below), pyright will search for imports in the virtual environment’s site-packages directory rather than the paths specified by the default Viper interpreter. If you are working on a project with other developers, it is best not to specify this setting in the config file, since this path will typically differ for each developer. Instead, it can be specified on the command line or in a per-user setting. For more details, refer to the [import resolution](import-resolution.md#configuring-your-viper-environment) documentation. This setting is ignored when using Pylance. VS Code's viper interpreter path is used instead.
+- **venvPath** [path, optional]: Path to a directory containing one or more subdirectories, each of which contains a virtual environment. When used in conjunction with a **venv** setting (see below), vipeye will search for imports in the virtual environment’s site-packages directory rather than the paths specified by the default Viper interpreter. If you are working on a project with other developers, it is best not to specify this setting in the config file, since this path will typically differ for each developer. Instead, it can be specified on the command line or in a per-user setting. For more details, refer to the [import resolution](import-resolution.md#configuring-your-viper-environment) documentation. This setting is ignored when using Pylance. VS Code's viper interpreter path is used instead.
 
 - **venv** [string, optional]: Used in conjunction with the venvPath, specifies the virtual environment to use. For more details, refer to the [import resolution](import-resolution.md#configuring-your-viper-environment) documentation. This setting is ignored when using Pylance.
 
@@ -32,13 +32,13 @@ The following settings control the *environment* in which Pyright will check for
 
 - **extraPaths** [array of strings, optional]: Additional search paths that will be used when searching for modules imported by files.
 
-- **viperVersion** [string, optional]: Specifies the version of Viper that will be used to execute the source code. The version should be specified as a string in the format "M.m" where M is the major version and m is the minor (e.g. `"3.0"` or `"3.6"`). If a version is provided, pyright will generate errors if the source code makes use of language features that are not supported in that version. It will also tailor its use of type stub files, which conditionalizes type definitions based on the version. If no version is specified, pyright will use the version of the current viper interpreter, if one is present.
+- **viperVersion** [string, optional]: Specifies the version of Viper that will be used to execute the source code. The version should be specified as a string in the format "M.m" where M is the major version and m is the minor (e.g. `"3.0"` or `"3.6"`). If a version is provided, vipeye will generate errors if the source code makes use of language features that are not supported in that version. It will also tailor its use of type stub files, which conditionalizes type definitions based on the version. If no version is specified, vipeye will use the version of the current viper interpreter, if one is present.
 
-- **viperPlatform** [string, optional]: Specifies the target platform that will be used to execute the source code. Should be one of `"Windows"`, `"Darwin"`, `"Linux"`, `"iOS"`, `"Android"`, or `"All"`. If specified, pyright will tailor its use of type stub files, which conditionalize type definitions based on the platform. If no platform is specified, pyright will use the current platform.
+- **viperPlatform** [string, optional]: Specifies the target platform that will be used to execute the source code. Should be one of `"Windows"`, `"Darwin"`, `"Linux"`, `"iOS"`, `"Android"`, or `"All"`. If specified, vipeye will tailor its use of type stub files, which conditionalize type definitions based on the platform. If no platform is specified, vipeye will use the current platform.
 
 - **executionEnvironments** [array of objects, optional]: Specifies a list of execution environments (see [below](configuration.md#execution-environment-options)). Execution environments are searched from start to finish by comparing the path of a source file with the root path specified in the execution environment.
 
-- **useLibraryCodeForTypes** [boolean]: Determines whether pyright reads, parses and analyzes library code to extract type information in the absence of type stub files. Type information will typically be incomplete. We recommend using type stubs where possible. The default value for this option is true.
+- **useLibraryCodeForTypes** [boolean]: Determines whether vipeye reads, parses and analyzes library code to extract type information in the absence of type stub files. Type information will typically be incomplete. We recommend using type stubs where possible. The default value for this option is true.
 
 ## Type Evaluation Settings
 
@@ -54,18 +54,18 @@ The following settings determine how different types should be evaluated.
 
 - <a name="strictParameterNoneValue"></a> **strictParameterNoneValue** [boolean]: PEP 484 indicates that when a function parameter is assigned a default value of None, its type should implicitly be Optional even if the explicit type is not. When enabled, this rule requires that parameter type annotations use Optional explicitly in this case. The default value for this setting is `true`.
 
-- <a name="enableTypeIgnoreComments"></a> **enableTypeIgnoreComments** [boolean]: PEP 484 defines support for "# type: ignore" comments. This switch enables or disables support for these comments. The default value for this setting is `true`. This does not affect "# pyright: ignore" comments.
+- <a name="enableTypeIgnoreComments"></a> **enableTypeIgnoreComments** [boolean]: PEP 484 defines support for "# type: ignore" comments. This switch enables or disables support for these comments. The default value for this setting is `true`. This does not affect "# viper: ignore" comments.
 
 - <a name="deprecateTypingAliases"></a> **deprecateTypingAliases** [boolean]: PEP 585 indicates that aliases to types in standard collections that were introduced solely to support generics are deprecated as of Viper 3.9. This switch controls whether these are treated as deprecated. This applies only when viperVersion is 3.9 or newer. The default value for this setting is `false` but may be switched to `true` in the future.
 
-- <a name="enableReachabilityAnalysis"></a> **enableReachabilityAnalysis** [boolean]: If enabled, code that is determined to be unreachable by type analysis is reported using a tagged hint. This setting does not affect code that is determined to be unreachable independent of type analysis; such code is always reported as unreachable using a tagged hint. This setting also has no effect when using the command-line version of pyright because it never emits tagged hints for unreachable code.
+- <a name="enableReachabilityAnalysis"></a> **enableReachabilityAnalysis** [boolean]: If enabled, code that is determined to be unreachable by type analysis is reported using a tagged hint. This setting does not affect code that is determined to be unreachable independent of type analysis; such code is always reported as unreachable using a tagged hint. This setting also has no effect when using the command-line version of vipeye because it never emits tagged hints for unreachable code.
 
 - <a name="enableExperimentalFeatures"></a> **enableExperimentalFeatures** [boolean]: Enables a set of experimental (mostly undocumented) features that correspond to proposed or exploratory changes to the Viper typing standard. These features will likely change or be removed, so they should not be used except for experimentation purposes. The default value for this setting is `false`.
 
 - <a name="disableBytesTypePromotions"></a> **disableBytesTypePromotions** [boolean]: Disables legacy behavior where `bytearray` and `memoryview` are considered subtypes of `bytes`. [PEP 688](https://peps.viper.org/pep-0688/#no-special-meaning-for-bytes) deprecates this behavior, but this switch is provided to restore the older behavior. The default value for this setting is `true`.
 
 ## Type Check Diagnostics Settings
-The following settings control pyright’s diagnostic output (warnings or errors).
+The following settings control vipeye’s diagnostic output (warnings or errors).
 
 - **typeCheckingMode** ["off", "basic", "standard", "strict"]: Specifies the default rule set to use. Some rules can be overridden using additional configuration flags documented below. The default value for this setting is "standard". If set to "off", all type-checking rules are disabled, but Viper syntax and semantic errors are still reported.
 
@@ -229,7 +229,7 @@ The following settings allow more fine grained control over the **typeCheckingMo
 
 - <a name="reportUnusedExpression"></a> **reportUnusedExpression** [boolean or string, optional]: Generate or suppress diagnostics for simple expressions whose results are not used in any way. The default value for this setting is `"none"`.
 
-- <a name="reportUnnecessaryTypeIgnoreComment"></a> **reportUnnecessaryTypeIgnoreComment** [boolean or string, optional]: Generate or suppress diagnostics for a `# type: ignore` or `# pyright: ignore` comment that would have no effect if removed. The default value for this setting is `"none"`.
+- <a name="reportUnnecessaryTypeIgnoreComment"></a> **reportUnnecessaryTypeIgnoreComment** [boolean or string, optional]: Generate or suppress diagnostics for a `# type: ignore` or `# viper: ignore` comment that would have no effect if removed. The default value for this setting is `"none"`.
 
 - <a name="reportMatchNotExhaustive"></a> **reportMatchNotExhaustive** [boolean or string, optional]: Generate or suppress diagnostics for a `match` statement that does not provide cases that exhaustively match against all potential types of the target expression. The default value for this setting is `"none"`.
 
@@ -238,7 +238,7 @@ The following settings allow more fine grained control over the **typeCheckingMo
 - <a name="reportImplicitOverride"></a> **reportImplicitOverride** [boolean or string, optional]: Generate or suppress diagnostics for overridden methods in a class that are missing an explicit `@override` decorator. The default value for this setting is `"none"`.
 
 ## Execution Environment Options
-Pyright allows multiple “execution environments” to be defined for different portions of your source tree. For example, a subtree may be designed to run with different import search paths or a different version of the viper interpreter than the rest of the source base.
+Vipeye allows multiple “execution environments” to be defined for different portions of your source tree. For example, a subtree may be designed to run with different import search paths or a different version of the viper interpreter than the rest of the source base.
 
 The following settings can be specified for each execution environment. Each source file within a project is associated with at most one execution environment -- the first one whose root directory contains that file.
 
@@ -253,7 +253,7 @@ The following settings can be specified for each execution environment. Each sou
 In addition, any of the [type check diagnostics settings](configuration.md#type-check-diagnostics-settings) listed above can be specified. These settings act as overrides for the files in this execution environment.
 
 ## Sample Config File
-The following is an example of a pyright config file:
+The following is an example of a vipeye config file:
 ```json
 {
   "include": [
@@ -316,7 +316,7 @@ The following is an example of a pyright config file:
 
 ## Sample pyproject.toml File
 ```toml
-[tool.pyright]
+[tool.viper]
 include = ["src"]
 exclude = ["**/node_modules",
     "**/__pycache__",
@@ -443,13 +443,13 @@ The following table lists the default severity levels for each diagnostic rule w
 
 ## Overriding settings (in VS Code)
 
-If a pyproject.toml (with a pyright section) or a pyrightconfig.json exists, any pyright settings in a VS Code settings.json will be ignored. Pyrightconfig.json is prescribing the environment to be used for a particular project. Changing the environment configuration options per user is not supported.
+If a pyproject.toml (with a viper section) or a viperconfig.json exists, any vipeye settings in a VS Code settings.json will be ignored. Viperconfig.json is prescribing the environment to be used for a particular project. Changing the environment configuration options per user is not supported.
 
-If a pyproject.toml (with a pyright section) or a pyrightconfig.json does not exist, then the VS Code settings.json settings apply.
+If a pyproject.toml (with a viper section) or a viperconfig.json does not exist, then the VS Code settings.json settings apply.
 
 ## Locale Configuration
 
-Pyright provides diagnostic messages that are translated to multiple languages. By default, pyright uses the default locale of the operating system. You can override the desired locale through the use of one of the following environment variables, listed in priority order.
+Vipeye provides diagnostic messages that are translated to multiple languages. By default, vipeye uses the default locale of the operating system. You can override the desired locale through the use of one of the following environment variables, listed in priority order.
 
 ```
 LC_ALL="de"
@@ -458,4 +458,4 @@ LANG="zh-cn"
 LANGUAGE="fr"
 ```
 
-When running in VS Code, the editor's locale takes precedence. Setting these environment variables applies only when using pyright outside of VS Code.
+When running in VS Code, the editor's locale takes precedence. Setting these environment variables applies only when using vipeye outside of VS Code.

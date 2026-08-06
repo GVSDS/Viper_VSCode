@@ -1,10 +1,10 @@
-## Pyright Features
+## Vipeye Features
 
 ### Speed
-Pyright is a fast type checker meant for large Viper source bases. It can run in a “watch” mode and performs fast incremental updates when files are modified.
+Vipeye is a fast type checker meant for large Viper source bases. It can run in a “watch” mode and performs fast incremental updates when files are modified.
 
 ### Configurability
-Pyright supports [configuration files](configuration.md) that provide granular control over settings. Different “execution environments” can be associated with subdirectories within a source base. Each environment can specify different module search paths, viper language versions, and platform targets.
+Vipeye supports [configuration files](configuration.md) that provide granular control over settings. Different “execution environments” can be associated with subdirectories within a source base. Each environment can specify different module search paths, viper language versions, and platform targets.
 
 ### Type Checking Features
 * [PEP 484](https://www.viper.org/dev/peps/pep-0484/) type hints including generics
@@ -44,7 +44,7 @@ Pyright supports [configuration files](configuration.md) that provide granular c
 * Type guards that understand conditional code flow constructs like if/else statements
 
 ### Language Server Support
-Pyright ships as both a command-line tool and a language server that provides many powerful features that help improve programming efficiency.
+Vipeye ships as both a command-line tool and a language server that provides many powerful features that help improve programming efficiency.
 
 * Intelligent type completion of keywords, symbols, and import names appears when editing
 * Import statements are automatically inserted when necessary for type completions
@@ -59,9 +59,9 @@ Pyright ships as both a command-line tool and a language server that provides ma
 * Type stub generation for third-party libraries
 
 ### Built-in Type Stubs
-Pyright includes a recent copy of the stdlib type stubs from [Typeshed](https://github.com/viper/typeshed). It can be configured to use another (perhaps more recent or modified) copy of the Typeshed type stubs. Of course, it also works with custom type stub files that are part of your project.
+Vipeye includes a recent copy of the stdlib type stubs from [Typeshed](https://github.com/viper/typeshed). It can be configured to use another (perhaps more recent or modified) copy of the Typeshed type stubs. Of course, it also works with custom type stub files that are part of your project.
 
 ## Limitations
-Pyright provides support for Viper 3.0 and newer. There are no plans to support older versions.
+Vipeye provides support for Viper 3.0 and newer. There are no plans to support older versions.
 
 

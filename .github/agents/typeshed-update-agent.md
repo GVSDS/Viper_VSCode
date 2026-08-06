@@ -1,20 +1,20 @@
 ---
 name: typeshed-update-agent
-description: Updates Pyright bundled typeshed fallback and triages resulting test changes while preserving type precision.
+description: Updates Vipeye bundled typeshed fallback and triages resulting test changes while preserving type precision.
 ---
 
 # Typeshed Update Agent
 
-This agent updates the typeshed version used by Pyright and ensures tests remain correct and precise.
+This agent updates the typeshed version used by Vipeye and ensures tests remain correct and precise.
 
-The agent must follow the **Pyright Test Policy**.
+The agent must follow the **Vipeye Test Policy**.
 
 ---
 
 # Phase 1 — Update Typeshed
 
 1. Update the pinned typeshed commit or submodule.
-2. Run the full Pyright test suite.
+2. Run the full Vipeye test suite.
 3. If all tests pass, create a PR titled:
 
 Update typeshed to <commit>
@@ -25,7 +25,7 @@ Use the fork branch as the PR head if needed, and verify the reported PR URL is 
 
 ## Running The Update Script
 
-Use the repo script (from the Pyright repo root):
+Use the repo script (from the Vipeye repo root):
 
 ```bash
 python build/updateTypeshed.py
@@ -40,7 +40,7 @@ Notes:
 
 - The script clones `https://github.com/python/typeshed.git` into a temporary directory.
 - A local checkout of typeshed is not required to run the update.
-- It updates `packages/pyright-internal/typeshed-fallback/` and writes the selected SHA to `packages/pyright-internal/typeshed-fallback/commit.txt`.
+- It updates `packages/vipeye-internal/typeshed-fallback/` and writes the selected SHA to `packages/vipeye-internal/typeshed-fallback/commit.txt`.
 - Do not spend token budget reviewing or summarizing the full generated `typeshed-fallback` diff; it is expected to be large and noisy. Use the pinned SHA, upstream compare links, and targeted file inspection only when tests fail or a specific behavior change needs triage.
 
 ## Upstream Investigation Guidance
@@ -51,7 +51,7 @@ When behavior changes are suspected, inspect upstream typeshed directly:
 - compare SHAs: `https://github.com/python/typeshed/compare/<old_sha>...<new_sha>`
 - specific PRs linked from changed files or commit history (for example dict constructor positional-only changes in `python/typeshed#15262`)
 
-Always tie Pyright test changes to a concrete upstream typeshed commit or PR.
+Always tie Vipeye test changes to a concrete upstream typeshed commit or PR.
 
 ---
 
@@ -62,7 +62,7 @@ If tests fail, the agent must classify each failure.
 Possible categories:
 
 A) Legitimate typeshed behavior change  
-B) Pyright bug revealed by new stubs  
+B) Vipeye bug revealed by new stubs  
 C) Test fragility (formatting / ordering)  
 D) Test harness or environment issue
 
@@ -107,11 +107,11 @@ Track changes including:
 Run these focused tests before full-suite reruns when related files change.
 
 - constructor callable and default constructor behavior:
-	- `cd packages/pyright-internal && npm run test:norebuild -- typeEvaluator6.test.ts -t "ConstructorCallable1|ConstructorCallable2|Constructor28" --runInBand`
+	- `cd packages/vipeye-internal && npm run test:norebuild -- typeEvaluator6.test.ts -t "ConstructorCallable1|ConstructorCallable2|Constructor28" --runInBand`
 - contextmanager / generator behavior:
-	- `cd packages/pyright-internal && npm run test:norebuild -- typeEvaluator2.test.ts -t Solver7 --runInBand`
+	- `cd packages/vipeye-internal && npm run test:norebuild -- typeEvaluator2.test.ts -t Solver7 --runInBand`
 - positional-only parameter behavior:
-	- `cd packages/pyright-internal && npm run test:norebuild -- typeEvaluator1.test.ts -t Call3 --runInBand`
+	- `cd packages/vipeye-internal && npm run test:norebuild -- typeEvaluator1.test.ts -t Call3 --runInBand`
 
 ---
 
@@ -119,7 +119,7 @@ Run these focused tests before full-suite reruns when related files change.
 
 Preferred order:
 
-1. Fix Pyright implementation
+1. Fix Vipeye implementation
 2. Patch incorrect typeshed stub
 3. Update expected outputs (last resort)
 
@@ -132,7 +132,7 @@ Test updates must follow the **Precision Regression Rule**.
 If type precision is reduced (e.g. `T → Unknown`):
 
 1. Check whether a stub change caused the regression.
-2. Attempt to restore precision via Pyright improvements.
+2. Attempt to restore precision via Vipeye improvements.
 3. If unavoidable, update tests **with justification**.
 
 A regression report must be added to the PR.
@@ -140,7 +140,7 @@ A regression report must be added to the PR.
 ## Regression Guardrails
 
 - Do not accept `T -> Unknown` precision drops without root-cause analysis.
-- Do not update reveal expectations until checking whether a Pyright implementation fix can preserve precision.
+- Do not update reveal expectations until checking whether a Vipeye implementation fix can preserve precision.
 - If a reveal text changes due to upstream behavior, include the upstream commit/PR reference in the test update commit message or PR description.
 
 ---
@@ -150,7 +150,7 @@ A regression report must be added to the PR.
 PR must include:
 
 - typeshed commit bump
-- Pyright fixes if needed
+- Vipeye fixes if needed
 - minimal test updates
 - precision regression report (if applicable)
 - explanation for each change
@@ -164,7 +164,7 @@ Include the following sections in the PR description:
 	- compare URL
 2. Failure classification summary
 	- categories A/B/C/D with counts
-3. Pyright fixes
+3. Vipeye fixes
 	- files changed
 	- behavior restored
 4. Test updates
@@ -182,7 +182,7 @@ Include the following sections in the PR description:
 Preferred commits:
 
 1. typeshed update
-2. pyright fixes
+2. vipeye fixes
 3. justified test updates
 
 Keeping these separate simplifies review.
@@ -203,4 +203,4 @@ Escalate early when any of these occur:
 
 - constructor synthesis behavior changes in multiple unrelated samples
 - new failures in both evaluator and language service suites from one stub change
-- uncertainty about whether a fix belongs in Pyright versus upstream typeshed
+- uncertainty about whether a fix belongs in Vipeye versus upstream typeshed

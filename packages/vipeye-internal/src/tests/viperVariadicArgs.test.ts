@@ -39,10 +39,10 @@ const SHA512_PATH = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes\\hashlib
 const AST_INIT_PATH = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes\\ast\\__init__.vp';
 const TRANSPYC_INCLUDES = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes';
 
-function buildProgram(targetPath: string) {
+function buildProgram(targetPath: string, projectRootPath: string = TRANSPYC_INCLUDES, extraPaths: string[] = []) {
     const tempFile = new RealTempFile();
     const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
-    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const projectRoot = UriEx.file(projectRootPath);
     const configOptions = new ConfigOptions(projectRoot);
     configOptions.internalTestMode = true;
     configOptions.initializeTypeCheckingMode('standard');
@@ -53,7 +53,7 @@ function buildProgram(targetPath: string) {
         configOptions.diagnosticRuleSet,
         configOptions.defaultPythonVersion,
         configOptions.defaultPythonPlatform,
-        [projectRoot],
+        [projectRoot, ...extraPaths.map((p) => UriEx.file(p))],
         /* skipNativeLibraries */ false,
         /* defaultDialect */ 'viper'
     );
@@ -392,6 +392,89 @@ test('ast/__init__.vp 中不存在的 from .visitor import ASTVisitor 标黄且�
         astVisitorToken.tokenType,
         11,
         `"ASTVisitor" should be undefined(11), got ${astVisitorToken.tokenType}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
+/**
+ * TransPyV/Test/App 场景：workspace root 是 Test（App 的父目录），
+ * App 下的 test_main.vp 通过同目录绝对导入引用各测试模块。
+ * Viper 编译时被分析文件所在目录链即搜索根，同目录模块必须可解析。
+ */
+test('TransPyV/Test/App 中同目录模块绝对导入可解析（from flow_test import flow_test）', () => {
+    const testRoot = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\TransPyV\\Test';
+    const targetPath = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\TransPyV\\Test\\App\\test_main.vp';
+    // 模拟用户配置：includes 作为 extraPaths 提供 stdio/stdint/t/c 等标准库。
+    const { program, serviceProvider, uri, configOptions } = buildProgram(targetPath, testRoot, [
+        TRANSPYC_INCLUDES,
+    ]);
+
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    // 同目录模块（flow_test/asm_test 等）与 includes 标准库必须解析成功。
+    // testcheck 是测试脚本真实缺失（App 下只有 testcheck_test.vp），允许报错。
+    const missingImports = diagnostics.filter(
+        (d) => d.message.includes('无法解析导入') && !d.message.includes('testcheck')
+    );
+    assert.strictEqual(
+        missingImports.length,
+        0,
+        `unexpected missing import errors: ${JSON.stringify(missingImports)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
+/**
+ * Viper 语义：`def minus(...) -> None` 编译为返回 i32（隐式 ret i32 0），
+ * 其函数指针类型与 `t.Callable[[int, int], int]` 一致。
+ * `func_p = minus` 不应报返回类型 None 与 int 不兼容。
+ */
+test('-> None 函数可赋给返回 int 的 t.Callable（func_p = minus 不报错）', () => {
+    const targetPath = path.resolve(__dirname, 'samples', 'viper_callable_none.vp');
+    const { program, serviceProvider, uri, configOptions } = buildProgram(targetPath);
+
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    const returnMismatch = diagnostics.filter(
+        (d) =>
+            d.message.includes('返回类型') ||
+            d.message.includes('return type') ||
+            d.message.includes('不可分配') ||
+            d.message.includes('不可分配给') ||
+            d.message.includes('incompatible')
+    );
+    assert.strictEqual(
+        returnMismatch.length,
+        0,
+        `unexpected return type mismatch errors: ${JSON.stringify(returnMismatch)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
+/**
+ * Viper 语义：`t.CArray[T]` 单参数合法（不定长数组，None 结尾）。
+ * t.vpi 中 N 声明 `TypeVar('N', default=None)`，但 stub 的 __class_getitem__
+ * 使 N 被推断为合成泛型参数导致标准检查误报"应为 2，但收到 1"。
+ */
+test('t.CArray[str] 单参数（不定长数组）合法，不报类型参数不足', () => {
+    const targetPath = path.resolve(__dirname, 'samples', 'viper_carray_one_arg.vp');
+    const { program, serviceProvider, uri, configOptions } = buildProgram(targetPath);
+
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    const typeArgErrors = diagnostics.filter(
+        (d) =>
+            d.message.includes('类型参数') ||
+            d.message.includes('type arguments') ||
+            d.message.includes('provided for')
+    );
+    assert.strictEqual(
+        typeArgErrors.length,
+        0,
+        `unexpected type argument errors: ${JSON.stringify(typeArgErrors)}`
     );
 
     program.dispose();

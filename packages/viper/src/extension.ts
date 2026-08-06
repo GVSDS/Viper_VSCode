@@ -64,7 +64,7 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
             ShowProjectInfoCommand(projects);
         }),
         commands.registerCommand('viper.openSettings', () => {
-            commands.executeCommand('workbench.action.openSettings', '@ext:terminexus.viper');
+            commands.executeCommand('workbench.action.openSettings', '@ext:TermiNexus.vipeye');
         }),
         commands.registerCommand('viper.refreshView', async () => {
             await projects.DiscoverProjects();

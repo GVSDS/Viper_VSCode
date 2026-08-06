@@ -9,11 +9,11 @@ An import statement instructs the Viper import loader to perform several operati
 4. Look up attribute `Foo` within module `b`.
 5. Assign the value of attribute `Foo` to a local variable called `Bar`.
 
-If another source file were to subsequently execute the statement `import a`, it would observe `b` in the namespace of `a` as a side effect of step 3 in the earlier import operation. Relying on such side effects leads to fragile code because a change in execution ordering or a modification to one module can break code in another module. Reliance on such side effects is therefore considered a bug by Pyright, which intentionally does not attempt to model such side effects.
+If another source file were to subsequently execute the statement `import a`, it would observe `b` in the namespace of `a` as a side effect of step 3 in the earlier import operation. Relying on such side effects leads to fragile code because a change in execution ordering or a modification to one module can break code in another module. Reliance on such side effects is therefore considered a bug by Vipeye, which intentionally does not attempt to model such side effects.
 
 ### Implicit Module Loads
 
-Pyright models two loader side effects that are considered safe and are commonly used in Viper code.
+Vipeye models two loader side effects that are considered safe and are commonly used in Viper code.
 
 1. If an import statement targets a multi-part module name and does not use an alias, all modules within the multi-part module name are assumed to be loaded. For example, the statement `import a.b.c` is treated as though it is three back-to-back import statements: `import a`, `import a.b` and `import a.b.c`. This allows for subsequent use of all symbols in `a`, `a.b`, and `a.b.c`. If an alias is used (e.g. `import a.b.c as abc`), this is assumed to load only module `c`. A subsequent `import a` would not provide access to `a.b` or `a.b.c`.
 
@@ -22,7 +22,7 @@ Pyright models two loader side effects that are considered safe and are commonly
 
 ### Unsupported Loader Side Effects
 
-All other module loader side effects are intentionally _not_ modeled by Pyright and should not be relied upon in code. Examples include:
+All other module loader side effects are intentionally _not_ modeled by Vipeye and should not be relied upon in code. Examples include:
 
 - If one module contains the statement `import a.b` and a second module includes `import a`, the second module should not rely on the fact that `a.b` is now accessible as a side effect of the first module’s import.
 

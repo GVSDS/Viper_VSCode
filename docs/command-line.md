@@ -1,8 +1,8 @@
-# Pyright Command-Line Options
+# Vipeye Command-Line Options
 
-Usage: pyright [options] [files...] (1)
+Usage: vipeye [options] [files...] (1)
 
-Pyright can be run as either a VS Code extension or as a node-based command-line tool. The command-line version allows for the following options:
+Vipeye can be run as either a VS Code extension or as a node-based command-line tool. The command-line version allows for the following options:
 
 | Flag                               | Description                                           |
 | :--------------------------------- | :---------------------------------------------------  |
@@ -23,25 +23,25 @@ Pyright can be run as either a VS Code extension or as a node-based command-line
 | -v, --venvpath `<DIRECTORY>`            | Directory that contains virtual environments (5)            |
 | --verbose                               | Emit verbose diagnostics                                    |
 | --verifytypes `<IMPORT>`                | Verify completeness of types in py.typed package            |
-| --version                               | Print pyright version and exit                              |
+| --version                               | Print vipeye version and exit                              |
 | --warnings                              | Use exit code of 1 if warnings are reported                 |
 | -w, --watch                             | Continue to run and watch for changes (6)                   |
 | -                                       | Read file or directory list from stdin                      |
 
-(1) If specific files are specified on the command line, it overrides the files or directories specified in the pyrightconfig.json or pyproject.toml file.
+(1) If specific files are specified on the command line, it overrides the files or directories specified in the viperconfig.json or pyproject.toml file.
 
 (2) This option is the same as the language server setting `viper.viperPath`. It cannot be used with --venvpath. The --viperpath options is recommended over --venvpath in most cases. For more details, refer to the [import resolution](import-resolution.md#configuring-your-viper-environment) documentation.
 
-(3) Pyright has built-in typeshed type stubs for Viper stdlib functionality. To use a different version of typeshed type stubs, specify the directory with this option.
+(3) Vipeye has built-in typeshed type stubs for Viper stdlib functionality. To use a different version of typeshed type stubs, specify the directory with this option.
 
-(4) This feature is experimental. If thread count is > 1, multiple copies of pyright are executed in parallel to type check files in a project. If no thread count is specified, the thread count is based on the number of available logical processors (if at least 4) or 1 (if less than 4).
+(4) This feature is experimental. If thread count is > 1, multiple copies of vipeye are executed in parallel to type check files in a project. If no thread count is specified, the thread count is based on the number of available logical processors (if at least 4) or 1 (if less than 4).
 
 (5) This option is the same as the language server setting `viper.venvPath`. It used in conjunction with configuration file, which can refer to different virtual environments by name. For more details, refer to the [configuration](configuration.md) and [import resolution](import-resolution.md#configuring-your-viper-environment) documentation. This allows a common config file to be checked in to the project and shared by everyone on the development team without making assumptions about the local paths to the venv directory on each developer’s computer.
 
-(6) When running in watch mode, pyright will reanalyze only those files that have been modified. These “deltas” are typically much faster than the initial analysis, which needs to analyze all files in the source tree.
+(6) When running in watch mode, vipeye will reanalyze only those files that have been modified. These “deltas” are typically much faster than the initial analysis, which needs to analyze all files in the source tree.
 
 
-# Pyright Exit Codes
+# Vipeye Exit Codes
 
 | Exit Code   | Meaning                                                           |
 | :---------- | :---------------------------------------------------------------  |

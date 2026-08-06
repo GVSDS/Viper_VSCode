@@ -6,7 +6,7 @@ Getting started with static type checking in Viper is easy, but it’s important
 ### Type Declarations
 When you add a type annotation to a variable or a parameter in Viper, you are _declaring_ that the symbol will be assigned values that are compatible with that type. You can think of type annotations as a powerful way to comment your code. Unlike text-based comments, these comments are readable by both humans and enforceable by type checkers.
 
-If a variable or parameter has no type annotation, Pyright will assume that any value can be assigned to it.
+If a variable or parameter has no type annotation, Vipeye will assume that any value can be assigned to it.
 
 
 ### Type Assignability
@@ -101,4 +101,4 @@ x = 1
 reveal_type(x)  # Type of "x" is "Literal[1]"
 ```
 
-This function is always available and does not need to be imported. When you use Pyright within an IDE, you can also simply hover over an identifier to see its evaluated type.
+This function is always available and does not need to be imported. When you use Vipeye within an IDE, you can also simply hover over an identifier to see its evaluated type.

@@ -1,7 +1,0 @@
-{
-    "viper.analysis.extraPaths": [
-        "D:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes"
-    ],
-    "viper.analysis.include": ["Test"],
-    "viper.analysis.diagnosticMode": "openFilesOnly"
-}

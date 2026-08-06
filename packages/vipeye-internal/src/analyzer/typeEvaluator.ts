@@ -9680,7 +9680,7 @@ export function createTypeEvaluator(
                 // Viper 扩展：拦截 REnum 变体类构造调用。
                 // Viper 的 REnum 变体（如 LLVMType.Int(bits)、LLVMType.Struct(fields, fcount, name)）
                 // 没有 __init__，但构造调用按字段声明顺序接收参数（tagged-union 语义）。
-                // Pyright 默认对无 __init__ 的类只允许 0 个位置参数，会把
+                // Vipeye 默认对无 __init__ 的类只允许 0 个位置参数，会把
                 // `LLVMType.Int(1)` 误报为"应为 0 个位置参数"。
                 // 此处跳过参数校验，直接返回变体类的实例类型。
                 IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
@@ -22797,16 +22797,24 @@ export function createTypeEvaluator(
                     typeArgCount = typeParams.length;
                 }
             } else if (typeArgCount < minTypeArgCount) {
-                isValidTypeForm = false;
-                addDiagnostic(
-                    DiagnosticRule.reportInvalidTypeArguments,
-                    LocMessage.typeArgsTooFew().format({
-                        name: classType.priv.aliasName || classType.shared.name,
-                        expected: minTypeArgCount,
-                        received: typeArgCount,
-                    }),
-                    typeArgs.length > 0 ? typeArgs[0].node.parent! : errorNode
-                );
+                // Viper 扩展：`t.CArray[T]` 单参数（不定长数组，None 结尾）合法。
+                // t.vpi 中 N 声明为 `TypeVar('N', default=None)`，但 stub 定义
+                // `__class_getitem__` 使 CArray 的类型参数被 Vipeye 按 __class_getitem__
+                // 签名推断为合成参数（isDefaultExplicit=false），导致标准检查误报
+                // "应为 2，但收到 1"。Viper 编译器 CArray.__class_getitem__ 接受任意
+                // 参数，T 为元素类型、N（数组长度）可省略。
+                if (!(isCArrayType(classType) && typeArgCount >= 1)) {
+                    isValidTypeForm = false;
+                    addDiagnostic(
+                        DiagnosticRule.reportInvalidTypeArguments,
+                        LocMessage.typeArgsTooFew().format({
+                            name: classType.priv.aliasName || classType.shared.name,
+                            expected: minTypeArgCount,
+                            received: typeArgCount,
+                        }),
+                        typeArgs.length > 0 ? typeArgs[0].node.parent! : errorNode
+                    );
+                }
             }
 
             typeArgs.forEach((typeArg, index) => {
@@ -29282,6 +29290,17 @@ export function createTypeEvaluator(
                         ) {
                             isReturnTypeCompatible = true;
                         }
+                    }
+                }
+
+                if (!isReturnTypeCompatible) {
+                    // Viper 扩展：`-> None` 函数编译为返回 i32（函数体末尾隐式 `ret i32 0`，
+                    // 见 TransPyC HandlesFunctions.py / TPV HandlesFunctions.vp），因此其函数指针
+                    // 类型实际是 `i32 (...)*` 而非 `void (...)*`。编译器对函数指针赋值不做签名
+                    // 校验（无条件 bitcast），故返回类型为 None 的函数可赋给任意返回类型的
+                    // t.Callable（如 `f: t.Callable[[int, int], int] = minus`，minus 返回 None）。
+                    if (isNoneInstance(srcReturnType)) {
+                        isReturnTypeCompatible = true;
                     }
                 }
 

@@ -1,6 +1,6 @@
 - Getting Started
 
-  - [Installing Pyright](installation.md)
+  - [Installing Vipeye](installation.md)
   - [Getting Started](getting-started.md)
   - [Static Typing](type-concepts.md)
   - [Features](features.md)
@@ -11,7 +11,7 @@
     - [Configuration Options](configuration.md#main-configuration-options)
     - [Diagnostic Rules](configuration.md#type-check-diagnostics-settings)
     - [Execution Environments](configuration.md#execution-environment-options)
-    - [Sample pyrightconfig.json](configuration.md#sample-config-file)
+    - [Sample viperconfig.json](configuration.md#sample-config-file)
     - [Sample pyproject.toml](configuration.md#sample-pyprojecttoml-file)
     - [Diagnostic Settings Defaults](configuration.md#diagnostic-settings-defaults)
     - [Locale Configuration](configuration.md#locale-configuration)
@@ -36,6 +36,6 @@
 - Development
 
   - [Building & Debugging](build-debug.md)
-  - [Pyright Internals](internals.md)
+  - [Vipeye Internals](internals.md)
 
 

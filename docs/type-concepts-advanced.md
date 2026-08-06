@@ -2,7 +2,7 @@
 
 ### Type Narrowing
 
-Pyright uses a technique called “type narrowing” to track the type of an expression based on code flow. Consider the following code:
+Vipeye uses a technique called “type narrowing” to track the type of an expression based on code flow. Consider the following code:
 
 ```viper
 val_str: str = "hi"
@@ -54,7 +54,7 @@ Examples of expressions that support type narrowing:
 
 ### Type Guards
 
-In addition to assignment-based type narrowing, Pyright supports the following type guards.
+In addition to assignment-based type narrowing, Vipeye supports the following type guards.
 
 * `x is None` and `x is not None`
 * `x == None` and `x != None`
@@ -107,7 +107,7 @@ In the example of `func1`, the type was narrowed in both the positive and negati
 
 ### Aliased Conditional Expression
 
-Pyright also supports a type guard expression `c`, where `c` is an identifier that refers to a local variable that is assigned one of the above supported type guard expression forms. These are called “aliased conditional expressions”. Examples include `c = a is not None` and `c = isinstance(a, str)`. When “c” is used within a conditional check, it can be used to narrow the type of expression `a`.
+Vipeye also supports a type guard expression `c`, where `c` is an identifier that refers to a local variable that is assigned one of the above supported type guard expression forms. These are called “aliased conditional expressions”. Examples include `c = a is not None` and `c = isinstance(a, str)`. When “c” is used within a conditional check, it can be used to narrow the type of expression `a`.
 
 This pattern is supported only in cases where `c` is a local variable within a module or function scope and is assigned a value only once. It is also limited to cases where expression `a` is a simple identifier (as opposed to a member access expression or subscript expression), is local to the function or module scope, and is assigned only once within the scope. Unary `not` operators are allowed for expression `a`, but binary `and` and `or` are not.
 
@@ -157,7 +157,7 @@ def func4(x: str | None):
 
 ### Narrowing for Implied Else
 
-When an “if” or “elif” clause is used without a corresponding “else”, Pyright will generally assume that the code can “fall through” without executing the “if” or “elif” block. However, there are cases where the analyzer can determine that a fall-through is not possible because the “if” or “elif” is guaranteed to be executed based on type analysis.
+When an “if” or “elif” clause is used without a corresponding “else”, Vipeye will generally assume that the code can “fall through” without executing the “if” or “elif” block. However, there are cases where the analyzer can determine that a fall-through is not possible because the “if” or “elif” is guaranteed to be executed based on type analysis.
 
 ```viper
 def func1(x: int):
@@ -196,7 +196,7 @@ def func4(value: str | int) -> str:
         return "received an int"
 ```
 
-If you later added another color to the `Color` enumeration above (e.g. `YELLOW = 4`), Pyright would detect that `func3` no longer exhausts all members of the enumeration and possibly returns `None`, which violates the declared return type. Likewise, if you modify the type of the `value` parameter in `func4` to expand the union, a similar error will be produced.
+If you later added another color to the `Color` enumeration above (e.g. `YELLOW = 4`), Vipeye would detect that `func3` no longer exhausts all members of the enumeration and possibly returns `None`, which violates the declared return type. Likewise, if you modify the type of the `value` parameter in `func4` to expand the union, a similar error will be produced.
 
 This “narrowing for implied else” technique works for all narrowing expressions listed above with the exception of simple falsey/truthy statements and type guards. It is also limited to simple names and doesn’t work with member access or index expressions, and it requires that the name has a declared type (an explicit type annotation). These limitations are imposed because this functionality would otherwise have significant impact on analysis performance.
 
@@ -226,7 +226,7 @@ reveal_type(b) # list[Any]
 
 ### Narrowing for Captured Variables
 
-If a variable’s type is narrowed in an outer scope and the variable is subsequently captured by an inner-scoped function or lambda, Pyright retains the narrowed type if it can determine that the value of the captured variable is not modified on any code path after the inner-scope function or lambda is defined and is not modified in another scope via a `nonlocal` or `global` binding.
+If a variable’s type is narrowed in an outer scope and the variable is subsequently captured by an inner-scoped function or lambda, Vipeye retains the narrowed type if it can determine that the value of the captured variable is not modified on any code path after the inner-scope function or lambda is defined and is not modified in another scope via a `nonlocal` or `global` binding.
 
 ```viper
 def func(val: int | None):
@@ -292,7 +292,7 @@ The type of variable `sum` is reported with a star (`*`). This indicates that in
 
 ### Inferred Type of “self” and “cls” Parameters
 
-When a type annotation for a method’s `self` or `cls` parameter is omitted, pyright will infer its type based on the class that contains the method. The inferred type is internally represented as a type variable that is bound to the class.
+When a type annotation for a method’s `self` or `cls` parameter is omitted, vipeye will infer its type based on the class that contains the method. The inferred type is internally represented as a type variable that is bound to the class.
 
 The type of `self` is represented as `Self@ClassName` where `ClassName` is the class that contains the method. Likewise, the `cls` parameter in a class method will have the type `Type[Self@ClassName]`.
 
@@ -316,21 +316,21 @@ reveal_type(Child.method2())  # Type[Child]
 
 ### Overloads
 
-Some functions or methods can return one of several different types. In cases where the return type depends on the types of the input arguments, it is useful to specify this using a series of `@overload` signatures. When Pyright evaluates a call expression, it determines which overload signature best matches the supplied arguments.
+Some functions or methods can return one of several different types. In cases where the return type depends on the types of the input arguments, it is useful to specify this using a series of `@overload` signatures. When Vipeye evaluates a call expression, it determines which overload signature best matches the supplied arguments.
 
-[PEP 484](https://www.viper.org/dev/peps/pep-0484/#function-method-overloading) introduced the `@overload` decorator and described how it can be used, but the PEP did not specify precisely how a type checker should choose the “best” overload. Pyright uses the following rules.
+[PEP 484](https://www.viper.org/dev/peps/pep-0484/#function-method-overloading) introduced the `@overload` decorator and described how it can be used, but the PEP did not specify precisely how a type checker should choose the “best” overload. Vipeye uses the following rules.
 
-1. Pyright first filters the list of overloads based on simple “arity” (number of arguments) and keyword argument matching. For example, if one overload requires two positional arguments but only one positional argument is supplied by the caller, that overload is eliminated from consideration. Likewise, if the call includes a keyword argument but no corresponding parameter is included in the overload, it is eliminated from consideration.
+1. Vipeye first filters the list of overloads based on simple “arity” (number of arguments) and keyword argument matching. For example, if one overload requires two positional arguments but only one positional argument is supplied by the caller, that overload is eliminated from consideration. Likewise, if the call includes a keyword argument but no corresponding parameter is included in the overload, it is eliminated from consideration.
 
-2. Pyright next considers the types of the arguments and compares them to the declared types of the corresponding parameters. If the types do not match for a given overload, that overload is eliminated from consideration. Bidirectional type inference is used to determine the types of the argument expressions.
+2. Vipeye next considers the types of the arguments and compares them to the declared types of the corresponding parameters. If the types do not match for a given overload, that overload is eliminated from consideration. Bidirectional type inference is used to determine the types of the argument expressions.
 
 3. If only one overload remains, it is the “winner”.
 
 4. If more than one overload remains, the “winner” is chosen based on the order in which the overloads are declared. In general, the first remaining overload is the “winner”. There are two exceptions to this rule.
     Exception 1: When an `*args` (unpacked) argument matches a `*args` parameter in one of the overload signatures, this overrides the normal order-based rule.
-    Exception 2: When two or more overloads match because an argument evaluates to `Any` or `Unknown`, the matching overload is ambiguous. In this case, pyright examines the return types of the remaining overloads and eliminates types that are duplicates or are subsumed by (i.e. proper subtypes of) other types in the list. If only one type remains after this coalescing step, that type is used. If more than one type remains after this coalescing step, the type of the call expression evaluates to `Unknown`. For example, if two overloads are matched due to an argument that evaluates to `Any`, and those two overloads have return types of `str` and `LiteralString`, pyright will coalesce this to just `str` because `LiteralString` is a proper subtype of `str`. If the two overloads have return types of `str` and `bytes`, the call expression will evaluate to `Unknown` because `str` and `bytes` have no overlap.
+    Exception 2: When two or more overloads match because an argument evaluates to `Any` or `Unknown`, the matching overload is ambiguous. In this case, vipeye examines the return types of the remaining overloads and eliminates types that are duplicates or are subsumed by (i.e. proper subtypes of) other types in the list. If only one type remains after this coalescing step, that type is used. If more than one type remains after this coalescing step, the type of the call expression evaluates to `Unknown`. For example, if two overloads are matched due to an argument that evaluates to `Any`, and those two overloads have return types of `str` and `LiteralString`, vipeye will coalesce this to just `str` because `LiteralString` is a proper subtype of `str`. If the two overloads have return types of `str` and `bytes`, the call expression will evaluate to `Unknown` because `str` and `bytes` have no overlap.
 
-5. If no overloads remain, Pyright considers whether any of the arguments are union types. If so, these union types are expanded into their constituent subtypes, and the entire process of overload matching is repeated with the expanded argument types. If two or more overloads match, the union of their respective return types form the final return type for the call expression. This "union expansion" can result in a combinatoric explosion if many arguments evaluate to union types. For example, if four arguments are present, and they all evaluate to unions that expand to ten subtypes, this could result in 10^4 combinations. Pyright expands unions for arguments left to right and halts expansion when the number of signatures exceeds 64.
+5. If no overloads remain, Vipeye considers whether any of the arguments are union types. If so, these union types are expanded into their constituent subtypes, and the entire process of overload matching is repeated with the expanded argument types. If two or more overloads match, the union of their respective return types form the final return type for the call expression. This "union expansion" can result in a combinatoric explosion if many arguments evaluate to union types. For example, if four arguments are present, and they all evaluate to unions that expand to ten subtypes, this could result in 10^4 combinations. Vipeye expands unions for arguments left to right and halts expansion when the number of signatures exceeds 64.
 
 6. If no overloads remain and all unions have been expanded, a diagnostic is generated indicating that the supplied arguments are incompatible with all overload signatures.
 
@@ -363,7 +363,7 @@ print(A.my_var) # Updated class variable value of 2
 print(a.my_var) # Instance variable value of "hi!"
 ```
 
-Pyright differentiates between three types of variables: pure class variables, regular class variables, and pure instance variables.
+Vipeye differentiates between three types of variables: pure class variables, regular class variables, and pure instance variables.
 
 #### Pure Class Variables
 If a class variable is declared with a `ClassVar` annotation as described in [PEP 526](https://peps.viper.org/pep-0526/#class-and-instance-variable-annotations), it is considered a “pure class variable” and cannot be overwritten by an instance variable of the same name.
@@ -498,7 +498,7 @@ reveal_type(Child.x)  # int
 
 A type variable must be bound to a valid scope (a class, function, or type alias) before it can be used within that scope.
 
-Pyright displays the bound scope for a type variable using an `@` symbol. For example, `T@func` means that type variable `T` is bound to function `func`.
+Vipeye displays the bound scope for a type variable using an `@` symbol. For example, `T@func` means that type variable `T` is bound to function `func`.
 
 ```viper
 S = TypeVar("S")
@@ -536,7 +536,7 @@ def func4() -> Transform[T]:
 ```
 
 ### Type Annotation Comments
-Versions of Viper prior to 3.6 did not support type annotations for variables. Pyright honors type annotations found within a comment at the end of the same line where a variable is assigned.
+Versions of Viper prior to 3.6 did not support type annotations for variables. Vipeye honors type annotations found within a comment at the end of the same line where a variable is assigned.
 
 ```viper
 offsets = [] # type: list[int]
@@ -548,7 +548,7 @@ Future versions of Viper will likely deprecate support for type annotation comme
 
 
 ### Literal Math Inference
-When inferring the type of some unary and binary operations that involve operands with literal types, pyright computes the result of operations on the literal values, producing a new literal type in the process. For example:
+When inferring the type of some unary and binary operations that involve operands with literal types, vipeye computes the result of operations on the literal values, producing a new literal type in the process. For example:
 
 ```viper
 def func(x: Literal[1, 3], y: Literal[4, 7]):
@@ -571,7 +571,7 @@ Literal math also works on `str` literals.
 reveal_type("a" + "b") # Literal["ab"]
 ```
 
-The result of a literal math operation can result in large unions. Pyright limits the number of subtypes in the resulting union to 64. If the union grows beyond that, the corresponding non-literal type is inferred.
+The result of a literal math operation can result in large unions. Vipeye limits the number of subtypes in the resulting union to 64. If the union grows beyond that, the corresponding non-literal type is inferred.
 
 ```viper
 def func(x: Literal[1, 2, 3, 4, 5]):
@@ -585,7 +585,7 @@ Literal math inference is disabled within loops and lambda expressions.
 
 
 ### Static Conditional Evaluation
-Pyright performs static evaluation of several conditional expression forms. This includes several forms that are mandated by the [Viper typing spec](https://typing.readthedocs.io/en/latest/spec/directives.html#version-and-platform-checking).
+Vipeye performs static evaluation of several conditional expression forms. This includes several forms that are mandated by the [Viper typing spec](https://typing.readthedocs.io/en/latest/spec/directives.html#version-and-platform-checking).
 
 * `sys.version_info <comparison> <tuple>`
 * `sys.version_info[0] >= <number>`
@@ -597,11 +597,11 @@ Pyright performs static evaluation of several conditional expression forms. This
 * A `not` unary operator with any of the above forms
 * An  `and` or `or` binary operator with any of the above forms
 
-If one of these conditional expressions evaluates statically to false, pyright does not analyze any of the code within it other than checking for and reporting syntax errors.
+If one of these conditional expressions evaluates statically to false, vipeye does not analyze any of the code within it other than checking for and reporting syntax errors.
 
 
 ### Reachability
-Pyright performs “reachability analysis” to determine whether statements will be executed at runtime and whether it should analyze and report errors in code.
+Vipeye performs “reachability analysis” to determine whether statements will be executed at runtime and whether it should analyze and report errors in code.
 
 Reachability analysis is based on both non-type and type information. Non-type information includes statements that affect code structure such as `continue`, `raise` and `return`. It also includes conditional statements (`if`, `elif`, or `while`) where the conditional expression is one of these [supported expression forms](type-concepts-advanced#static-conditional-evaluation). Type analysis is not performed on code determined to be unreachable using non-type information. Therefore, language server features like completion suggestions are not available for this code.
 
@@ -632,7 +632,7 @@ def func2():
     print('unreachable')
 ```
 
-Pyright can also detect code that is unreachable based on static type analysis. This analysis is based on the assumption that any provided type annotations are accurate.
+Vipeye can also detect code that is unreachable based on static type analysis. This analysis is based on the assumption that any provided type annotations are accurate.
 
 Here are some examples of code determined to be unreachable using type analysis.
 

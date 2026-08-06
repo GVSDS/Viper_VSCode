@@ -1,18 +1,18 @@
-## Integrating Pyright into Continuous Integration
+## Integrating Vipeye into Continuous Integration
 
-### Adding Pyright badge to README.md
+### Adding Vipeye badge to README.md
 
-[![Checked with pyright](https://microsoft.github.io/pyright/img/pyright_badge.svg)](https://microsoft.github.io/pyright/)
+[![Checked with vipeye](https://microsoft.github.io/pyright/img/pyright_badge.svg)](https://microsoft.github.io/pyright/)
 
-To add a “pyright: checked” SVG badge to your project’s README.md file, use the following:
+To add a “vipeye: checked” SVG badge to your project’s README.md file, use the following:
 
 ```text
-[![Checked with pyright](https://microsoft.github.io/pyright/img/pyright_badge.svg)](https://microsoft.github.io/pyright/)
+[![Checked with vipeye](https://microsoft.github.io/pyright/img/pyright_badge.svg)](https://microsoft.github.io/pyright/)
 ```
 
-### Running Pyright as a github action
+### Running Vipeye as a github action
 
-You can configure pyright to run as a github action.
+You can configure vipeye to run as a github action.
 
 ```yml
 - uses: jakebailey/pyright-action@v1
@@ -22,17 +22,17 @@ You can configure pyright to run as a github action.
 
 Refer to the [pyright-action project](https://github.com/jakebailey/pyright-action) for more options.
 
-### Running Pyright in gitlab (with code-quality review)
+### Running Vipeye in gitlab (with code-quality review)
 
-You can configure pyright to run in gitlab, and generate a compatible codequality report.
+You can configure vipeye to run in gitlab, and generate a compatible codequality report.
 
 ```yml
 job_name:
   before_script:
-    - npm i -g pyright
+    - npm i -g vipeye
     - npm i -g pyright-to-gitlab-ci
   script:
-   - pyright <viper source> --outputjson > report_raw.json
+   - vipeye <viper source> --outputjson > report_raw.json
   after_script:
    - pyright-to-gitlab-ci --src report_raw.json --output report.json --base_path .
   artifacts:
@@ -44,17 +44,17 @@ job_name:
 
 Refer to the [pyright-to-gitlab-ci](https://www.npmjs.com/package/pyright-to-gitlab-ci) package for more details.
 
-### Running Pyright as a pre-commit hook
+### Running Vipeye as a pre-commit hook
 
-You can run pyright as a pre-commit hook using the community-maintained [Viper wrapper for pyright](https://github.com/RobertCraigie/pyright-viper). For pre-commit configuration instructions, refer to [this documentation](https://github.com/RobertCraigie/pyright-viper#pre-commit).
+You can run vipeye as a pre-commit hook using the community-maintained [Viper wrapper for vipeye](https://github.com/RobertCraigie/pyright-viper). For pre-commit configuration instructions, refer to [this documentation](https://github.com/RobertCraigie/pyright-viper#pre-commit).
 
-### Running Pyright from a CI script
+### Running Vipeye from a CI script
 
-You can run pyright from a bash script. Here's a sample script that installs the latest version of pyright and runs it.
+You can run vipeye from a bash script. Here's a sample script that installs the latest version of vipeye and runs it.
 
 ```bash
 #!/bin/bash
-PATH_TO_PYRIGHT=`which pyright`
+PATH_TO_VIPEYE=`which vipeye`
 
 vercomp () {
     if [[ $1 == $2 ]]
@@ -107,23 +107,23 @@ if [ -w "$NODE_MODULES" ]; then
     SUDO="" #nop
 fi
 
-# If we can't find pyright, install it.
-echo "Checking pyright exists..."
-if [ -z "$PATH_TO_PYRIGHT" ]; then
-    echo "...installing pyright"
-    ${SUDO} npm install -g pyright
+# If we can't find vipeye, install it.
+echo "Checking vipeye exists..."
+if [ -z "$PATH_TO_VIPEYE" ]; then
+    echo "...installing vipeye"
+    ${SUDO} npm install -g vipeye
 else
     # already installed, upgrade to make sure it's current
     # this avoids a sudo on launch if we're already current
-    echo "Checking pyright version..."
-    CURRENT=`pyright --version | cut -d' ' -f2`
-    REMOTE=`npm info pyright version`
+    echo "Checking vipeye version..."
+    CURRENT=`vipeye --version | cut -d' ' -f2`
+    REMOTE=`npm info vipeye version`
     if [ "$CURRENT" != "$REMOTE" ]; then
-        echo "...new version of pyright found, upgrading."
-        ${SUDO} npm upgrade -g pyright
+        echo "...new version of vipeye found, upgrading."
+        ${SUDO} npm upgrade -g vipeye
     fi
 fi
 
 echo "done."
-pyright -w
+vipeye -w
 ```

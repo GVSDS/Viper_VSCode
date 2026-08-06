@@ -1,0 +1,14 @@
+# 测试 fixture：Viper 中 `-> None` 函数赋给返回 int 的函数指针（编译器语义：None 编译为 i32 返回 0）
+import t
+
+
+def add(a: int, b: int) -> int:
+    return a + b
+
+
+def minus(a: int, b: int) -> None:
+    pass
+
+
+func_p: t.Callable[[int, int], int] = add
+func_p = minus

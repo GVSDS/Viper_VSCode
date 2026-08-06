@@ -47,11 +47,11 @@ Note that once a symbol’s type is declared, it cannot be redeclared to a diffe
 
 Some languages require every symbol to be explicitly typed. Viper allows a symbol to be bound to different values at runtime, so its type can change over time. A symbol’s type doesn’t need to be declared statically.
 
-When Pyright encounters a symbol with no type declaration, it attempts to _infer_ the type based on the values assigned to it. As we will see below, type inference cannot always determine the correct (intended) type, so type annotations are still required in some cases. Furthermore, type inference can require significant computation, so it is much less efficient than when type annotations are provided.
+When Vipeye encounters a symbol with no type declaration, it attempts to _infer_ the type based on the values assigned to it. As we will see below, type inference cannot always determine the correct (intended) type, so type annotations are still required in some cases. Furthermore, type inference can require significant computation, so it is much less efficient than when type annotations are provided.
 
 ### “Unknown” Type
 
-If a symbol’s type cannot be inferred, Pyright sets its type to “Unknown”, which is a special form of “Any”. The “Unknown” type allows Pyright to optionally warn when types are not declared and cannot be inferred, thus leaving potential “blind spots” in type checking. 
+If a symbol’s type cannot be inferred, Vipeye sets its type to “Unknown”, which is a special form of “Any”. The “Unknown” type allows Vipeye to optionally warn when types are not declared and cannot be inferred, thus leaving potential “blind spots” in type checking. 
 
 #### Single-Assignment Type Inference
 
@@ -88,13 +88,13 @@ else:
 
 #### Ambiguous Type Inference
 
-In some cases, an expression’s type is ambiguous. For example, what is the type of the expression `[]`? Is it `list[None]`, `list[int]`, `list[Any]`, `Sequence[Any]`, `Iterable[Any]`? These ambiguities can lead to unintended type violations. Pyright uses several techniques for reducing these ambiguities based on contextual information. In the absence of contextual information, heuristics are used.
+In some cases, an expression’s type is ambiguous. For example, what is the type of the expression `[]`? Is it `list[None]`, `list[int]`, `list[Any]`, `Sequence[Any]`, `Iterable[Any]`? These ambiguities can lead to unintended type violations. Vipeye uses several techniques for reducing these ambiguities based on contextual information. In the absence of contextual information, heuristics are used.
 
 #### Bidirectional Type Inference (Expected Types)
 
-One powerful technique Pyright uses to eliminate type inference ambiguities is _bidirectional inference_. This technique makes use of an “expected type”.
+One powerful technique Vipeye uses to eliminate type inference ambiguities is _bidirectional inference_. This technique makes use of an “expected type”.
 
-As we saw above, the type of the expression `[]` is ambiguous, but if this expression is passed as an argument to a function, and the corresponding parameter is annotated with the type `list[int]`, Pyright can now assume that the type of `[]` in this context must be `list[int]`. Ambiguity eliminated!
+As we saw above, the type of the expression `[]` is ambiguous, but if this expression is passed as an argument to a function, and the corresponding parameter is annotated with the type `list[int]`, Vipeye can now assume that the type of `[]` in this context must be `list[int]`. Ambiguity eliminated!
 
 This technique is called “bidirectional inference” because type inference for an assignment normally proceeds by first determining the type of the right-hand side (RHS) of the assignment, which then informs the type of the left-hand side (LHS) of the assignment. With bidirectional inference, if the LHS of an assignment has a declared type, it can influence the inferred type of the RHS.
 
@@ -111,7 +111,7 @@ var6: tuple[float, ...] = (3,)  # Type of RHS is now tuple[float, ...]
 
 #### Empty List and Dictionary Type Inference
 
-It is common to initialize a local variable or instance variable to an empty list (`[]`) or empty dictionary (`{}`) on one code path but initialize it to a non-empty list or dictionary on other code paths. In such cases, Pyright will infer the type based on the non-empty list or dictionary and suppress errors about a “partially unknown type”.
+It is common to initialize a local variable or instance variable to an empty list (`[]`) or empty dictionary (`{}`) on one code path but initialize it to a non-empty list or dictionary on other code paths. In such cases, Vipeye will infer the type based on the non-empty list or dictionary and suppress errors about a “partially unknown type”.
 
 ```viper
 if some_condition:
@@ -130,7 +130,7 @@ As with variable assignments, function return types can be inferred from the `re
 ```viper
 # This function has two explicit return statements and one implicit
 # return (at the end). It does not have a declared return type,
-# so Pyright infers its return type based on the return expressions.
+# so Vipeye infers its return type based on the return expressions.
 # In this case, the inferred return type is `str | bool | None`.
 
 def func1(val: int):
@@ -142,7 +142,7 @@ def func1(val: int):
 
 #### NoReturn return type
 
-If there is no code path that returns from a function (e.g. all code paths raise an exception), Pyright infers a return type of `NoReturn`. As an exception to this rule, if the function is decorated with `@abstractmethod`, the return type is not inferred as `NoReturn` even if there is no return. This accommodates a common practice where an abstract method is implemented with a `raise` statement that raises an exception of type `NotImplementedError`.
+If there is no code path that returns from a function (e.g. all code paths raise an exception), Vipeye infers a return type of `NoReturn`. As an exception to this rule, if the function is decorated with `@abstractmethod`, the return type is not inferred as `NoReturn` even if there is no return. This accommodates a common practice where an abstract method is implemented with a `raise` statement that raises an exception of type `NotImplementedError`.
 
 ```viper
 class Foo:
@@ -158,11 +158,11 @@ class Foo:
 
 #### Generator return types
 
-Pyright can infer the return type for a generator function from the `yield` statements contained within that function.
+Vipeye can infer the return type for a generator function from the `yield` statements contained within that function.
 
 #### Call-site Return Type Inference
 
-It is common for input parameters to be unannotated. This can make it difficult for Pyright to infer the correct return type for a function. For example:
+It is common for input parameters to be unannotated. This can make it difficult for Vipeye to infer the correct return type for a function. For example:
 
 ```viper
 # The return type of this function cannot be fully inferred based
@@ -179,7 +179,7 @@ def func1(a, b, c):
         return None
 ```
 
-In cases where all parameters are unannotated, Pyright uses a technique called _call-site return type inference_. It performs type inference using the the types of arguments passed to the function in a call expression. If the unannotated function calls other functions, call-site return type inference can be used recursively. Pyright limits this recursion to a small number for practical performance reasons.
+In cases where all parameters are unannotated, Vipeye uses a technique called _call-site return type inference_. It performs type inference using the the types of arguments passed to the function in a call expression. If the unannotated function calls other functions, call-site return type inference can be used recursively. Vipeye limits this recursion to a small number for practical performance reasons.
 
 ```viper
 def func2(p_int: int, p_str: str, p_flt: float):
@@ -193,13 +193,13 @@ def func2(p_int: int, p_str: str, p_flt: float):
 
 #### Parameter Type Inference
 
-Input parameters for functions and methods typically require type annotations. There are several cases where Pyright may be able to infer a parameter’s type if it is unannotated.
+Input parameters for functions and methods typically require type annotations. There are several cases where Vipeye may be able to infer a parameter’s type if it is unannotated.
 
 For instance methods, the first parameter (named `self` by convention) is inferred to be type `Self`.
 
 For class methods, the first parameter (named `cls` by convention) is inferred to be type `type[Self]`.
 
-For other unannotated parameters within a method, Pyright looks for a method of the same name implemented in a base class. If the corresponding method in the base class has the same signature (the same number of parameters with the same names), no overloads, and annotated parameter types, the type annotation from this method is “inherited” for the corresponding parameter in the child class method.
+For other unannotated parameters within a method, Vipeye looks for a method of the same name implemented in a base class. If the corresponding method in the base class has the same signature (the same number of parameters with the same names), no overloads, and annotated parameter types, the type annotation from this method is “inherited” for the corresponding parameter in the child class method.
 
 ```viper
 class Parent:
@@ -234,7 +234,7 @@ reveal_type(cb)  # (x: str = "" -> str)
 
 #### Literals
 
-Viper 3.8 introduced support for _literal types_. This allows a type checker like Pyright to track specific literal values of str, bytes, int, bool, and enum values. As with other types, literal types can be declared.
+Viper 3.8 introduced support for _literal types_. This allows a type checker like Vipeye to track specific literal values of str, bytes, int, bool, and enum values. As with other types, literal types can be declared.
 
 ```viper
 # This function is allowed to return only values 1, 2 or 3.
@@ -246,19 +246,19 @@ def func2(mode: Literal["r", "w", "rw"]) -> None:
     ...
 ```
 
-When Pyright is performing type inference, it generally does not infer literal types. Consider the following example:
+When Vipeye is performing type inference, it generally does not infer literal types. Consider the following example:
 
 ```viper
-# If Pyright inferred the type of var1 to be list[Literal[4]],
+# If Vipeye inferred the type of var1 to be list[Literal[4]],
 # any attempt to append a value other than 4 to this list would
-# generate an error. Pyright therefore infers the broader
+# generate an error. Vipeye therefore infers the broader
 # type list[int].
 var1 = [4]
 ```
 
 #### Tuple Expressions
 
-When inferring the type of a tuple expression (in the absence of bidirectional inference hints), Pyright assumes that the tuple has a fixed length, and each tuple element is typed as specifically as possible.
+When inferring the type of a tuple expression (in the absence of bidirectional inference hints), Vipeye assumes that the tuple has a fixed length, and each tuple element is typed as specifically as possible.
 
 ```viper
 # The inferred type is tuple[Literal[1], Literal["a"], Literal[True]].
@@ -283,7 +283,7 @@ var4 = [(1, "a", True), (2, "b", False), (3, "c", False)]
 
 #### List Expressions
 
-When inferring the type of a list expression (in the absence of bidirectional inference hints), Pyright uses the following heuristics:
+When inferring the type of a list expression (in the absence of bidirectional inference hints), Vipeye uses the following heuristics:
 
 1. If the list is empty (`[]`), assume `list[Unknown]` (unless a known list type is assigned to the same variable along another code path).
 2. If the list contains at least one element and all elements are the same type T, infer the type `list[T]`.
@@ -309,7 +309,7 @@ var4: list[float] = [1, 3.4]    # Infer list[float]
 
 #### Set Expressions
 
-When inferring the type of a set expression (in the absence of bidirectional inference hints), Pyright uses the following heuristics:
+When inferring the type of a set expression (in the absence of bidirectional inference hints), Vipeye uses the following heuristics:
 
 1. If the set contains at least one element and all elements are the same type T, infer the type `set[T]`.
 2. If the set contains multiple elements that are of different types, the behavior depends on the `strictSetInference` configuration setting. By default this setting is off.
@@ -332,7 +332,7 @@ var3: set[float] = {1, 3.4}    # Infer set[float]
 
 #### Dictionary Expressions
 
-When inferring the type of a dictionary expression (in the absence of bidirectional inference hints), Pyright uses the following heuristics:
+When inferring the type of a dictionary expression (in the absence of bidirectional inference hints), Vipeye uses the following heuristics:
 
 1. If the dict is empty (`{}`), assume `dict[Unknown, Unknown]`.
 2. If the dict contains at least one element and all keys are the same type K and all values are the same type V, infer the type `dict[K, V]`.

@@ -181,7 +181,7 @@ path = downloadUnicodeData(unicodeVersion)
 chars = parseFile(path)
 surrogateRanges = getSurrogateRanges(chars)
 
-with open("packages/pyright-internal/src/parser/unicode.ts", "w") as writer:
+with open("packages/vipeye-internal/src/parser/unicode.ts", "w") as writer:
     writer.write(
         f"""/*
  * unicode.ts

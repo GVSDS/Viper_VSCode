@@ -10,15 +10,15 @@ resources:
       ref: refs/tags/release
 variables:
   - name: TeamName
-    value: Pyright
+    value: Vipeye
   - name: VSIX_NAME
-    value: vscode-pyright.vsix
+    value: vscode-vipeye.vsix
   - name: ARTIFACT_NAME_VSIX
     value: vsix
   - name: PACKAGE_NAME
-    value: pyright.tgz
+    value: vipeye.tgz
   - name: ARTIFACT_NAME_PACKAGE
-    value: pyright
+    value: vipeye
   - name: AZURE_ARTIFACTS_FEED
     value: 'https://devdiv.pkgs.visualstudio.com/DevDiv/_packaging/Pylance_PublicPackages/npm/registry/'
 
@@ -28,11 +28,11 @@ extends:
     sdl:
       codeSignValidation:
         enabled: true
-        additionalTargetsGlobPattern: -|**/gdn-vscode-pyright.vsix/**
+        additionalTargetsGlobPattern: -|**/gdn-vscode-vipeye.vsix/**
       codeql:
         compiled:
           enabled: false
-          justificationForDisabling: 'Running a scan on the Pyright-Build azure-pipelines.yml'
+          justificationForDisabling: 'Running a scan on the Vipeye-Build azure-pipelines.yml'
       sourceAnalysisPool: VSEngSS-MicroBuild2022-1ES
     pool:
       name: AzurePipelines-EO
@@ -81,19 +81,19 @@ extends:
                 inputs:
                   script: |
                     npm run package
-                  workingDirectory: packages/vscode-pyright
+                  workingDirectory: packages/vscode-vipeye
 
               - task: PowerShell@2
                 inputs:
                   targetType: 'inline'
-                  script: 'Move-Item -Path "pyright-*.vsix" -Destination "$(VSIX_NAME)"'
-                  workingDirectory: packages/vscode-pyright
+                  script: 'Move-Item -Path "vipeye-*.vsix" -Destination "$(VSIX_NAME)"'
+                  workingDirectory: packages/vscode-vipeye
                 displayName: 'Move VSIX file'
 
               - task: CopyFiles@2
                 displayName: 'Copy vsix to: build_output'
                 inputs:
-                  SourceFolder: packages/vscode-pyright
+                  SourceFolder: packages/vscode-vipeye
                   Contents: '$(VSIX_NAME)'
                   TargetFolder: build_output
 
@@ -103,7 +103,7 @@ extends:
 
               - script: npx vsce generate-manifest -i $(VSIX_NAME) -o extension.manifest
                 displayName: 'Generate extension manifest'
-                workingDirectory: packages/vscode-pyright
+                workingDirectory: packages/vscode-vipeye
 
               - task: NuGetToolInstaller@1
                 displayName: 'Install NuGet'
@@ -111,13 +111,13 @@ extends:
               - task: NuGetCommand@2
                 inputs:
                   command: 'restore'
-                  restoreSolution: '$(Build.SourcesDirectory)/packages/vscode-pyright/packages.config'
-                  restoreDirectory: '$(Build.SourcesDirectory)/packages/vscode-pyright/packages'
+                  restoreSolution: '$(Build.SourcesDirectory)/packages/vscode-vipeye/packages.config'
+                  restoreDirectory: '$(Build.SourcesDirectory)/packages/vscode-vipeye/packages'
 
               - task: MSBuild@1
                 displayName: 'Sign binaries'
                 inputs:
-                  solution: 'packages/vscode-pyright/sign.proj'
+                  solution: 'packages/vscode-vipeye/sign.proj'
                   msbuildArguments: '/verbosity:diagnostic /p:SignType=real'
 
               - task: PowerShell@2
@@ -125,8 +125,8 @@ extends:
                 inputs:
                   targetType: 'inline'
                   script: |
-                    $manifestPath = "$(Build.SourcesDirectory)\packages\vscode-pyright\extension.manifest"
-                    $signaturePath = "$(Build.SourcesDirectory)\packages\vscode-pyright\extension.signature.p7s"
+                    $manifestPath = "$(Build.SourcesDirectory)\packages\vscode-vipeye\extension.manifest"
+                    $signaturePath = "$(Build.SourcesDirectory)\packages\vscode-vipeye\extension.signature.p7s"
                     $compareResult = Compare-Object (Get-Content $manifestPath) (Get-Content $signaturePath)
                     if ($compareResult -eq $null) {
                       Write-Error "Files are identical. Failing the build."
@@ -138,14 +138,14 @@ extends:
               - task: CopyFiles@2
                 displayName: 'Copy extension.manifest'
                 inputs:
-                  SourceFolder: 'packages/vscode-pyright'
+                  SourceFolder: 'packages/vscode-vipeye'
                   Contents: 'extension.manifest'
                   TargetFolder: build_output
 
               - task: CopyFiles@2
                 displayName: 'Copy extension.signature.p7s'
                 inputs:
-                  SourceFolder: 'packages/vscode-pyright'
+                  SourceFolder: 'packages/vscode-vipeye'
                   Contents: 'extension.signature.p7s'
                   TargetFolder: build_output
 
@@ -179,18 +179,18 @@ extends:
 
               - script: npm pack
                 displayName: npm pack
-                workingDirectory: packages/pyright
+                workingDirectory: packages/vipeye
 
-              - script: mv pyright-*.tgz ${{ variables.PACKAGE_NAME }}
+              - script: mv vipeye-*.tgz ${{ variables.PACKAGE_NAME }}
                 displayName: Remove version from package name
-                workingDirectory: packages/pyright
+                workingDirectory: packages/vipeye
 
               # CredScan does not understand scanning a single file. So, it will default to scanning the whole folder that your output is pointing to.
               # We don't want it to scan the microbuild plugins, which is installed in the agent.stagedirectory by default.
               - task: CopyFiles@2
                 displayName: 'Copy ${{ variables.PACKAGE_NAME }} to subfolder'
                 inputs:
-                  SourceFolder: packages/pyright
+                  SourceFolder: packages/vipeye
                   Contents: '${{ variables.PACKAGE_NAME }}'
                   TargetFolder: '$(Build.ArtifactStagingDirectory)/${{ variables.ARTIFACT_NAME_PACKAGE }}'
 
@@ -215,17 +215,17 @@ extends:
               - checkout: none
               # Next step fails the build if https://github.com/microsoft/pyright/issues/10350 repros.
               - script: |
-                  mkdir pyrightTest
-                  cd pyrightTest
+                  mkdir vipeyeTest
+                  cd vipeyeTest
                   yarn
                   yarn add --dev $(Pipeline.Workspace)/$(ARTIFACT_NAME_PACKAGE)/$(PACKAGE_NAME)
-                  node_modules/.bin/pyright --version
+                  node_modules/.bin/vipeye --version
                 displayName: Validate npm package
               - task: GitHubRelease@1 #https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/reference/github-release-v1?view=azure-pipelines
                 displayName: 'Create GitHub Release'
                 inputs:
                   gitHubConnection: 'Github-Pylance' # The name of the GitHub service connection
-                  repositoryName: 'microsoft/pyright' # The name of your GitHub repository
+                  repositoryName: 'TermiNexus/Viper_VSCode' # The name of your GitHub repository
                   action: 'create'
                   isDraft: true
                   isPreRelease: false
@@ -251,7 +251,7 @@ extends:
                 timeoutInMinutes: 120 # task times out in 2 hours
                 inputs:
                   notifyUsers: '[DevDiv]\Python.Language Server,eric@traut.com'
-                  instructions: 'In the next 2 hours please test the latest draft release of Pyright, then Publish the release in GitHub.'
+                  instructions: 'In the next 2 hours please test the latest draft release of Vipeye, then Publish the release in GitHub.'
                   onTimeout: 'reject' # require sign-off
 
       - stage: PublishToMarketplace

@@ -1,0 +1,5 @@
+# 测试 fixture：t.CArray[str] 单参数（不定长数组，None 结尾）
+import t
+
+names: t.CArray[str]
+data: t.CArray[t.CInt, 64]

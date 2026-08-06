@@ -38,6 +38,10 @@ import {
 import { Commands } from 'vipeye-internal/commands/commands';
 import { isThenable } from 'vipeye-internal/common/core';
 
+// Viper 核心（packages/viper）——侧边栏活动栏（Project/Toolchain/Settings）、
+// .vpj 项目管理与工具链。源码单一，本包直接引用，构建时一并打包。
+import { activate as activateViperCore } from '../../viper/src/extension';
+
 import { FileBasedCancellationStrategy } from './cancellationUtils';
 
 let cancellationStrategy: FileBasedCancellationStrategy | undefined;
@@ -50,6 +54,10 @@ const defaultHeapSize = 3072;
 export async function activate(context: ExtensionContext) {
     // Pylance detection disabled for Viper — this extension handles .vp/.vpi files,
     // which Pylance does not recognize, so there is no functional overlap.
+
+    // 激活 Viper 核心：注册侧边栏活动栏（Project/Toolchain/Settings 视图）、
+    // .vpj 自定义编辑器、状态栏与 viper.* 命令。
+    const viperApi = await activateViperCore(context);
 
     cancellationStrategy = new FileBasedCancellationStrategy();
 
@@ -252,6 +260,9 @@ export async function activate(context: ExtensionContext) {
     }
 
     await client.start();
+
+    // 导出 Viper 核心 API（合并后随本扩展一起提供）。
+    return { viperApi };
 }
 
 export function deactivate() {

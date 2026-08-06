@@ -27,7 +27,7 @@ def get_script_dir() -> Path:
 def get_typeshed_fallback_dir() -> Path:
     """Get the path to the typeshed-fallback directory."""
     script_dir = get_script_dir()
-    return script_dir.parent / "packages" / "pyright-internal" / "typeshed-fallback"
+    return script_dir.parent / "packages" / "vipeye-internal" / "typeshed-fallback"
 
 
 def run_git_command(args: list[str], cwd: Path) -> subprocess.CompletedProcess:

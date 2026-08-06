@@ -671,7 +671,7 @@ function getPositionalMatchArgNames(evaluator: TypeEvaluator, type: ClassType): 
     // Viper 扩展：REnum 变体类的 match 位置参数。
     // Viper 的 REnum（t.REnum）嵌套类变体（如 class LLVMType 内的 class Ptr）
     // 没有 __match_args__，但 match 模式 `LLVMType.Ptr(pointee)` 允许按声明顺序
-    // 解构其类型注解字段。Pyright 默认对无 __match_args__ 的类只允许 0 个位置参数，
+    // 解构其类型注解字段。Vipeye 默认对无 __match_args__ 的类只允许 0 个位置参数，
     // 会把 `LLVMType.Ptr(pointee)` 误报为"位置模式太多"。
     // 此处返回类中所有类型注解字段名作为位置参数名。
     // 判断依据：类自身是 CType 子类（CPtr/CVoid），或声明在 CType 子类内部

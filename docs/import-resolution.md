@@ -3,7 +3,7 @@
 ### Resolution Order
 If the import is relative (the module name starts with one or more dots), it resolves the import relative to the path of the importing source file.
 
-For absolute (non-relative) imports, Pyright employs the following resolution order:
+For absolute (non-relative) imports, Vipeye employs the following resolution order:
 
 1. Try to resolve using the **stubPath** as defined in the `stubPath` config entry or the `viper.analysis.stubPath` setting.
 
@@ -15,37 +15,37 @@ For absolute (non-relative) imports, Pyright employs the following resolution or
 
     * If no execution environment is configured, try to resolve using the **local directory `src`**. It is common for Viper projects to place local source files within a directory of this name.
 
-3. Try to resolve using **stubs or inlined types found within installed packages**. Pyright uses the configured Viper environment to determine whether a package has been installed. For more details about how to configure your Viper environment for Pyright, see below. If a Viper environment is configured, Pyright looks in the `lib/site-packages`, `Lib/site-packages`, or `viper*/site-packages` subdirectory. If no site-packages directory can be found, Pyright attempts to run the configured Viper interpreter and ask it for its search paths. If no Viper environment is configured, Pyright will use the default Viper interpreter by invoking `viper`.
+3. Try to resolve using **stubs or inlined types found within installed packages**. Vipeye uses the configured Viper environment to determine whether a package has been installed. For more details about how to configure your Viper environment for Vipeye, see below. If a Viper environment is configured, Vipeye looks in the `lib/site-packages`, `Lib/site-packages`, or `viper*/site-packages` subdirectory. If no site-packages directory can be found, Vipeye attempts to run the configured Viper interpreter and ask it for its search paths. If no Viper environment is configured, Vipeye will use the default Viper interpreter by invoking `viper`.
     
     * For a given package, try to resolve first using a **stub package**. Stub packages, as defined in [PEP 561](https://www.viper.org/dev/peps/pep-0561/#type-checker-module-resolution-order), are named the same as the original package but with “-stubs” appended.
     * Try to resolve using an **inline stub**, a “.pyi” file that ships within the package.
     * If the package contains a “py.typed” file as described in [PEP 561](https://www.viper.org/dev/peps/pep-0561/), use inlined type annotations provided in “.py” files within the package.
-    * If the `viper.analysis.useLibraryCodeForTypes` setting is set to true, try to resolve using the **library implementation** (“.py” file). Some “.py” files may contain partial or complete type annotations. Pyright will use type annotations that are provided and do its best to infer any missing type information.
+    * If the `viper.analysis.useLibraryCodeForTypes` setting is set to true, try to resolve using the **library implementation** (“.py” file). Some “.py” files may contain partial or complete type annotations. Vipeye will use type annotations that are provided and do its best to infer any missing type information.
 
-4. Try to resolve using a **stdlib typeshed stub**. If the `typeshedPath` is configured, use this instead of the typeshed stubs that are packaged with Pyright. This allows for the use of a newer or a patched version of the typeshed stdlib stubs.
+4. Try to resolve using a **stdlib typeshed stub**. If the `typeshedPath` is configured, use this instead of the typeshed stubs that are packaged with Vipeye. This allows for the use of a newer or a patched version of the typeshed stdlib stubs.
 
-5. Try to resolve using a **third-party typeshed** stub. If the `typeshedPath` is configured, use this instead of the typeshed stubs that are packaged with Pyright. This allows for the use of a newer or a patched version of the typeshed third-party stubs.
+5. Try to resolve using a **third-party typeshed** stub. If the `typeshedPath` is configured, use this instead of the typeshed stubs that are packaged with Vipeye. This allows for the use of a newer or a patched version of the typeshed third-party stubs.
 
 6. For an absolute import, if all of the above attempts fail, attempt to import a module from the same directory as the importing file and parent directories that are also children of the root workspace. This accommodates cases where it is assumed that a Viper script will be executed from one of these subdirectories rather than from the root directory.
 
 
 ### Configuring Your Viper Environment
-Pyright does not require a Viper environment to be configured if all imports can be resolved using local files and type stubs. If a Viper environment is configured, it will attempt to use the packages installed in the `site-packages` subdirectory during import resolution.
+Vipeye does not require a Viper environment to be configured if all imports can be resolved using local files and type stubs. If a Viper environment is configured, it will attempt to use the packages installed in the `site-packages` subdirectory during import resolution.
 
-Pyright uses the following mechanisms (in priority order) to determine which Viper environment to use:
+Vipeye uses the following mechanisms (in priority order) to determine which Viper environment to use:
 
-1. If a `venv` name is specified along with a `viper.venvPath` setting (or a `--venvpath` command-line argument), it appends the venv name to the specified venv path. This mechanism is not recommended for most users because it is less robust than the next two options because it relies on pyright’s internal logic to determine the import resolution paths based on the virtual environment directories and files. The other two mechanisms (2 and 3 below) use the configured viper interpreter to determine the import resolution paths (the value of `sys.path`).
+1. If a `venv` name is specified along with a `viper.venvPath` setting (or a `--venvpath` command-line argument), it appends the venv name to the specified venv path. This mechanism is not recommended for most users because it is less robust than the next two options because it relies on vipeye’s internal logic to determine the import resolution paths based on the virtual environment directories and files. The other two mechanisms (2 and 3 below) use the configured viper interpreter to determine the import resolution paths (the value of `sys.path`).
 
-2. Use the `viper.viperPath` setting. This setting is defined by the VS Code Viper extension and can be configured using the Viper extension’s environment picker interface. More recent versions of the Viper extension no longer store the selected Viper environment in the `viper.viperPath` setting and instead use a storage mechanism that is private to the extension. Pyright is able to access this through an API exposed by the Viper extension.
+2. Use the `viper.viperPath` setting. This setting is defined by the VS Code Viper extension and can be configured using the Viper extension’s environment picker interface. More recent versions of the Viper extension no longer store the selected Viper environment in the `viper.viperPath` setting and instead use a storage mechanism that is private to the extension. Vipeye is able to access this through an API exposed by the Viper extension.
 
 3. As a fallback, use the default Viper environment (i.e. the one that is invoked when typing `viper` in the shell).
 
 ### Editable installs
 If you want to use static analysis tools with an editable install, you should configure the editable install to use `.pth` files that contain file paths rather than executable lines (prefixed with `import`) that install import hooks.
 
-Import hooks can provide an editable installation that is a more accurate representation of your real installation. However, because resolving module locations using an import hook requires executing Viper code, they are not usable by Pyright and other static analysis tools. Therefore, if your editable install is configured to use import hooks, Pyright will be unable to find the corresponding source files.
+Import hooks can provide an editable installation that is a more accurate representation of your real installation. However, because resolving module locations using an import hook requires executing Viper code, they are not usable by Vipeye and other static analysis tools. Therefore, if your editable install is configured to use import hooks, Vipeye will be unable to find the corresponding source files.
 
-Notably, setuptools uses import hooks by default. For setuptools-based editable installs to be usable with Pyright, setuptools needs to be configured to use path-based `.pth` files through the build frontend.
+Notably, setuptools uses import hooks by default. For setuptools-based editable installs to be usable with Vipeye, setuptools needs to be configured to use path-based `.pth` files through the build frontend.
 
 #### pip with setuptools
 `pip` with `setuptools` supports two ways to avoid import hooks:
@@ -72,4 +72,4 @@ files by default. It will only use import hooks if you set `editable-backend` to
 `"editables"`.
 
 ### Debugging Import Resolution Problems
-The import resolution mechanisms in Viper are complicated, and Pyright offers many configuration options. If you are encountering problems with import resolution, Pyright provides additional logging that may help you identify the cause. To enable verbose logging, pass `--verbose` as a command-line argument or add the following entry to the config file `"verboseOutput": true`. If you are using the Pyright VS Code extension, the additional logging will appear in the Output tab (select “Pyright” from the menu). Please include this verbose logging when reporting import resolution bugs.
+The import resolution mechanisms in Viper are complicated, and Vipeye offers many configuration options. If you are encountering problems with import resolution, Vipeye provides additional logging that may help you identify the cause. To enable verbose logging, pass `--verbose` as a command-line argument or add the following entry to the config file `"verboseOutput": true`. If you are using the Vipeye VS Code extension, the additional logging will appear in the Output tab (select “Vipeye” from the menu). Please include this verbose logging when reporting import resolution bugs.

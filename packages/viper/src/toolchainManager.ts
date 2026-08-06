@@ -4,7 +4,7 @@
  * 当前硬编码为 C:\v.exe，版本 1.0.0。
  */
 
-import { EventEmitter, Event, workspace } from 'vscode';
+import { EventEmitter, Event, window, workspace } from 'vscode';
 import { ToolchainInfo } from './types';
 
 export class ToolchainManager {
@@ -66,7 +66,6 @@ export class ToolchainManager {
 
     private async PromptForPath(current: string): Promise<string | undefined> {
         // 简化：后续可以替换为 QuickInput + 文件选择器。
-        const { window } = await import('vscode');
         const result = await window.showInputBox({
             prompt: 'Viper compiler path',
             value: current,

@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-If you have a question about a behavior that you’re seeing in pyright, consider posting to the [Pyright discussion forum](https://github.com/microsoft/pyright/discussions).
+If you have a question about a behavior that you’re seeing in vipeye, consider posting to the [Pyright discussion forum](https://github.com/microsoft/pyright/discussions).
 
 **Is your feature request related to a problem? Please describe.**
 A clear and concise description of the problem.

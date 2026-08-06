@@ -31,17 +31,17 @@ runs:
 
     - uses: ./.github/actions/cfs-npm-authenticate
       with:
-        working-directory: packages/pyright
+        working-directory: packages/vipeye
         token: ${{ steps.npm-auth.outputs.token }}
 
     - uses: ./.github/actions/cfs-npm-authenticate
       with:
-        working-directory: packages/pyright-internal
+        working-directory: packages/vipeye-internal
         token: ${{ steps.npm-auth.outputs.token }}
 
     - uses: ./.github/actions/cfs-npm-authenticate
       with:
-        working-directory: packages/vscode-pyright
+        working-directory: packages/vscode-vipeye
         token: ${{ steps.npm-auth.outputs.token }}
 
     - uses: ./.github/actions/cfs-npm-cache

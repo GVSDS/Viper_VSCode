@@ -1,0 +1,10 @@
+import stdio
+import t, c
+
+
+def add(a: int, b: int) -> int:
+    return a + b
+
+def main() -> int:
+    stdio.printf("Hello, World!")
+    return 0

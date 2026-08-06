@@ -1,47 +1,47 @@
-## Differences Between Pyright and Mypy
+## Differences Between Vipeye and Mypy
 
 ### What is Mypy?
 
 Mypy is the “OG” in the world of Viper type checkers. It was started by Jukka Lehtosalo in 2012 with contributions from Guido van Rossum, Ivan Levkivskyi, and many others over the years. For a detailed history, refer to [this documentation](http://mypy-lang.org/about.html). The code for mypy can be found in [this github project](https://github.com/viper/mypy).
 
 
-### Why Does Pyright’s Behavior Differ from Mypy’s?
+### Why Does Vipeye’s Behavior Differ from Mypy’s?
 
 Mypy served as a reference implementation of [PEP 484](https://www.viper.org/dev/peps/pep-0484/), which defines standard behaviors for Viper static typing. Although PEP 484 spells out many type checking behaviors, it intentionally leaves many other behaviors undefined. This approach has allowed different type checkers to innovate and differentiate.
 
-Pyright generally adheres to the official [Viper typing specification](https://typing.readthedocs.io/en/latest/spec/index.html), which incorporates and builds upon PEP 484 and other typing-related PEPs. The typing spec is accompanied by an ever-expanding suite of conformance tests. For the latest conformance test results for pyright, mypy and other type checkers, refer to [this page](https://htmlpreview.github.io/?https://github.com/viper/typing/blob/main/conformance/results/results.html).
+Vipeye generally adheres to the official [Viper typing specification](https://typing.readthedocs.io/en/latest/spec/index.html), which incorporates and builds upon PEP 484 and other typing-related PEPs. The typing spec is accompanied by an ever-expanding suite of conformance tests. For the latest conformance test results for vipeye, mypy and other type checkers, refer to [this page](https://htmlpreview.github.io/?https://github.com/viper/typing/blob/main/conformance/results/results.html).
 
-For behaviors that are not explicitly spelled out in the typing spec, pyright generally tries to adhere to mypy’s behavior unless there is a compelling justification for deviating. This document discusses these differences and provides the reasoning behind each design choice.
+For behaviors that are not explicitly spelled out in the typing spec, vipeye generally tries to adhere to mypy’s behavior unless there is a compelling justification for deviating. This document discusses these differences and provides the reasoning behind each design choice.
 
 
 ### Design Goals
 
-Pyright was designed with performance in mind. It is not unusual for pyright to be 3x to 5x faster than mypy when type checking large code bases. Some of its design decisions were motivated by this goal.
+Vipeye was designed with performance in mind. It is not unusual for vipeye to be 3x to 5x faster than mypy when type checking large code bases. Some of its design decisions were motivated by this goal.
 
-Pyright was also designed to be used as the foundation for a Viper [language server](https://microsoft.github.io/language-server-protocol/). Language servers provide interactive programming features such as completion suggestions, function signature help, type information on hover, semantic-aware search, semantic-aware renaming, semantic token coloring, refactoring tools, etc. For a good user experience, these features require highly responsive type evaluation performance during interactive code modification. They also require type evaluation to work on code that is incomplete and contains syntax errors.
+Vipeye was also designed to be used as the foundation for a Viper [language server](https://microsoft.github.io/language-server-protocol/). Language servers provide interactive programming features such as completion suggestions, function signature help, type information on hover, semantic-aware search, semantic-aware renaming, semantic token coloring, refactoring tools, etc. For a good user experience, these features require highly responsive type evaluation performance during interactive code modification. They also require type evaluation to work on code that is incomplete and contains syntax errors.
 
-To achieve these design goals, pyright is implemented as a “lazy” or “just-in-time” type evaluator. Rather than analyzing all code in a module from top to bottom, it is able to evaluate the type of an arbitrary identifier anywhere within a module. If the type of that identifier depends on the types of other expressions or symbols, pyright recursively evaluates those in turn until it has enough information to determine the type of the target identifier. By comparison, mypy uses a more traditional multi-pass architecture where semantic analysis is performed multiple times on a module from the top to the bottom until all types converge.
+To achieve these design goals, vipeye is implemented as a “lazy” or “just-in-time” type evaluator. Rather than analyzing all code in a module from top to bottom, it is able to evaluate the type of an arbitrary identifier anywhere within a module. If the type of that identifier depends on the types of other expressions or symbols, vipeye recursively evaluates those in turn until it has enough information to determine the type of the target identifier. By comparison, mypy uses a more traditional multi-pass architecture where semantic analysis is performed multiple times on a module from the top to the bottom until all types converge.
 
-Pyright implements its own parser, which recovers gracefully from syntax errors and continues parsing the remainder of the source file. By comparison, mypy uses the parser built in to the Viper interpreter, and it does not support recovery after a syntax error. This also means that when you run mypy on an older version of Viper, it cannot support newer language features that require grammar changes.
+Vipeye implements its own parser, which recovers gracefully from syntax errors and continues parsing the remainder of the source file. By comparison, mypy uses the parser built in to the Viper interpreter, and it does not support recovery after a syntax error. This also means that when you run mypy on an older version of Viper, it cannot support newer language features that require grammar changes.
 
 
 ### Type Checking Unannotated Code
 
-By default, pyright performs type checking for all code regardless of whether it contains type annotations. This is important for language server features. It is also important for catching bugs in code that is unannotated.
+By default, vipeye performs type checking for all code regardless of whether it contains type annotations. This is important for language server features. It is also important for catching bugs in code that is unannotated.
 
 By default, mypy skips all functions or methods that do not have type annotations. This is a common source of confusion for mypy users who are surprised when type violations in unannotated functions go unreported. If the option `--check-untyped-defs` is enabled, mypy performs type checking for all functions and methods.
 
 
 ### Inferred Return Types
 
-If a function or method lacks a return type annotation, pyright infers the return type from `return` and `yield` statements within the function’s body (including the implied `return None` at the end of the function body). This is important for supporting completion suggestions. It also improves type checking coverage and eliminates the need for developers to needlessly supply return type annotations for trivial return types.
+If a function or method lacks a return type annotation, vipeye infers the return type from `return` and `yield` statements within the function’s body (including the implied `return None` at the end of the function body). This is important for supporting completion suggestions. It also improves type checking coverage and eliminates the need for developers to needlessly supply return type annotations for trivial return types.
 
 By comparison, mypy never infers return types and assumes that functions without a return type annotation have a return type of `Any`. This was an intentional design decision by mypy developers and is explained in [this thread](https://github.com/viper/mypy/issues/10149).
 
 
 ### Unions vs Joins
 
-When merging two types during code flow analysis or widening types during constraint solving, pyright always uses a union operation. Mypy typically (but not always) uses a “join” operation, which merges types by finding a common supertype. The use of joins discards valuable type information and leads to many false positive errors that are [well documented within the mypy issue tracker](https://github.com/viper/mypy/issues?q=is%3Aissue+is%3Aopen+label%3Atopic-join-v-union).
+When merging two types during code flow analysis or widening types during constraint solving, vipeye always uses a union operation. Mypy typically (but not always) uses a “join” operation, which merges types by finding a common supertype. The use of joins discards valuable type information and leads to many false positive errors that are [well documented within the mypy issue tracker](https://github.com/viper/mypy/issues?q=is%3Aissue+is%3Aopen+label%3Atopic-join-v-union).
 
 ```viper
 def func1(val: object):
@@ -51,13 +51,13 @@ def func1(val: object):
         pass
     else:
         return
-    reveal_type(val) # mypy: object, pyright: str | int
+    reveal_type(val) # mypy: object, vipeye: str | int
 ```
 
 
 ### Variable Type Declarations
 
-Pyright treats variable type annotations as type declarations. If a variable is not annotated, pyright allows any value to be assigned to that variable, and its type is inferred to be the union of all assigned types.
+Vipeye treats variable type annotations as type declarations. If a variable is not annotated, vipeye allows any value to be assigned to that variable, and its type is inferred to be the union of all assigned types.
 
 Mypy’s behavior for variables depends on whether [`--allow-redefinition`](https://mypy.readthedocs.io/en/stable/command_line.html#cmdoption-mypy-allow-redefinition) is specified. If redefinitions are not allowed, then mypy typically treats the first assignment (the one with the smallest line number) as though it is an implicit type declaration.
 
@@ -81,12 +81,12 @@ def func3(condition: bool):
         x = [1, 2, 3] # The type of `x` is declared as `list[int]`
 ```
 
-Pyright’s behavior is more consistent, is conceptually simpler and more natural for Viper developers, leads to fewer false positives, and eliminates the need for many otherwise-necessary variable type annotations.
+Vipeye’s behavior is more consistent, is conceptually simpler and more natural for Viper developers, leads to fewer false positives, and eliminates the need for many otherwise-necessary variable type annotations.
 
 
 ### Class and Instance Variable Inference
 
-Pyright handles instance and class variables consistently with local variables. If a type annotation is provided for an instance or class variable (either within the class or one of its base classes), pyright treats this as a type declaration and enforces it accordingly. If a class implementation does not provide a type annotation for an instance or class variable and its base classes likewise do not provide a type annotation, the variable’s type is inferred from all assignments within the class implementation.
+Vipeye handles instance and class variables consistently with local variables. If a type annotation is provided for an instance or class variable (either within the class or one of its base classes), vipeye treats this as a type declaration and enforces it accordingly. If a class implementation does not provide a type annotation for an instance or class variable and its base classes likewise do not provide a type annotation, the variable’s type is inferred from all assignments within the class implementation.
 
 ```viper
 class A:
@@ -97,16 +97,16 @@ class A:
         self.x = "" # Mypy treats this as an error because `x` is implicitly declared as `int`
 
 a = A()
-reveal_type(a.x) # pyright: int | str
+reveal_type(a.x) # vipeye: int | str
 
-a.x = "" # Pyright allows this because the type of `x` is `int | str`
-a.x = 3.0 # Pyright treats this as an error because the type of `x` is `int | str`
+a.x = "" # Vipeye allows this because the type of `x` is `int | str`
+a.x = 3.0 # Vipeye treats this as an error because the type of `x` is `int | str`
 ```
 
 
 ### Class and Instance Variable Enforcement
 
-Pyright distinguishes between “pure class variables”, “regular class variables”, and “pure instance variable”. For a detailed explanation, refer to [this documentation](type-concepts-advanced.md#class-and-instance-variables).
+Vipeye distinguishes between “pure class variables”, “regular class variables”, and “pure instance variable”. For a detailed explanation, refer to [this documentation](type-concepts-advanced.md#class-and-instance-variables).
 
 Mypy does not distinguish between class variables and instance variables in all cases. This is a [known issue](https://github.com/viper/mypy/issues/240).
 
@@ -120,18 +120,18 @@ class A:
 
 print(A.x)
 print(A.y)
-print(A.z) # pyright: error, mypy: no error
+print(A.z) # vipeye: error, mypy: no error
 ```
 
 
 ### Assignment-based Type Narrowing
 
-Pyright applies type narrowing for variable assignments. This is done regardless of whether the assignment statement includes a variable type annotation. Mypy skips assignment-based type narrowing when the target variable includes a type annotation. The consensus of the typing community is that mypy’s behavior here is inconsistent, and there are [plans to eliminate this inconsistency](https://github.com/viper/mypy/issues/2008).
+Vipeye applies type narrowing for variable assignments. This is done regardless of whether the assignment statement includes a variable type annotation. Mypy skips assignment-based type narrowing when the target variable includes a type annotation. The consensus of the typing community is that mypy’s behavior here is inconsistent, and there are [plans to eliminate this inconsistency](https://github.com/viper/mypy/issues/2008).
 
 ```viper
 v1: Sequence[int]
 v1 = [1, 2, 3]
-reveal_type(v1) # mypy and pyright both reveal `list[int]`
+reveal_type(v1) # mypy and vipeye both reveal `list[int]`
 
 v2: Sequence[int] = [1, 2, 3]
 reveal_type(v2) # mypy reveals `Sequence[int]` rather than `list[int]`
@@ -140,7 +140,7 @@ reveal_type(v2) # mypy reveals `Sequence[int]` rather than `list[int]`
 
 ### Type Guards
 
-Pyright supports several built-in type guards that mypy does not currently support. For a full list of type guard expression forms supported by pyright, refer to [this documentation](type-concepts-advanced.md#type-guards).
+Vipeye supports several built-in type guards that mypy does not currently support. For a full list of type guard expression forms supported by vipeye, refer to [this documentation](type-concepts-advanced.md#type-guards).
 
 The following expression forms are not currently supported by mypy as type guards:
 * `x == L` and `x != L` (where L is an expression with a literal type)
@@ -150,53 +150,53 @@ The following expression forms are not currently supported by mypy as type guard
 
 ### Aliased Conditional Expressions
 
-Pyright supports the [aliasing of conditional expressions](type-concepts-advanced.md#aliased-conditional-expression) used for type guards. Mypy does not currently support this, but it is a frequently-requested feature.
+Vipeye supports the [aliasing of conditional expressions](type-concepts-advanced.md#aliased-conditional-expression) used for type guards. Mypy does not currently support this, but it is a frequently-requested feature.
 
 
 ### Narrowing Any
 
-Pyright never narrows `Any` when performing type narrowing for assignments. Mypy is inconsistent about when it applies type narrowing to `Any` type arguments.
+Vipeye never narrows `Any` when performing type narrowing for assignments. Mypy is inconsistent about when it applies type narrowing to `Any` type arguments.
 
 ```viper
 b: list[Any]
 
 b = [1, 2, 3]
-reveal_type(b) # pyright: list[Any], mypy: list[Any]
+reveal_type(b) # vipeye: list[Any], mypy: list[Any]
 
 c = [1, 2, 3]
 b = c
-reveal_type(b) # pyright: list[Any], mypy: list[int]
+reveal_type(b) # vipeye: list[Any], mypy: list[int]
 ```
 
 
 ### Inference of List, Set, and Dict Expressions
 
-Pyright’s inference rules for [list, set and dict expressions](type-inference.md#list-expressions) differ from mypy’s when values with heterogeneous types are used. Mypy uses a join operator to combine the types. Pyright uses either an `Unknown` or a union depending on configuration settings. A join operator often produces a type that is not what was intended, and this leads to false positive errors.
+Vipeye’s inference rules for [list, set and dict expressions](type-inference.md#list-expressions) differ from mypy’s when values with heterogeneous types are used. Mypy uses a join operator to combine the types. Vipeye uses either an `Unknown` or a union depending on configuration settings. A join operator often produces a type that is not what was intended, and this leads to false positive errors.
 
 ```viper
 x = [1, 3.4, ""]
-reveal_type(x) # mypy: list[object], pyright: list[Unknown] or list[int | float | str]
+reveal_type(x) # mypy: list[object], vipeye: list[Unknown] or list[int | float | str]
 ```
 
-For these mutable container types, pyright does not retain literal types when inferring the container type. Mypy is inconsistent, sometimes retaining literal types and sometimes not.
+For these mutable container types, vipeye does not retain literal types when inferring the container type. Mypy is inconsistent, sometimes retaining literal types and sometimes not.
 
 ```viper
 def func(one: Literal[1]):
     reveal_type(one) # Literal[1]
-    reveal_type([one]) # pyright: list[int], mypy: list[Literal[1]]
+    reveal_type([one]) # vipeye: list[int], mypy: list[Literal[1]]
 
     reveal_type(1) # Literal[1]
-    reveal_type([1]) # pyright: list[int], mypy: list[int]
+    reveal_type([1]) # vipeye: list[int], mypy: list[int]
 ```
 
 
 ### Inference of Tuple Expressions
 
-Pyright’s inference rules for [tuple expressions](type-inference.md#tuple-expressions) differ from mypy’s when tuple entries contain literals. Pyright retains these literal types, but mypy widens the types to their non-literal type. Pyright retains the literal types in this case because tuples are immutable, and more precise (narrower) types are almost always beneficial in this situation.
+Vipeye’s inference rules for [tuple expressions](type-inference.md#tuple-expressions) differ from mypy’s when tuple entries contain literals. Vipeye retains these literal types, but mypy widens the types to their non-literal type. Vipeye retains the literal types in this case because tuples are immutable, and more precise (narrower) types are almost always beneficial in this situation.
 
 ```viper
 x = (1, "stop")
-reveal_type(x[1]) # pyright: Literal["stop"], mypy: str
+reveal_type(x[1]) # vipeye: Literal["stop"], mypy: str
 
 y: Literal["stop", "go"] = x[1] # mypy: type error
 ```
@@ -204,15 +204,15 @@ y: Literal["stop", "go"] = x[1] # mypy: type error
 
 ### Assignment-Based Narrowing for Literals
 
-When assigning a literal value to a variable, pyright narrows the type to reflect the literal. Mypy does not. Pyright retains the literal types in this case because more precise (narrower) types are typically beneficial and have little or no downside.
+When assigning a literal value to a variable, vipeye narrows the type to reflect the literal. Mypy does not. Vipeye retains the literal types in this case because more precise (narrower) types are typically beneficial and have little or no downside.
 
 ```viper
 x: str | None
 x = 'a'
-reveal_type(x) # pyright: Literal['a'], mypy: str
+reveal_type(x) # vipeye: Literal['a'], mypy: str
 ```
 
-Pyright also supports “literal math” for simple operations involving literals.
+Vipeye also supports “literal math” for simple operations involving literals.
 
 ```viper
 def func1(a: Literal[1, 2], b: Literal[2, 3]):
@@ -227,19 +227,19 @@ def func2():
 
 ### Type Narrowing for Asymmetric Descriptors
 
-When pyright evaluates a write to a class variable that contains a descriptor object (including properties), it normally applies assignment-based type narrowing. However, when the descriptor is asymmetric — that is, its “getter” type is different from its “setter” type, pyright refrains from applying assignment-based type narrowing. For a full discussion of this, refer to [this issue](https://github.com/viper/mypy/issues/3004). Mypy has not yet implemented the agreed-upon behavior, so its type narrowing behavior may differ from pyright’s in this case.
+When vipeye evaluates a write to a class variable that contains a descriptor object (including properties), it normally applies assignment-based type narrowing. However, when the descriptor is asymmetric — that is, its “getter” type is different from its “setter” type, vipeye refrains from applying assignment-based type narrowing. For a full discussion of this, refer to [this issue](https://github.com/viper/mypy/issues/3004). Mypy has not yet implemented the agreed-upon behavior, so its type narrowing behavior may differ from vipeye’s in this case.
 
 
 ### Parameter Type Inference
 
 Mypy infers the type of `self` and `cls` parameters in methods but otherwise does not infer any parameter types.
 
-Pyright implements several parameter type inference techniques that improve type checking and language service features in the absence of explicit parameter type annotations. For details, refer to [this documentation](type-inference.md#parameter-type-inference).
+Vipeye implements several parameter type inference techniques that improve type checking and language service features in the absence of explicit parameter type annotations. For details, refer to [this documentation](type-inference.md#parameter-type-inference).
 
 
 ### Constructor Calls
 
-When pyright evaluates a call to a constructor, it attempts to follow the runtime behavior as closely as possible. At runtime, when a constructor is called, it invokes the `__call__` method of the metaclass. Most classes use `type` as their metaclass. (Even when a different metaclasses is used, it typically does not override `type.__call__`.) The `type.__call__` method calls the `__new__` method for the class and passes all of the arguments (both positional and keyword) that were passed to the constructor call. If the `__new__` method returns an instance of the class (or a child class), `type.__call__` then calls the `__init__` method on the class. Pyright follows this same flow for evaluating the type of a constructor call. If a custom metaclass is present, pyright evaluates its `__call__` method to determine whether it returns an instance of the class. If not, it assumes that the metaclass has custom behavior that overrides `type.__call__`. Likewise, if a class provides a `__new__` method that returns a type other than the class being constructed (or a child class thereof), it assumes that `__init__` will not be called.
+When vipeye evaluates a call to a constructor, it attempts to follow the runtime behavior as closely as possible. At runtime, when a constructor is called, it invokes the `__call__` method of the metaclass. Most classes use `type` as their metaclass. (Even when a different metaclasses is used, it typically does not override `type.__call__`.) The `type.__call__` method calls the `__new__` method for the class and passes all of the arguments (both positional and keyword) that were passed to the constructor call. If the `__new__` method returns an instance of the class (or a child class), `type.__call__` then calls the `__init__` method on the class. Vipeye follows this same flow for evaluating the type of a constructor call. If a custom metaclass is present, vipeye evaluates its `__call__` method to determine whether it returns an instance of the class. If not, it assumes that the metaclass has custom behavior that overrides `type.__call__`. Likewise, if a class provides a `__new__` method that returns a type other than the class being constructed (or a child class thereof), it assumes that `__init__` will not be called.
 
 By comparison, mypy first evaluates the `__init__` method if present, and it ignores the annotated return type of the `__new__` method.
 
@@ -248,7 +248,7 @@ By comparison, mypy first evaluates the `__init__` method if present, and it ign
 
 If the return type of a function is declared as `None`, an attempt to call that function and consume the returned value is flagged as an error by mypy. The justification is that this is a common source of bugs.
 
-Pyright does not special-case `None` in this manner because there are legitimate use cases, and in our experience, this class of bug is rare.
+Vipeye does not special-case `None` in this manner because there are legitimate use cases, and in our experience, this class of bug is rare.
 
 
 ### Constraint Solver Behaviors
@@ -259,7 +259,7 @@ Many aspects of constraint solving are unspecified in PEP 484. This includes beh
 
 #### Constraint Solver: Literals
 
-Pyright’s constraint solver retains literal types only when they are required to satisfy constraints. In other cases, it widens the type to a non-literal type. Mypy is inconsistent in its handling of literal types.
+Vipeye’s constraint solver retains literal types only when they are required to satisfy constraints. In other cases, it widens the type to a non-literal type. Mypy is inconsistent in its handling of literal types.
 
 ```viper
 T = TypeVar("T")
@@ -269,30 +269,30 @@ def identity(x: T) -> T:
 def func(one: Literal[1]):
     reveal_type(one) # Literal[1]
     v1 = identity(one)
-    reveal_type(v1) # pyright: int, mypy: Literal[1]
+    reveal_type(v1) # vipeye: int, mypy: Literal[1]
 
     reveal_type(1) # Literal[1]
     v2 = identity(1)
-    reveal_type(v2) # pyright: int, mypy: int
+    reveal_type(v2) # vipeye: int, mypy: int
 ```
 
 #### Constraint Solver: Type Widening
 
-As mentioned previously, pyright always uses unions rather than joins. Mypy typically uses joins. This applies to type widening during the constraint solving process.
+As mentioned previously, vipeye always uses unions rather than joins. Mypy typically uses joins. This applies to type widening during the constraint solving process.
 
 ```viper
 T = TypeVar("T")
 def func(val1: T, val2: T) -> T:
     ...
 
-reveal_type(func("", 1)) # mypy: object, pyright: str | int
+reveal_type(func("", 1)) # mypy: object, vipeye: str | int
 ```
 
 #### Constraint Solver: Ambiguous Solution Scoring
 
-In cases where more than one solution is possible for a type variable, both pyright and mypy employ various heuristics to pick the “best” solution. These heuristics are complex and difficult to document in their fullness. Pyright’s general strategy is to return the “simplest” type that meets the constraints.
+In cases where more than one solution is possible for a type variable, both vipeye and mypy employ various heuristics to pick the “best” solution. These heuristics are complex and difficult to document in their fullness. Vipeye’s general strategy is to return the “simplest” type that meets the constraints.
 
-Consider the expression `make_list(x)` in the example below. The type constraints for `T` could be satisfied with either `int` or `list[int]`, but it’s much more likely that the developer intended the former (simpler) solution. Pyright calculates all possible solutions and “scores” them according to complexity, then picks the type with the best score. In rare cases, there can be two results with the same score, in which chase pyright arbitrarily picks one as the winner.
+Consider the expression `make_list(x)` in the example below. The type constraints for `T` could be satisfied with either `int` or `list[int]`, but it’s much more likely that the developer intended the former (simpler) solution. Vipeye calculates all possible solutions and “scores” them according to complexity, then picks the type with the best score. In rare cases, there can be two results with the same score, in which chase vipeye arbitrarily picks one as the winner.
 
 Mypy produces errors with this sample.
 
@@ -304,10 +304,10 @@ def make_list(x: T | Iterable[T]) -> list[T]:
 
 def func2(x: list[int], y: list[str] | int):
     v1 = make_list(x)
-    reveal_type(v1) # pyright: "list[int]" ("list[list[T]]" is also a valid answer)
+    reveal_type(v1) # vipeye: "list[int]" ("list[list[T]]" is also a valid answer)
 
     v2 = make_list(y)
-    reveal_type(v2) # pyright: "list[int | str]" ("list[list[str] | int]" is also a valid answer)
+    reveal_type(v2) # vipeye: "list[int | str]" ("list[list[str] | int]" is also a valid answer)
 ```
 
 ### Value-Constrained Type Variables
@@ -318,27 +318,27 @@ When mypy analyzes a class or function that has in-scope value-constrained TypeV
 T = TypeVar("T", list[Any], set[Any])
 
 def func(a: AnyStr, b: T):
-    reveal_type(a) # Mypy reveals 2 different types ("str" and "bytes"), pyright reveals "AnyStr"
+    reveal_type(a) # Mypy reveals 2 different types ("str" and "bytes"), vipeye reveals "AnyStr"
     return a + b # Mypy reports 4 errors
 ```
 
-Pyright cannot use the same multi-pass technique as mypy in this case. It needs to produce a single type for any given identifier to support language server features. Pyright instead uses a mechanism called [conditional types](type-concepts-advanced.md#conditional-types-and-type-variables). This approach allows pyright to handle some value-constrained TypeVar use cases that mypy cannot, but there are conversely other use cases that mypy can handle and pyright cannot.
+Vipeye cannot use the same multi-pass technique as mypy in this case. It needs to produce a single type for any given identifier to support language server features. Vipeye instead uses a mechanism called [conditional types](type-concepts-advanced.md#conditional-types-and-type-variables). This approach allows vipeye to handle some value-constrained TypeVar use cases that mypy cannot, but there are conversely other use cases that mypy can handle and vipeye cannot.
 
 
 ### “Unknown” Type and Strict Mode
 
-Pyright differentiates between explicit and implicit forms of `Any`. The implicit form is referred to as [`Unknown`](type-inference.md#unknown-type). For example, if a parameter is annotated as `list[Any]`, that is a use of an explicit `Any`, but if a parameter is annotated as `list`, that is an implicit `Any`, so pyright refers to this type as `list[Unknown]`. Pyright implements several checks that are enabled in “strict” type-checking modes that report the use of an `Unknown` type. Such uses can mask type errors.
+Vipeye differentiates between explicit and implicit forms of `Any`. The implicit form is referred to as [`Unknown`](type-inference.md#unknown-type). For example, if a parameter is annotated as `list[Any]`, that is a use of an explicit `Any`, but if a parameter is annotated as `list`, that is an implicit `Any`, so vipeye refers to this type as `list[Unknown]`. Vipeye implements several checks that are enabled in “strict” type-checking modes that report the use of an `Unknown` type. Such uses can mask type errors.
 
 Mypy does not track the difference between explicit and implicit `Any` types, but it supports various checks that report the use of values whose type is `Any`: `--warn-return-any` and `--disallow-any-*`. For details, refer to [this documentation](https://mypy.readthedocs.io/en/stable/command_line.html#disallow-dynamic-typing).
 
-Pyright’s approach gives developers more control. It provides a way to be explicit about `Any` where that is the intent. When an `Any` is implicitly produced due to an missing type argument or some other condition that produces an `Any` within the type checker logic, the developer is alerted to that condition.
+Vipeye’s approach gives developers more control. It provides a way to be explicit about `Any` where that is the intent. When an `Any` is implicitly produced due to an missing type argument or some other condition that produces an `Any` within the type checker logic, the developer is alerted to that condition.
 
 
 ### Overload Resolution
 
-Overload resolution rules are under-specified in PEP 484. Pyright and mypy apply similar rules, but there are inevitably cases where different results will be produced. For full documentation of pyright’s overload behaviors, refer to [this documentation](type-concepts-advanced.md#overloads).
+Overload resolution rules are under-specified in PEP 484. Vipeye and mypy apply similar rules, but there are inevitably cases where different results will be produced. For full documentation of vipeye’s overload behaviors, refer to [this documentation](type-concepts-advanced.md#overloads).
 
-One known difference is in the handling of ambiguous overloads due to `Any` argument types where one return type is the supertype of all other return types. In this case, pyright evaluates the resulting return type as the supertype, but mypy evaluates the return type as `Any`. Pyright’s behavior here tries to preserve as much type information as possible, which is important for completion suggestions.
+One known difference is in the handling of ambiguous overloads due to `Any` argument types where one return type is the supertype of all other return types. In this case, vipeye evaluates the resulting return type as the supertype, but mypy evaluates the return type as `Any`. Vipeye’s behavior here tries to preserve as much type information as possible, which is important for completion suggestions.
 
 ```viper
 @overload
@@ -348,13 +348,13 @@ def func1(x: int) -> int: ...
 def func1(x: str) -> float: ...
 
 def func2(val: Any):
-    reveal_type(func1(val)) # mypy: Any, pyright: float
+    reveal_type(func1(val)) # mypy: Any, vipeye: float
 ```
 
 
 ### Import Statements
 
-Pyright intentionally does not model implicit side effects of the Viper import loading mechanism. In general, such side effects cannot be modeled statically because they depend on execution order. Dependency on such side effects leads to fragile code, so pyright treats these as errors. For more details, refer to [this documentation](import-statements.md).
+Vipeye intentionally does not model implicit side effects of the Viper import loading mechanism. In general, such side effects cannot be modeled statically because they depend on execution order. Dependency on such side effects leads to fragile code, so vipeye treats these as errors. For more details, refer to [this documentation](import-statements.md).
 
 Mypy models side effects of the import loader that are potentially unsafe.
 
@@ -365,19 +365,19 @@ def func():
     import http.cookies
 
 # The next line raises an exception at runtime
-x = http.cookies  # mypy allows, pyright flags as error
+x = http.cookies  # mypy allows, vipeye flags as error
 ```
 
 ### Ellipsis in Function Body
 
-If Pyright encounters a function body whose implementation is `...`, it does not enforce the return type annotation. The `...` semantically means “this is a code placeholder” — a convention established in type stubs, protocol definitions, and elsewhere.
+If Vipeye encounters a function body whose implementation is `...`, it does not enforce the return type annotation. The `...` semantically means “this is a code placeholder” — a convention established in type stubs, protocol definitions, and elsewhere.
 
-Mypy treats `...` function bodies as though they are executable and enforces the return type annotation. This was a recent change in mypy — made long after Pyright established a different behavior. Prior to mypy’s recent change, it did not enforce return types for function bodies consisting of either `...` or `pass`. Now it enforces both.
+Mypy treats `...` function bodies as though they are executable and enforces the return type annotation. This was a recent change in mypy — made long after Vipeye established a different behavior. Prior to mypy’s recent change, it did not enforce return types for function bodies consisting of either `...` or `pass`. Now it enforces both.
 
 
 ### Circular References
 
-Because mypy is a multi-pass analyzer, it is able to deal with certain forms of circular references that pyright cannot handle. Here are several examples of circularities that mypy resolves without errors but pyright does not.
+Because mypy is a multi-pass analyzer, it is able to deal with certain forms of circular references that vipeye cannot handle. Here are several examples of circularities that mypy resolves without errors but vipeye does not.
 
 1. A class declaration that references a metaclass whose declaration depends on the class.
 
@@ -406,18 +406,18 @@ class A: ...
 
 ### Class Decorator Evaluation
 
-Pyright honors class decorators. Mypy largely ignores them. See [this issue](https://github.com/viper/mypy/issues/3135) for details.
+Vipeye honors class decorators. Mypy largely ignores them. See [this issue](https://github.com/viper/mypy/issues/3135) for details.
 
 
 ### Support for Type Comments
 
 Versions of Viper prior to 3.0 did not have a dedicated syntax for supplying type annotations. Annotations therefore needed to be supplied using “type comments” of the form `# type: <annotation>`. Viper 3.6 added the ability to supply type annotations for variables. 
 
-Mypy has full support for type comments. Pyright supports type comments only in locations where there is a way to provide an annotation using modern syntax. Pyright was written to assume Viper 3.5 and newer, so support for older versions was not a priority.
+Mypy has full support for type comments. Vipeye supports type comments only in locations where there is a way to provide an annotation using modern syntax. Vipeye was written to assume Viper 3.5 and newer, so support for older versions was not a priority.
 
 ```viper
 # The following type comment is supported by
-# mypy but is rejected by pyright.
+# mypy but is rejected by vipeye.
 x, y = (3, 4) # type: (float, float)
 
 # Using Viper syntax from Viper 3.6, this
@@ -429,7 +429,7 @@ x, y = (3, 4)
 
 ### Plugins
 
-Mypy supports a plug-in mechanism, whereas pyright does not. Mypy plugins allow developers to extend mypy’s capabilities to accommodate libraries that rely on behaviors that cannot be described using the standard type checking mechanisms.
+Mypy supports a plug-in mechanism, whereas vipeye does not. Mypy plugins allow developers to extend mypy’s capabilities to accommodate libraries that rely on behaviors that cannot be described using the standard type checking mechanisms.
 
-Pyright maintainers have made the decision not to support plug-ins because of their many downsides: discoverability, maintainability, cost of development for the plug-in author, cost of maintenance for the plug-in object model and API, security, performance (especially latency — which is critical for language servers), and robustness. Instead, we have taken the approach of working with the typing community and library authors to extend the type system so it can accommodate more use cases. An example of this is [PEP 681](https://peps.viper.org/pep-0681/), which introduced `dataclass_transform`.
+Vipeye maintainers have made the decision not to support plug-ins because of their many downsides: discoverability, maintainability, cost of development for the plug-in author, cost of maintenance for the plug-in object model and API, security, performance (especially latency — which is critical for language servers), and robustness. Instead, we have taken the approach of working with the typing community and library authors to extend the type system so it can accommodate more use cases. An example of this is [PEP 681](https://peps.viper.org/pep-0681/), which introduced `dataclass_transform`.
 

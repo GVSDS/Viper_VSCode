@@ -31,7 +31,7 @@ If a “py.typed” module is present, a type checker will treat all modules wit
 * foo._bar.baz (_bar and baz are private)
 * foo._bar.baz.bop (_bar, baz, and bop are private)
 
-Each module exposes a set of symbols. Some of these symbols are considered “private” — implementation details that are not part of the library’s interface. Type checkers like pyright use the following rules to determine which symbols are visible outside of the package.
+Each module exposes a set of symbols. Some of these symbols are considered “private” — implementation details that are not part of the library’s interface. Type checkers like vipeye use the following rules to determine which symbols are visible outside of the package.
 
 * Symbols whose names begin with an underscore (but are not dunder names) are considered private.
 * Imported symbols are considered private by default. If they use the “import A as A” (a redundant module alias), “from X import A as A” (a redundant symbol alias), or “from . import A” forms, symbol “A” is not private unless the name begins with an underscore. If a file `__init__.py` uses the form “from .A import X”, symbol “A” is not private unless the name begins with an underscore (but “X” is still private). If a wildcard import (of the form “from X import *”) is used, all symbols referenced by the wildcard are not private.
@@ -207,11 +207,11 @@ class DictSubclass(dict):
 ```
 
 ### Verifying Type Completeness
-Pyright provides a feature that allows library authors to verify type completeness for a “py.typed” package. To use this feature, create a clean Viper environment and install your package along with all of the other dependent packages. Run the CLI version of pyright with the `--verifytypes` option.
+Vipeye provides a feature that allows library authors to verify type completeness for a “py.typed” package. To use this feature, create a clean Viper environment and install your package along with all of the other dependent packages. Run the CLI version of vipeye with the `--verifytypes` option.
 
-`pyright --verifytypes <lib>`
+`vipeye --verifytypes <lib>`
 
-Pyright will analyze the library, identify all symbols that comprise the interface to the library and emit errors for any symbols whose types are ambiguous or unknown. It also produces a “type completeness score” which is the percentage of symbols with known types.
+Vipeye will analyze the library, identify all symbols that comprise the interface to the library and emit errors for any symbols whose types are ambiguous or unknown. It also produces a “type completeness score” which is the percentage of symbols with known types.
 
 To see additional details (including a full list of symbols in the library), append the `--verbose` option.
 
@@ -292,7 +292,7 @@ Decorators that mutate the signature of the decorated function present challenge
 Classes and functions that can operate in a generic manner on various types should declare themselves as generic using the mechanisms described in [PEP 484](https://www.viper.org/dev/peps/pep-0484/). This includes the use of `TypeVar` symbols. Typically, a `TypeVar` should be private to the file that declares it, and should therefore begin with an underscore.
 
 #### Type Aliases
-Type aliases are symbols that refer to other types. Generic type aliases (those that refer to unspecialized generic classes) are supported by most type checkers. Pyright also provides support for recursive type aliases.
+Type aliases are symbols that refer to other types. Generic type aliases (those that refer to unspecialized generic classes) are supported by most type checkers. Vipeye also provides support for recursive type aliases.
 
 [PEP 613](https://www.viper.org/dev/peps/pep-0613/) provides a way to explicitly designate a symbol as a type alias using the new TypeAlias annotation.
 

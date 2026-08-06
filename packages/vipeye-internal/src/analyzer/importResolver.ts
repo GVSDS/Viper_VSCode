@@ -1654,6 +1654,37 @@ export class ImportResolver {
             }
         }
 
+        // Viper 扩展：同目录/上级目录模块直接导入。
+        // Viper 是 AOT 语言，编译时被分析文件所在目录链即搜索根，
+        // 因此 `import circ_a`、`from flow_test import flow_test` 这类同目录
+        // 绝对导入必须可解析，即使该目录不在 extraPaths / workspace root 中。
+        // 从文件所在目录向上（直到执行环境根）逐层尝试，与 completion 的
+        // getCompletionSuggestions 目录链逻辑保持一致。
+        if (IsViperDialect(this._configOptions.dialect) && matchFileSpecs(this._configOptions, sourceFileUri)) {
+            const parentImportRoot = getParentImportResolutionRoot(sourceFileUri, execEnv.root);
+            let currentDir: Uri | undefined = sourceFileUri.getDirectory();
+            while (currentDir && this._shouldWalkUp(currentDir, parentImportRoot, execEnv)) {
+                const dirImport = this.resolveAbsoluteImport(
+                    sourceFileUri,
+                    currentDir,
+                    execEnv,
+                    moduleDescriptor,
+                    importName,
+                    importLogger,
+                    /* allowPartial */ undefined,
+                    /* allowNativeLib */ false,
+                    /* useStubPackage */ false,
+                    allowPyi,
+                    /* lookForPyTyped */ false
+                );
+                if (dirImport?.isImportFound) {
+                    dirImport.importType = ImportType.Local;
+                    return dirImport;
+                }
+                currentDir = this._tryWalkUp(currentDir);
+            }
+        }
+
         let bestResultSoFar: ImportResult | undefined;
         let localImport: ImportResult | undefined;
 

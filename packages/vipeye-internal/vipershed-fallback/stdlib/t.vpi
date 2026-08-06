@@ -822,7 +822,7 @@ class ASM_DESCR:
 # 函数指针
 # =============================================================================
 # Viper 的 Callable 等价于 typing.Callable，支持 Callable[[], TReturn] 订阅语法。
-# 直接赋值（不加 TypeAlias 注解），让 Pyright 识别为 typing.Callable 别名。
+# 直接赋值（不加 TypeAlias 注解），让 Vipeye 识别为 typing.Callable 别名。
 Callable = CallableT
 
 

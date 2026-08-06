@@ -1,6 +1,6 @@
-# This workflow runs mypy_primer, a tool that runs pyright on a variety
-# of open-source Python projects that are known to type check with pyright.
-# It builds pyright from the latest PR commit and the merge base of the PR
+# This workflow runs mypy_primer, a tool that runs vipeye on a variety
+# of open-source Python projects that are known to type check with vipeye.
+# It builds vipeye from the latest PR commit and the merge base of the PR
 # and compares the output of both. It uploads the diffs as an artifact and
 # creates a PR comment with the results (with the help of the
 # mypy_primer_comment action).
@@ -8,8 +8,8 @@
 # This workflow definition borrows liberally from the mypy repo. The original
 # workflow was designed to work in a sharded manner where n copies of
 # mypy_primer are started in parallel. Each instance runs 1/n of the projects.
-# For now, we run only one instance because pyright is fast, and the number
-# of projects that use pyright for type checking is small. To change this in
+# For now, we run only one instance because vipeye is fast, and the number
+# of projects that use vipeye for type checking is small. To change this in
 # the future, change the 'shard_index' matrix to [0, 1, ..., n-1] and set
 # 'num-shards' to n.
 
@@ -22,9 +22,9 @@ on:
   # Run on the creation or update of a PR.
   pull_request:
     paths:
-      - 'packages/pyright/**'
-      - 'packages/pyright-internal/src/**'
-      - 'packages/pyright-internal/typeshed-fallback/**'
+      - 'packages/vipeye/**'
+      - 'packages/vipeye-internal/src/**'
+      - 'packages/vipeye-internal/typeshed-fallback/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}

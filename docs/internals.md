@@ -1,21 +1,21 @@
-# Pyright Internals
+# Vipeye Internals
 
 ## Code Structure
 
-* packages/vscode-pyright/src/extension.ts: Language Server Protocol (LSP) client entry point for VS Code extension.
-* packages/pyright-internal/typeshed-fallback/: Recent copy of Typeshed type stub files for Viper stdlib
-* packages/pyright-internal/src/pyright.ts: Main entry point for command-line tool
-* packages/pyright-internal/src/server.ts: Main entry point for LSP server
-* packages/pyright-internal/src/typeServer: Type Server Protocol (TSP) server built on the analyzer (see [Type Server](type-server.md))
-* packages/pyright-internal/src/analyzer: Modules that perform analysis passes over Viper parse tree
-* packages/pyright-internal/src/common: Modules  that are common to the parser and analyzer
-* packages/pyright-internal/src/parser: Modules that perform tokenization and parsing of Viper source
-* packages/pyright-internal/src/tests: Tests for the parser and analyzer
+* packages/vscode-vipeye/src/extension.ts: Language Server Protocol (LSP) client entry point for VS Code extension.
+* packages/vipeye-internal/vipershed-fallback/: Recent copy of typeshed type stub files for Viper stdlib
+* packages/vipeye/src/viper.ts: Main entry point for command-line tool
+* packages/vipeye-internal/src/server.ts: Main entry point for LSP server
+* packages/vipeye-internal/src/typeServer: Type Server Protocol (TSP) server built on the analyzer (see [Type Server](type-server.md))
+* packages/vipeye-internal/src/analyzer: Modules that perform analysis passes over Viper parse tree
+* packages/vipeye-internal/src/common: Modules  that are common to the parser and analyzer
+* packages/vipeye-internal/src/parser: Modules that perform tokenization and parsing of Viper source
+* packages/vipeye-internal/src/tests: Tests for the parser and analyzer
 
 
 ## Core Concepts
 
-Pyright implements a [service](https://github.com/microsoft/pyright/blob/main/packages/pyright-internal/src/analyzer/service.ts), a persistent in-memory object that controls the order of analysis and provides an interface for the language server. For multi-root workspaces, each workspace gets its own service instance.
+Vipeye implements a [service](https://github.com/microsoft/pyright/blob/main/packages/pyright-internal/src/analyzer/service.ts), a persistent in-memory object that controls the order of analysis and provides an interface for the language server. For multi-root workspaces, each workspace gets its own service instance.
 
 The service owns an instance of a [program](https://github.com/microsoft/pyright/blob/main/packages/pyright-internal/src/analyzer/program.ts), which tracks the configuration file and all of the source files that make up the source base that is to be analyzed. A source file can be added to a program if it is a) referenced by the config file, b) currently open in the editor, or c) imported directly or indirectly by another source file. The program object is responsible for setting up file system watchers and updating the program as files are added, deleted, or edited. The program is also responsible for prioritizing all phases of analysis for all files, favoring files that are open in the editor (and their import dependencies).
 
@@ -26,7 +26,7 @@ The program makes use of an [importResolver](https://github.com/microsoft/pyrigh
 
 ## Analysis Phases
 
-Pyright performs the following analysis phases for each source file.
+Vipeye performs the following analysis phases for each source file.
 
 The [tokenizer](https://github.com/microsoft/pyright/blob/main/packages/pyright-internal/src/parser/tokenizer.ts) is responsible for converting the file’s string contents into a stream of tokens. White space, comments, and some end-of-line characters are ignored, as they are not needed by the parser.
 

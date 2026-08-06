@@ -30,7 +30,6 @@
   - [Extending Builtins](builtins.md)
   - [Type Stubs](type-stubs.md)
   - [Types in Libraries](typed-libraries.md)
-  - [Differences from Mypy](mypy-comparison.md)
   - [Commands](commands.md)
 
 - Development

@@ -4,7 +4,7 @@
  * Licensed under the MIT license.
  * Author: Eric Traut
  *
- * Logic that maps a position within a Python program file into
+ * Logic that maps a position within a Viper program file into
  * markdown text that is displayed when the user hovers over that
  * position within a smart editor.
  */

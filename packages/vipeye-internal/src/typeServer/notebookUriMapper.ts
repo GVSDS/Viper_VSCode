@@ -4,7 +4,7 @@
  * Licensed under the MIT license.
  *
  * Maps notebook cell URIs to file-like URIs so notebook cells can be analyzed as if
- * they were regular Python files.
+ * they were regular Viper files.
  *
  * In a virtual workspace, a notebook might have a path like:
  *   vscode-vfs://path/to/notebook.ipynb

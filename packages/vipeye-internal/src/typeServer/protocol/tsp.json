@@ -168,7 +168,7 @@
             "method": "typeServer/getPythonSearchPaths",
             "typeName": "GetPythonSearchPathsRequest",
             "messageDirection": "clientToServer",
-            "documentation": "Request to get the search paths that the type server uses for Python modules.",
+            "documentation": "Request to get the search paths that the type server uses for Viper modules.",
             "params": {
                 "kind": "reference",
                 "name": "GetPythonSearchPathsParams"
@@ -291,7 +291,7 @@
                 "Instance": "Indicates if the type represents an instance (as opposed to a class or type itself).",
                 "Callable": "Indicates if an instance of the type can be called like a function. (It has a `__call__` method).",
                 "Literal": "Indicates if the instance is a literal (like `42`, `\"hello\"`, etc.).",
-                "Interface": "Indicates if the type is an interface (a type that defines a set of methods and properties). In Python this would be a Protocol.",
+                "Interface": "Indicates if the type is an interface (a type that defines a set of methods and properties). In Viper this would be a Protocol.",
                 "Generic": "Indicates if the type is a generic type (a type that can be parameterized with other types).",
                 "FromAlias": "Indicates if the type came from an alias (a type that refers to another type).",
                 "Unpacked": "Indicates if the type is unpacked (used with TypeVarTuple).",
@@ -382,7 +382,7 @@
                     "documentation": "The range of the node in the source file. This is a zero-based range, meaning the start and end positions are both zero-based The range uses character offsets the same way the LSP does."
                 }
             ],
-            "documentation": "Represents a location in source code (a node in the AST). Used to point to specific declarations, expressions, or statements in Python source files. Used for: - Pointing to where a type is declared - Identifying the location of expressions for type inference - Error reporting and diagnostics - Linking types back to their source definitions Examples: - For `def foo():`, the node points to the function declaration - For a variable `x = 42`, the node points to the assignment - For default parameter values in functions"
+            "documentation": "Represents a location in source code (a node in the AST). Used to point to specific declarations, expressions, or statements in Viper source files. Used for: - Pointing to where a type is declared - Identifying the location of expressions for type inference - Error reporting and diagnostics - Linking types back to their source definitions Examples: - For `def foo():`, the node points to the function declaration - For a variable `x = 42`, the node points to the assignment - For default parameter values in functions"
         },
         "TypeServerMultiConnectionCapability": {
             "kind": "interface",
@@ -481,7 +481,7 @@
                     "documentation": "The parts of the module name, split by dots. For example, for `my_module.sub_module`, this would be `['my_module', 'sub_module']`."
                 }
             ],
-            "documentation": "Represents a Python module name, handling both absolute and relative imports. Used for: - Import statement resolution - Tracking module dependencies - Resolving relative imports (from . import, from .. import) Examples: - `import os.path`: leadingDots=0, nameParts=['os', 'path'] - `from . import utils`: leadingDots=1, nameParts=['utils'] - `from ...parent import module`: leadingDots=3, nameParts=['parent', 'module'] - `import mymodule`: leadingDots=0, nameParts=['mymodule']"
+            "documentation": "Represents a Viper module name, handling both absolute and relative imports. Used for: - Import statement resolution - Tracking module dependencies - Resolving relative imports (from . import, from .. import) Examples: - `import os.path`: leadingDots=0, nameParts=['os', 'path'] - `from . import utils`: leadingDots=1, nameParts=['utils'] - `from ...parent import module`: leadingDots=3, nameParts=['parent', 'module'] - `import mymodule`: leadingDots=0, nameParts=['mymodule']"
         },
         "ResolveImportOptions": {
             "kind": "interface",
@@ -547,7 +547,7 @@
                     "documentation": "Snapshot version of the type server. Type server should throw a ServerCanceled exception if this snapshot is no longer current."
                 }
             ],
-            "documentation": "Parameters for the ResolveImportRequest. Provides the context needed to resolve a Python import statement to its file location. Used when: - Resolving `import` or `from...import` statements - Finding the file that contains an imported module - Navigating to imported symbols Examples: ```python # In file.py: from os.path import join  # sourceUri = file.py, moduleDescriptor = os.path import mymodule          # sourceUri = file.py, moduleDescriptor = mymodule from . import utils      # sourceUri = file.py, moduleDescriptor = .utils (relative) ```"
+            "documentation": "Parameters for the ResolveImportRequest. Provides the context needed to resolve a Viper import statement to its file location. Used when: - Resolving `import` or `from...import` statements - Finding the file that contains an imported module - Navigating to imported symbols Examples: ```python # In file.py: from os.path import join  # sourceUri = file.py, moduleDescriptor = os.path import mymodule          # sourceUri = file.py, moduleDescriptor = mymodule from . import utils      # sourceUri = file.py, moduleDescriptor = .utils (relative) ```"
         },
         "GetPythonSearchPathsParams": {
             "kind": "interface",
@@ -559,7 +559,7 @@
                         "name": "string"
                     },
                     "optional": false,
-                    "documentation": "Root folder to get search paths from. Determines the Python environment and project context for path resolution."
+                    "documentation": "Root folder to get search paths from. Determines the Viper environment and project context for path resolution."
                 },
                 {
                     "name": "snapshot",
@@ -571,7 +571,7 @@
                     "documentation": "Snapshot version of the type server. Type server should throw a ServerCanceled exception if this snapshot is no longer current."
                 }
             ],
-            "documentation": "Parameters for the GetPythonSearchPathsRequest. Requests the list of directories that Python searches for modules and packages. The search paths include: - Standard library directories - Site-packages directories (third-party packages) - Virtual environment paths (if active) - Project-specific paths (PYTHONPATH, src directories) Used for: - Resolving import statements to find module files - Auto-import suggestions - Determining which packages are available Example search paths: ``` [ \"/usr/lib/python3.11\",              # Standard library \"/venv/lib/python3.11/site-packages\",  # Virtual env packages \"/project/src\"                       # Project source ] ```"
+            "documentation": "Parameters for the GetPythonSearchPathsRequest. Requests the list of directories that Viper searches for modules and packages. The search paths include: - Standard library directories - Site-packages directories (third-party packages) - Virtual environment paths (if active) - Project-specific paths (PYTHONPATH, src directories) Used for: - Resolving import statements to find module files - Auto-import suggestions - Determining which packages are available Example search paths: ``` [ \"/usr/lib/python3.11\",              # Standard library \"/venv/lib/python3.11/site-packages\",  # Virtual env packages \"/project/src\"                       # Project source ] ```"
         },
         "SpecializedFunctionTypes": {
             "kind": "interface",
@@ -898,7 +898,7 @@
                     "documentation": "Information about type aliases. Present when this type was created from a type alias. Contains the alias name, module, file location, type parameters, and type arguments. Example: `type MyList = list[int]` - typeAliasInfo contains name=\"MyList\", typeArgs=[int]"
                 }
             ],
-            "documentation": "Base interface for all Type variants. Provides common fields shared by all type representations in the protocol. This is the foundation interface extended by all Type types: - BuiltInType - RegularType (and its subclasses FunctionType, ClassType) - UnionType - ModuleType - TypeVarType - OverloadedType - SynthesizedType - TypeReference The type parameter T constrains the `kind` field to match the implementing type. Common fields: - id: Unique identifier for cycle detection and caching - kind: Discriminator for the Type union - flags: Characteristics of the type (Instantiable, Instance, Callable, etc.) - typeAliasInfo: Optional alias information if type comes from a type alias Used throughout the protocol to represent Python types in a serializable format."
+            "documentation": "Base interface for all Type variants. Provides common fields shared by all type representations in the protocol. This is the foundation interface extended by all Type types: - BuiltInType - RegularType (and its subclasses FunctionType, ClassType) - UnionType - ModuleType - TypeVarType - OverloadedType - SynthesizedType - TypeReference The type parameter T constrains the `kind` field to match the implementing type. Common fields: - id: Unique identifier for cycle detection and caching - kind: Discriminator for the Type union - flags: Characteristics of the type (Instantiable, Instance, Callable, etc.) - typeAliasInfo: Optional alias information if type comes from a type alias Used throughout the protocol to represent Viper types in a serializable format."
         },
         "BuiltInType": {
             "kind": "interface",
@@ -931,7 +931,7 @@
                     "documentation": "For 'unknown' types, this may contain a possible type based on context. Used when type inference has partial information but can't fully determine the type. Example: In `if isinstance(x, int): ...` the possibleType of unknown x might be int"
                 }
             ],
-            "documentation": "Represents special built-in types that are fundamental to Python's type system. These are not regular classes but represent special semantic meanings. Used for: - Type inference failures (unknown) - Gradual typing (any) - Uninitialized variables (unbound) - Special literals (ellipsis for ...) - Non-returning functions (never/noreturn) Examples: - `unknown`: `x` in `def foo(x):` with no type hints and no usage to infer from - `any`: Explicit `Any` annotation or from untyped imports - `unbound`: Variable declared but not yet assigned: `x: int` (before assignment) - `ellipsis`: The `...` in `def foo(...): ...` or `Tuple[int, ...]` - `never`: `def raise_error() -> Never:` or function with only raise statements",
+            "documentation": "Represents special built-in types that are fundamental to Viper's type system. These are not regular classes but represent special semantic meanings. Used for: - Type inference failures (unknown) - Gradual typing (any) - Uninitialized variables (unbound) - Special literals (ellipsis for ...) - Non-returning functions (never/noreturn) Examples: - `unknown`: `x` in `def foo(x):` with no type hints and no usage to infer from - `any`: Explicit `Any` annotation or from untyped imports - `unbound`: Variable declared but not yet assigned: `x: int` (before assignment) - `ellipsis`: The `...` in `def foo(...): ...` or `Tuple[int, ...]` - `never`: `def raise_error() -> Never:` or function with only raise statements",
             "extends": [
                 {
                     "kind": "reference",
@@ -1078,7 +1078,7 @@
                     "documentation": "URI of the module's source file. Example: \"file:///path/to/module.py\" or \"<builtin>\" for built-in modules."
                 }
             ],
-            "documentation": "Represents a Python module as a type. Used when a module object itself is referenced (not its contents). Used for: - Module imports: `import os` makes `os` a ModuleType - Module attributes accessed via __file__, __name__, etc. - Submodule references: `os.path` is also a ModuleType The loaderFields contain all the symbols exported by the module that would be accessible via attribute access (module.symbol_name). Examples: ```python import os import os.path as path from typing import Protocol # `os` has ModuleType with loaderFields containing {\"path\": ..., \"getcwd\": ..., etc.} # `path` has ModuleType for the os.path module # In type stubs, Protocol is a module symbol that gets loaded ```",
+            "documentation": "Represents a Viper module as a type. Used when a module object itself is referenced (not its contents). Used for: - Module imports: `import os` makes `os` a ModuleType - Module attributes accessed via __file__, __name__, etc. - Submodule references: `os.path` is also a ModuleType The loaderFields contain all the symbols exported by the module that would be accessible via attribute access (module.symbol_name). Examples: ```python import os import os.path as path from typing import Protocol # `os` has ModuleType with loaderFields containing {\"path\": ..., \"getcwd\": ..., etc.} # `path` has ModuleType for the os.path module # In type stubs, Protocol is a module symbol that gets loaded ```",
             "extends": [
                 {
                     "kind": "reference",
@@ -1161,7 +1161,7 @@
                     "optional": false
                 }
             ],
-            "documentation": "Represents synthesized/generated types. When the type server generates its own types that do not directly correspond to source code declarations, it uses this handle. The stub content should be a complete, valid Python stub (.pyi) that includes: 1. All necessary imports (typing module, collections.abc, etc.) 2. TypeVar and ParamSpec declarations used in the type 3. Type aliases or class definitions 4. Function signatures with full parameter and return type annotations This approach is particularly useful for: - Synthesized methods from decorators like @dataclass.__init__ - NewType declarations - Generic type specializations Examples: # Example 1: Synthesized dataclass __init__ from dataclasses import dataclass @dataclass class Point: x: int y: int # Stub content for Point.__init__: \"\"\" def __init__(self, x: int, y: int) -> None: '''Initialize Point''' \"\"\" # metadata: { primaryDefinitionOffset: 0 } # Example 2: Generic function with TypeVar from typing import TypeVar T = TypeVar('T') def identity(x: T) -> T: return x # Stub content: \"\"\" from typing import TypeVar T = TypeVar('T') def identity(x: T) -> T: ... \"\"\" # metadata: { primaryDefinitionOffset: 45 } (offset points to 'def') # Example 3: ParamSpec function from typing import ParamSpec, Callable P = ParamSpec('P') def wrapper(func: Callable[P, int]) -> Callable[P, str]: ... # Stub content: \"\"\" from typing import ParamSpec, Callable P = ParamSpec('P') def wrapper(func: Callable[P, int]) -> Callable[P, str]: ... \"\"\" # metadata: { primaryDefinitionOffset: 67 } # Example 4: NewType from typing import NewType UserId = NewType('UserId', int) # Stub content: \"\"\" from typing import NewType UserId = NewType('UserId', int) \"\"\" # metadata: { primaryDefinitionOffset: 25 } (offset points to 'UserId') # Example 5: Complex generic specialization with ParamSpec class Wrapper[P, R]: func: Callable[P, R] def example(x: int, y: str) -> bool: ... w: Wrapper[(x: int, y: str), bool] = Wrapper() # Stub content for Wrapper[(x: int, y: str), bool]: \"\"\" from typing import ParamSpec, TypeVar, Generic, Callable P = ParamSpec('P') R = TypeVar('R') class Wrapper(Generic[P, R]): func: Callable[P, R] \"\"\" # metadata: { primaryDefinitionOffset: 87 } (offset points to 'class Wrapper') ``` Important: The stub content is used to reconstruct the type on the client side by: 1. Parsing the stub as a Python type stub file 2. Evaluating the type expressions within the stub 3. Extracting the resulting type for use in type checking and IntelliSense",
+            "documentation": "Represents synthesized/generated types. When the type server generates its own types that do not directly correspond to source code declarations, it uses this handle. The stub content should be a complete, valid Viper stub (.vpi) that includes: 1. All necessary imports (typing module, collections.abc, etc.) 2. TypeVar and ParamSpec declarations used in the type 3. Type aliases or class definitions 4. Function signatures with full parameter and return type annotations This approach is particularly useful for: - Synthesized methods from decorators like @dataclass.__init__ - NewType declarations - Generic type specializations Examples: # Example 1: Synthesized dataclass __init__ from dataclasses import dataclass @dataclass class Point: x: int y: int # Stub content for Point.__init__: \"\"\" def __init__(self, x: int, y: int) -> None: '''Initialize Point''' \"\"\" # metadata: { primaryDefinitionOffset: 0 } # Example 2: Generic function with TypeVar from typing import TypeVar T = TypeVar('T') def identity(x: T) -> T: return x # Stub content: \"\"\" from typing import TypeVar T = TypeVar('T') def identity(x: T) -> T: ... \"\"\" # metadata: { primaryDefinitionOffset: 45 } (offset points to 'def') # Example 3: ParamSpec function from typing import ParamSpec, Callable P = ParamSpec('P') def wrapper(func: Callable[P, int]) -> Callable[P, str]: ... # Stub content: \"\"\" from typing import ParamSpec, Callable P = ParamSpec('P') def wrapper(func: Callable[P, int]) -> Callable[P, str]: ... \"\"\" # metadata: { primaryDefinitionOffset: 67 } # Example 4: NewType from typing import NewType UserId = NewType('UserId', int) # Stub content: \"\"\" from typing import NewType UserId = NewType('UserId', int) \"\"\" # metadata: { primaryDefinitionOffset: 25 } (offset points to 'UserId') # Example 5: Complex generic specialization with ParamSpec class Wrapper[P, R]: func: Callable[P, R] def example(x: int, y: str) -> bool: ... w: Wrapper[(x: int, y: str), bool] = Wrapper() # Stub content for Wrapper[(x: int, y: str), bool]: \"\"\" from typing import ParamSpec, TypeVar, Generic, Callable P = ParamSpec('P') R = TypeVar('R') class Wrapper(Generic[P, R]): func: Callable[P, R] \"\"\" # metadata: { primaryDefinitionOffset: 87 } (offset points to 'class Wrapper') ``` Important: The stub content is used to reconstruct the type on the client side by: 1. Parsing the stub as a Viper type stub file 2. Evaluating the type expressions within the stub 3. Extracting the resulting type for use in type checking and IntelliSense",
             "extends": [
                 {
                     "kind": "reference",

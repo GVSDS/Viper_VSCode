@@ -2,7 +2,7 @@
  * tokenizerBenchmark.test.ts
  * Copyright (c) Microsoft Corporation.
  *
- * Microbenchmark for the Python tokenizer.
+ * Microbenchmark for the Viper tokenizer.
  * Measures tokens/sec and time-to-tokenize across representative corpora.
  *
  * Run with:

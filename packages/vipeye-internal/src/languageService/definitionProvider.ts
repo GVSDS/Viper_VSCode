@@ -4,7 +4,7 @@
  * Licensed under the MIT license.
  * Author: Eric Traut
  *
- * Logic that maps a position within a Python program file into
+ * Logic that maps a position within a Viper program file into
  * a "definition" of the item that is referred to at that position.
  * For example, if the location is within an import name, the
  * definition is the top of the resolved import file.

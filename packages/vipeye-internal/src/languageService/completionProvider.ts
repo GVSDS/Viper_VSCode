@@ -4,7 +4,7 @@
  * Licensed under the MIT license.
  * Author: Eric Traut
  *
- * Logic that maps a position within a Python program file into
+ * Logic that maps a position within a Viper program file into
  * a list of zero or more text completions that apply in the context.
  */
 
@@ -263,7 +263,7 @@ enum SortCategory {
     // An auto-import symbol that was recently used for completion.
     RecentAutoImport,
 
-    // A keyword in the python syntax.
+    // A keyword in the viper syntax.
     Keyword,
 
     // An enum member.

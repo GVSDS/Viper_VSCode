@@ -121,7 +121,7 @@ class FileBasedCancellationTokenSource implements AbstractCancellationTokenSourc
 }
 
 export function getCancellationFolderPath(folderName: string) {
-    return path.join(os.tmpdir(), 'python-languageserver-cancellation', folderName);
+    return path.join(os.tmpdir(), 'viper-languageserver-cancellation', folderName);
 }
 
 function getCancellationFileUri(folderName: string, id: CancellationId): string {

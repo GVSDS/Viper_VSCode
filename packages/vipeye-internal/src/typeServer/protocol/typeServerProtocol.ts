@@ -6,7 +6,7 @@
  * Defines the interfaces and types for the type server protocol. A Type Server is a module that provides type information
  * for code, such as type definitions, member information, and diagnostics.
  *
- * It's Python specific at the moment, but may be made generic in the future.
+ * It's Viper specific at the moment, but may be made generic in the future.
  *
  * This protocol is used to communicate between the type server and the client (e.g., a language server or an IDE).
  *
@@ -38,7 +38,7 @@ export namespace TypeServerProtocol {
 
     /**
      * Represents a location in source code (a node in the AST).
-     * Used to point to specific declarations, expressions, or statements in Python source files.
+     * Used to point to specific declarations, expressions, or statements in Viper source files.
      *
      * Used for:
      * - Pointing to where a type is declared
@@ -121,7 +121,7 @@ export namespace TypeServerProtocol {
         Instance = 1 << 1, // Indicates if the type represents an instance (as opposed to a class or type itself).
         Callable = 1 << 2, // Indicates if an instance of the type can be called like a function. (It has a `__call__` method).
         Literal = 1 << 3, // Indicates if the instance is a literal (like `42`, `"hello"`, etc.).
-        Interface = 1 << 4, // Indicates if the type is an interface (a type that defines a set of methods and properties). In Python this would be a Protocol.
+        Interface = 1 << 4, // Indicates if the type is an interface (a type that defines a set of methods and properties). In Viper this would be a Protocol.
         Generic = 1 << 5, // Indicates if the type is a generic type (a type that can be parameterized with other types).
         FromAlias = 1 << 6, // Indicates if the type came from an alias (a type that refers to another type).
         Unpacked = 1 << 7, // Indicates if the type is unpacked (used with TypeVarTuple).
@@ -130,7 +130,7 @@ export namespace TypeServerProtocol {
     }
 
     /**
-     * Represents a Python module name, handling both absolute and relative imports.
+     * Represents a Viper module name, handling both absolute and relative imports.
      *
      * Used for:
      * - Import statement resolution
@@ -199,7 +199,7 @@ export namespace TypeServerProtocol {
 
     /**
      * Parameters for the ResolveImportRequest.
-     * Provides the context needed to resolve a Python import statement to its file location.
+     * Provides the context needed to resolve a Viper import statement to its file location.
      *
      * Used when:
      * - Resolving `import` or `from...import` statements
@@ -230,7 +230,7 @@ export namespace TypeServerProtocol {
 
     /**
      * Parameters for the GetPythonSearchPathsRequest.
-     * Requests the list of directories that Python searches for modules and packages.
+     * Requests the list of directories that Viper searches for modules and packages.
      *
      * The search paths include:
      * - Standard library directories
@@ -254,7 +254,7 @@ export namespace TypeServerProtocol {
      */
     export interface GetPythonSearchPathsParams {
         // Root folder to get search paths from.
-        // Determines the Python environment and project context for path resolution.
+        // Determines the Viper environment and project context for path resolution.
         fromUri: string;
 
         // Snapshot version of the type server.
@@ -384,7 +384,7 @@ export namespace TypeServerProtocol {
     }
 
     /**
-     * Represents the value of a literal type in Python.
+     * Represents the value of a literal type in Viper.
      * A literal type has a specific, known value at type-checking time.
      *
      * Literal types include:
@@ -436,7 +436,7 @@ export namespace TypeServerProtocol {
      * - Function: Function or method types from def statements
      * - Class: Class types from class statements
      * - Union: Multiple types combined (T1 | T2 | ...)
-     * - Module: Python module types
+     * - Module: Viper module types
      * - TypeVar: Generic type parameters (T, P, Ts)
      * - Overloaded: Functions with @overload decorators
      * - Synthesized: Generated stub content for type server created types
@@ -730,7 +730,7 @@ export namespace TypeServerProtocol {
      * - flags: Characteristics of the type (Instantiable, Instance, Callable, etc.)
      * - typeAliasInfo: Optional alias information if type comes from a type alias
      *
-     * Used throughout the protocol to represent Python types in a serializable format.
+     * Used throughout the protocol to represent Viper types in a serializable format.
      */
     export interface TypeBase<T extends TypeKind> {
         // Unique identifier for this type instance. Used to detect cycles and cache type lookups.
@@ -755,7 +755,7 @@ export namespace TypeServerProtocol {
     }
 
     /**
-     * Represents special built-in types that are fundamental to Python's type system.
+     * Represents special built-in types that are fundamental to Viper's type system.
      * These are not regular classes but represent special semantic meanings.
      *
      * Used for:
@@ -944,7 +944,7 @@ export namespace TypeServerProtocol {
     }
 
     /**
-     * Represents a Python module as a type.
+     * Represents a Viper module as a type.
      * Used when a module object itself is referenced (not its contents).
      *
      * Used for:
@@ -1099,7 +1099,7 @@ export namespace TypeServerProtocol {
      * When the type server generates its own types that do not directly correspond
      * to source code declarations, it uses this handle.
      *
-     * The stub content should be a complete, valid Python stub (.pyi) that includes:
+     * The stub content should be a complete, valid Viper stub (.vpi) that includes:
      * 1. All necessary imports (typing module, collections.abc, etc.)
      * 2. TypeVar and ParamSpec declarations used in the type
      * 3. Type aliases or class definitions
@@ -1178,19 +1178,19 @@ export namespace TypeServerProtocol {
      * ```
      *
      * Important: The stub content is used to reconstruct the type on the client side by:
-     * 1. Parsing the stub as a Python type stub file
+     * 1. Parsing the stub as a Viper type stub file
      * 2. Evaluating the type expressions within the stub
      * 3. Extracting the resulting type for use in type checking and IntelliSense
      */
     export interface SynthesizedType extends TypeBase<TypeKind.Synthesized> {
         /**
-         * Python stub file content (.pyi format) generated for this type.
+         * Viper stub file content (.vpi format) generated for this type.
          *
          * Must include:
          * - Import statements for all typing constructs used (TypeVar, ParamSpec, Callable, etc.)
          * - TypeVar/ParamSpec declarations that appear in the type signature
          * - The complete type definition (function, class, or type alias)
-         * - Proper Python stub syntax with ellipsis (...) for function bodies
+         * - Proper Viper stub syntax with ellipsis (...) for function bodies
          *
          * The stub should be minimal but complete - include only what's necessary to
          * reconstruct the type. Avoid including unrelated definitions.
@@ -1323,7 +1323,7 @@ export namespace TypeServerProtocol {
     }
 
     /**
-     * Request to get the search paths that the type server uses for Python modules.
+     * Request to get the search paths that the type server uses for Viper modules.
      */
     export namespace GetPythonSearchPathsRequest {
         export const method = 'typeServer/getPythonSearchPaths' as const;

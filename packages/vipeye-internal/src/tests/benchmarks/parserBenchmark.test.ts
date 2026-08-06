@@ -2,7 +2,7 @@
  * parserBenchmark.test.ts
  * Copyright (c) Microsoft Corporation.
  *
- * Microbenchmark for the Python parser.
+ * Microbenchmark for the Viper parser.
  * Measures nodes/sec, parse time, AST node count across representative corpora.
  *
  * Run with:

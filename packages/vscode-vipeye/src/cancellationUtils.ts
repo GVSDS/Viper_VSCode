@@ -20,7 +20,7 @@ import {
 import { randomBytesHex } from 'vipeye-internal/common/crypto';
 
 function getCancellationFolderPath(folderName: string) {
-    return path.join(os.tmpdir(), 'python-languageserver-cancellation', folderName);
+    return path.join(os.tmpdir(), 'viper-languageserver-cancellation', folderName);
 }
 
 function getCancellationFilePath(folderName: string, id: CancellationId) {

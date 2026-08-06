@@ -1825,7 +1825,7 @@ export class Checker extends ParseTreeWalker {
             importResult.nonStubImportResult.isImportFound ||
             // The non-stub resolution can report `isImportFound === false` yet `isNativeLib === true`
             // when a compiled extension (.pyd/.so) backs a path segment of the import. A compiled
-            // extension has no Python source, but the module itself exists at runtime via the native
+            // extension has no Viper source, but the module itself exists at runtime via the native
             // lib, so "could not be resolved from source" is misleading.
             importResult.nonStubImportResult.isNativeLib
         ) {

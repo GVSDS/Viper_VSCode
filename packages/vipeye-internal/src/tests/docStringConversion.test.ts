@@ -3,7 +3,7 @@
  * Copyright (c) Microsoft Corporation.
  * Licensed under the MIT license.
  *
- * Tests for the Python doc string to markdown converter.
+ * Tests for the Viper doc string to markdown converter.
  */
 
 import assert = require('assert');

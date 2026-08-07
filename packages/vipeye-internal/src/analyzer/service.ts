@@ -67,7 +67,7 @@ import {
     findConfigFileHereOrUp,
     findPyprojectTomlFile,
     findPyprojectTomlFileHereOrUp,
-    findVpjInChildDirs,
+    findViperProjectConfigsInChildDirs,
 } from './serviceUtils';
 import { SourceEnumerator } from './sourceEnumerator';
 import { IPythonMode } from './sourceFile';
@@ -802,6 +802,9 @@ export class AnalyzerService {
         let projectRoot = executionRoot;
         let configFilePath: Uri | undefined;
         let pyprojectFilePath: Uri | undefined;
+        // Viper 扩展：工作区根下收集到的所有子项目配置（*.vpj / project.json），
+        // 供下方遍历累加各子项目的 source_dir / includes 到 defaultExtraPaths。
+        let viperChildConfigPaths: Uri[] | undefined;
 
         if (commandLineOptions.configFilePath) {
             // If the config file path was specified, determine whether it's
@@ -832,12 +835,15 @@ export class AnalyzerService {
             // project root directory contains the config file.
             configFilePath = findConfigFile(this.fs, projectRoot);
 
-            // Viper 扩展：LSP 模式下，如果工作区根没有配置文件，扫描一级子目录查找 .vpj。
-            // 支持工作区根（如 Viper_VSCode）包含子项目（如 Test/project.vpj）的场景。
-            // 找到 .vpj 后，projectRoot 调整为 .vpj 所在目录（后续 L842 逻辑），
-            // .vpj 的 includes 会被 _initializeFromViperProjectJson 解析为 defaultExtraPaths。
+            // Viper 扩展：LSP 模式下，如果工作区根没有配置文件，扫描一级子目录查找所有
+            // Viper 项目配置（*.vpj / project.json）。
+            // 支持工作区根（如 TransPyC）包含多个子项目（如 TransPyV / ViperTemplateProject）的场景：
+            // 每个子项目的 source_dir（如 ./App）都应作为全局导入根（App 根级全局可导入），
+            // includes 作为额外搜索路径。projectRoot 调整为第一个配置所在目录（后续 L850 逻辑），
+            // 其余配置的 source_dir/includes 由下方遍历 _initializeFromViperProjectJson 累加。
             if (!configFilePath && commandLineOptions.fromLanguageServer) {
-                configFilePath = findVpjInChildDirs(this.fs, projectRoot);
+                viperChildConfigPaths = findViperProjectConfigsInChildDirs(this.fs, projectRoot);
+                configFilePath = viperChildConfigPaths[0];
             }
 
             // If viper is being executed from the command line, the working
@@ -904,6 +910,22 @@ export class AnalyzerService {
                     primaryConfig.configFileDirUri,
                     configOptions
                 );
+
+                // Viper 扩展：工作区根下收集到的其他子项目配置（*.vpj / project.json）
+                // 也要解析 source_dir / includes 到 defaultExtraPaths，
+                // 使各子项目的 App 根级全局可导入（如 TransPyV/App/lib 的 import lib.core.VLogger）。
+                if (viperChildConfigPaths && viperChildConfigPaths.length > 1) {
+                    for (let i = 1; i < viperChildConfigPaths.length; i++) {
+                        const extraConfigs = this._getExtendedConfigurations(viperChildConfigPaths[i], undefined);
+                        if (extraConfigs && extraConfigs.length > 0) {
+                            this._initializeFromViperProjectJson(
+                                extraConfigs[0].configFileJsonObj,
+                                extraConfigs[0].configFileDirUri,
+                                configOptions
+                            );
+                        }
+                    }
+                }
             } else {
                 for (const config of configs) {
                     configOptions.initializeFromJson(

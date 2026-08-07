@@ -69,30 +69,41 @@ export function findVpjFileInDir(fs: ReadOnlyFileSystem, dirUri: Uri): Uri | und
     return undefined;
 }
 
-// Viper 扩展：在目录的一级子目录中查找 .vpj 文件。
-// 用于 LSP 模式下工作区根（如 Viper_VSCode）未直接包含 .vpj，
-// 但子目录（如 Test/）包含 Viper 项目配置的场景。
+// Viper 扩展：在目录的一级子目录中查找所有 Viper 项目配置文件（*.vpj / project.json）。
+// 用于 LSP 模式下工作区根（如 TransPyC）未直接包含配置文件，
+// 但子目录（如 TransPyV/）包含 Viper 项目配置的场景。
+// 每个子项目的 source_dir（如 ./App）都应作为全局导入根，
+// includes 作为额外搜索路径 —— App 根级全局可导入。
 // 仅扫描一级子目录（非递归），避免深层遍历开销。
-// 失败时返回 undefined。
-export function findVpjInChildDirs(fs: ReadOnlyFileSystem, dirUri: Uri): Uri | undefined {
+// 失败或未找到时返回空数组。
+export function findViperProjectConfigsInChildDirs(fs: ReadOnlyFileSystem, dirUri: Uri): Uri[] {
+    const configs: Uri[] = [];
     try {
         if (!fs.existsSync(dirUri)) {
-            return undefined;
+            return configs;
         }
         const entries = fs.readdirEntriesSync(dirUri);
         for (const entry of entries) {
-            if (entry.isDirectory()) {
-                const childDir = dirUri.resolvePaths(entry.name);
-                const vpjFile = findVpjFileInDir(fs, childDir);
-                if (vpjFile) {
-                    return vpjFile;
-                }
+            if (!entry.isDirectory()) {
+                continue;
+            }
+            const childDir = dirUri.resolvePaths(entry.name);
+            // 优先 .vpj（Viper Project）：当目录同时存在 project.vpj 与 project.json 时，优先使用 .vpj。
+            const vpjFile = findVpjFileInDir(fs, childDir);
+            if (vpjFile) {
+                configs.push(vpjFile);
+                continue;
+            }
+            // TransPyC project.json：仅当 schema 匹配（含 source_dir / compiler / linker 之一）时收集。
+            const projectFileName = childDir.resolvePaths(viperProjectFileName);
+            if (fs.existsSync(projectFileName) && isViperProjectConfig(fs, projectFileName)) {
+                configs.push(fs.realCasePath(projectFileName));
             }
         }
     } catch {
         // 读取目录失败：跳过
     }
-    return undefined;
+    return configs;
 }
 
 // 校验 project.json / project.vpj 是否为 Viper（TransPyC）项目配置。

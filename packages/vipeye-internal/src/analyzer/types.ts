@@ -826,10 +826,6 @@ export interface ClassDetailsPriv {
     // If undefined, it hasn't been tested yet for asymmetry.
     isAsymmetricDescriptor?: boolean;
 
-    // Indicates whether the class has an asymmetric __getattr__ and
-    // __setattr__ signature.
-    isAsymmetricAttributeAccessor?: boolean;
-
     // Special-case fields for property classes.
     fgetInfo?: PropertyMethodInfo | undefined;
     fsetInfo?: PropertyMethodInfo | undefined;

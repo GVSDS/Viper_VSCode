@@ -29,7 +29,7 @@
         "annotationBytesString": "Type expressions cannot use bytes string literals",
         "annotationFormatString": {
             "message": "Type expressions cannot use format string literals (f-strings)",
-            "comment": "'f-string' is the common English slang for a Python format string"
+            "comment": "'f-string' is the common English slang for a Viper format string"
         },
         "annotationNotSupported": "Type annotation not supported for this statement",
         "annotationRawString": "Type expressions cannot use raw string literals",
@@ -37,7 +37,7 @@
         "annotationStringEscape": "Type expressions cannot contain escape characters",
         "annotationTemplateString": {
             "message": "Type expressions cannot use template string literals (t-strings)",
-            "comment": "'t-string' is the common English slang for a Python template string"
+            "comment": "'t-string' is the common English slang for a Viper template string"
         },
         "argAssignment": "Argument of type \"{argType}\" cannot be assigned to parameter of type \"{paramType}\"",
         "argAssignmentFunction": "Argument of type \"{argType}\" cannot be assigned to parameter of type \"{paramType}\" in function \"{functionName}\"",
@@ -69,7 +69,7 @@
             "comment": "A comprehension is a 'set of looping and filtering instructions' applied to a collection to generate a new collection; the word may not be translatable"
         },
         "assignmentExprContext": "Assignment expression must be within module, function or lambda",
-        "assignmentExprInSubscript": "Assignment expressions within a subscript are supported only in Python 3.10 and newer",
+        "assignmentExprInSubscript": "Assignment expressions within a subscript are supported only in Viper 3.10 and newer",
         "assignmentInProtocol": {
             "message": "Instance or class variables within a Protocol class must be explicitly declared within the class body",
             "comment": "{Locked='Protocol'}"
@@ -80,7 +80,7 @@
             "comment": "{Locked='async'}"
         },
         "awaitIllegal": {
-            "message": "Use of \"await\" requires Python 3.5 or newer",
+            "message": "Use of \"await\" requires Viper 3.5 or newer",
             "comment": "{Locked='await'}"
         },
         "awaitNotAllowed": {
@@ -92,7 +92,7 @@
             "comment": "{Locked='await','async'}"
         },
         "backticksIllegal": {
-            "message": "Expressions surrounded by backticks are not supported in Python 3.x; use repr instead",
+            "message": "Expressions surrounded by backticks are not supported in Viper 3.x; use repr instead",
             "comment": "{Locked='repr'}"
         },
         "baseClassCircular": "Class cannot derive from itself",
@@ -153,8 +153,8 @@
         "classPatternNewType": "\"{type}\" cannot be used in a class pattern because it is defined using NewType",
         "classPatternPositionalArgCount": "Too many positional patterns for class \"{type}\"; expected {expected} but received {received}",
         "classPatternTypeAlias": "\"{type}\" cannot be used in a class pattern because it is a specialized type alias",
-        "classPropertyDeprecated": "Class properties are deprecated in Python 3.11 and will not be supported in Python 3.13",
-        "classTypeParametersIllegal": "Class type parameter syntax requires Python 3.12 or newer",
+        "classPropertyDeprecated": "Class properties are deprecated in Viper 3.11 and will not be supported in Viper 3.13",
+        "classTypeParametersIllegal": "Class type parameter syntax requires Viper 3.12 or newer",
         "classVarFirstArgMissing": {
             "message": "Expected a type argument after \"ClassVar\"",
             "comment": "{Locked='ClassVar'}"
@@ -294,7 +294,7 @@
             "message": "The setter for property \"{name}\" is deprecated",
             "comment": "{Locked='setter','property'}"
         },
-        "deprecatedType": "This type is deprecated as of Python {version}; use \"{replacement}\" instead",
+        "deprecatedType": "This type is deprecated as of Viper {version}; use \"{replacement}\" instead",
         "dictExpandIllegalInComprehension": {
             "message": "Dictionary expansion not allowed in comprehension",
             "comment": "A comprehension is a 'set of looping and filtering instructions' applied to a collection to generate a new collection; the word may not be translatable"
@@ -359,7 +359,7 @@
             "comment": "{Locked='__before_init__'}"
         },
         "exceptionGroupIncompatible": {
-            "message": "Exception group syntax (\"except*\") requires Python 3.11 or newer",
+            "message": "Exception group syntax (\"except*\") requires Viper 3.11 or newer",
             "comment": "{Locked='except*'}"
         },
         "exceptGroupMismatch": {
@@ -381,7 +381,7 @@
         "exceptionTypeNotClass": "\"{type}\" is not a valid exception class",
         "exceptionTypeNotInstantiable": "Constructor for exception type \"{type}\" requires one or more arguments",
         "exceptWithAsRequiresParens": "Multiple exception types must be parenthesized when using \"as\"",
-        "exceptRequiresParens": "Multiple exception types must be parenthesized prior to Python 3.14",
+        "exceptRequiresParens": "Multiple exception types must be parenthesized prior to Viper 3.14",
         "expectedAfterDecorator": "Expected function or class declaration after decorator",
         "expectedArrow": "Expected \"->\" followed by return type annotation",
         "expectedAsAfterException": {
@@ -407,7 +407,7 @@
             "message": "Expected complex number literal for pattern matching",
             "comment": "Complex numbers are a mathematical concept consisting of a real number and an imaginary number"
         },
-        "expectedDecoratorExpr": "Expression form not supported for decorator prior to Python 3.9",
+        "expectedDecoratorExpr": "Expression form not supported for decorator prior to Viper 3.9",
         "expectedDecoratorName": "Expected decorator name",
         "expectedDecoratorNewline": "Expected new line at end of decorator",
         "expectedDelExpr": {
@@ -537,52 +537,52 @@
         },
         "formatStringBrace": {
             "message": "Single close brace not allowed within f-string literal; use double close brace",
-            "comment": "'f-string' is the common English slang for a Python format string"
+            "comment": "'f-string' is the common English slang for a Viper format string"
         },
         "formatStringBytes": {
             "message": "Format string literals (f-strings) cannot be binary",
-            "comment": "'f-string' is the common English slang for a Python format string"
+            "comment": "'f-string' is the common English slang for a Viper format string"
         },
         "formatStringDebuggingIllegal": {
-            "message": "F-string debugging specifier \"=\" requires Python 3.8 or newer",
-            "comment": "'f-string' is the common English slang for a Python format string"
+            "message": "F-string debugging specifier \"=\" requires Viper 3.8 or newer",
+            "comment": "'f-string' is the common English slang for a Viper format string"
         },
         "formatStringEscape": {
-            "message": "Escape sequence (backslash) not allowed in expression portion of f-string prior to Python 3.12",
-            "comment": "'f-string' is the common English slang for a Python format string"
+            "message": "Escape sequence (backslash) not allowed in expression portion of f-string prior to Viper 3.12",
+            "comment": "'f-string' is the common English slang for a Viper format string"
         },
         "formatStringExpectedConversion": {
             "message": "Expected a conversion specifier after \"!\" in f-string",
-            "comment": "'f-string' is the common English slang for a Python format string"
+            "comment": "'f-string' is the common English slang for a Viper format string"
         },
         "formatStringIllegal": {
-            "message": "Format string literals (f-strings) require Python 3.6 or newer",
-            "comment": "'f-string' is the common English slang for a Python format string"
+            "message": "Format string literals (f-strings) require Viper 3.6 or newer",
+            "comment": "'f-string' is the common English slang for a Viper format string"
         },
         "formatStringInPattern": "Format string not allowed in pattern",
         "formatStringNestedFormatSpecifier": "Expressions nested too deeply within format string specifier",
         "formatStringNestedQuote": {
-            "message": "Strings nested within an f-string cannot use the same quote character as the f-string prior to Python 3.12",
-            "comment": "'f-string' is the common English slang for a Python format string"
+            "message": "Strings nested within an f-string cannot use the same quote character as the f-string prior to Viper 3.12",
+            "comment": "'f-string' is the common English slang for a Viper format string"
         },
         "formatStringTemplate": {
             "message": "Format string literals (f-strings) cannot also be template strings (t-strings)",
-            "comment": "'f-string' is the common English slang for a Python format string, 't-string' is the common English slang for a Python template string"
+            "comment": "'f-string' is the common English slang for a Viper format string, 't-string' is the common English slang for a Viper template string"
         },
         "formatStringUnicode": {
             "message": "Format string literals (f-strings) cannot be unicode",
-            "comment": "'f-string' is the common English slang for a Python format string"
+            "comment": "'f-string' is the common English slang for a Viper format string"
         },
         "formatStringUnterminated": {
             "message": "Unterminated expression in f-string; expecting \"}\"",
-            "comment": "'f-string' is the common English slang for a Python format string"
+            "comment": "'f-string' is the common English slang for a Viper format string"
         },
         "functionDecoratorTypeUnknown": "Untyped function decorator obscures type of function; ignoring decorator",
         "functionInConditionalExpression": {
             "message": "Conditional expression references function which always evaluates to True",
             "comment": "{Locked='True'}"
         },
-        "functionTypeParametersIllegal": "Function type parameter syntax requires Python 3.12 or newer",
+        "functionTypeParametersIllegal": "Function type parameter syntax requires Viper 3.12 or newer",
         "futureImportLocationNotAllowed": {
             "message": "Imports from __future__ must be at the beginning of the file",
             "comment": "{Locked='__future__'}"
@@ -713,7 +713,7 @@
         "keywordSubscriptIllegal": "Keyword arguments within subscripts are not supported",
         "lambdaReturnTypePartiallyUnknown": "Return type of lambda, \"{returnType}\", is partially unknown",
         "lambdaReturnTypeUnknown": "Return type of lambda is unknown",
-        "lazyImportIllegal": "Lazy import statement requires Python 3.15 or newer",
+        "lazyImportIllegal": "Lazy import statement requires Viper 3.15 or newer",
         "lazyImportWildcardIllegal": "Wildcard imports cannot be used with 'lazy'",
         "listAssignmentMismatch": "Expression with type \"{type}\" cannot be assigned to target list",
         "listInAnnotation": {
@@ -741,7 +741,7 @@
             "comment": "{Locked='Literal','None','int','bool','str','bytes','enum'}"
         },
         "matchIncompatible": {
-            "message": "Match statements require Python 3.10 or newer",
+            "message": "Match statements require Viper 3.10 or newer",
             "comment": ["{StrContains=i'match'}", "'match' is a keyword and should not be localized. It is only capitalized here because it is the first word in the sentence"]
         },
         "matchIsNotExhaustive": {
@@ -931,7 +931,7 @@
         "obscuredParameterDeclaration": "Parameter declaration \"{name}\" is obscured by a declaration of the same name",
         "obscuredTypeAliasDeclaration": "Type alias declaration \"{name}\" is obscured by a declaration of the same name",
         "obscuredVariableDeclaration": "Declaration \"{name}\" is obscured by a declaration of the same name",
-        "operatorLessOrGreaterDeprecated": "Operator \"<>\" is not supported in Python 3; use \"!=\" instead",
+        "operatorLessOrGreaterDeprecated": "Operator \"<>\" is not supported in Viper 3; use \"!=\" instead",
         "optionalExtraArgs": {
             "message": "Expected one type argument after \"Optional\"",
             "comment": "{Locked='Optional'}"
@@ -1047,7 +1047,7 @@
         "paramTypePartiallyUnknown": "Type of parameter \"{paramName}\" is partially unknown",
         "paramTypeUnknown": "Type of parameter \"{paramName}\" is unknown",
         "parenthesizedContextManagerIllegal": {
-            "message": "Parentheses within \"with\" statement requires Python 3.9 or newer",
+            "message": "Parentheses within \"with\" statement requires Viper 3.9 or newer",
             "comment": "{Locked='with'}"
         },
         "patternNeverMatches": "Pattern will never be matched for subject type \"{type}\"",
@@ -1057,7 +1057,7 @@
         "positionOnlyAfterKeywordOnly": "\"/\" parameter must appear before \"*\" parameter",
         "positionOnlyAfterNon": "Position-only parameter not allowed after parameter that is not position-only",
         "positionOnlyFirstParam": "Position-only parameter separator not allowed as first parameter",
-        "positionOnlyIncompatible": "Position-only parameter separator requires Python 3.8 or newer",
+        "positionOnlyIncompatible": "Position-only parameter separator requires Viper 3.8 or newer",
         "privateImportFromPyTypedModule": "\"{name}\" is not exported from module \"{module}\"",
         "privateUsedOutsideOfClass": "\"{name}\" is private and used outside of the class in which it is declared",
         "privateUsedOutsideOfModule": "\"{name}\" is private and used outside of the module in which it is declared",
@@ -1079,7 +1079,7 @@
             "comment": "{Locked='Protocol'}"
         },
         "protocolIllegal": {
-            "message": "Use of \"Protocol\" requires Python 3.7 or newer",
+            "message": "Use of \"Protocol\" requires Viper 3.7 or newer",
             "comment": "{Locked='Protocol'}"
         },
         "protocolNotAllowed": {
@@ -1253,7 +1253,7 @@
             "comment": ["{Locked='__getattr__'}", "{StrContains=i'stub'}"]
         },
         "sublistParamsIncompatible": {
-            "message": "Sublist parameters are not supported in Python 3.x",
+            "message": "Sublist parameters are not supported in Viper 3.x",
             "comment": "{StrContains=i'sublist'}"
         },
         "superCallArgCount": {
@@ -1282,15 +1282,15 @@
         "symbolOverridden": "\"{name}\" overrides symbol of same name in class \"{className}\"",
         "templateStringBytes": {
             "message": "Template string literals (t-strings) cannot be binary",
-            "comment": "'t-string' is the common English slang for a Python template string"
+            "comment": "'t-string' is the common English slang for a Viper template string"
         },
         "templateStringIllegal": {
-            "message": "Template string literals (t-strings) require Python 3.14 or newer",
-            "comment": "'t-string' is the common English slang for a Python template string"
+            "message": "Template string literals (t-strings) require Viper 3.14 or newer",
+            "comment": "'t-string' is the common English slang for a Viper template string"
         },
         "templateStringUnicode": {
             "message": "Template string literals (t-strings) cannot be unicode",
-            "comment": "'t-string' is the common English slang for a Python template string"
+            "comment": "'t-string' is the common English slang for a Viper template string"
         },
         "ternaryNotAllowed": "Ternary expression not allowed in type expression",
         "totalOrderingMissingMethod": {
@@ -1325,7 +1325,7 @@
             "message": "A type statement can be used only within a module or class scope",
             "comment": "{Locked='type'}"
         },
-        "typeAliasStatementIllegal": "Type alias statement requires Python 3.12 or newer",
+        "typeAliasStatementIllegal": "Type alias statement requires Viper 3.12 or newer",
         "typeAliasTypeBadScope": "A type alias can be defined only within a module or class scope",
         "typeAliasTypeBaseClass": {
             "message": "A type alias defined in a \"type\" statement cannot be used as a base class",
@@ -1450,7 +1450,7 @@
             "message": "TypeVar default type must be one of the constrained types",
             "comment": "{Locked='TypeVar'}"
         },
-        "typeVarDefaultIllegal": "Type variable default types require Python 3.13 or newer",
+        "typeVarDefaultIllegal": "Type variable default types require Viper 3.13 or newer",
         "typeVarDefaultInvalidTypeVar": "Type parameter \"{name}\" has a default type that refers to one or more type variables that are out of scope",
         "typeVarFirstArg": {
             "message": "Expected name of TypeVar as first argument",
@@ -1636,7 +1636,7 @@
             "comment": "{Locked='Union'}"
         },
         "unionSyntaxIllegal": {
-            "message": "Alternative syntax for unions requires Python 3.10 or newer",
+            "message": "Alternative syntax for unions requires Viper 3.10 or newer",
             "comment": "'unions' as in the mathematical set theory term"
         },
         "unionTypeArgCount": {
@@ -1711,7 +1711,7 @@
         },
         "unpackOperatorNotAllowed": "Unpack operation is not allowed in this context",
         "unpackTuplesIllegal": {
-            "message": "Unpack operation not allowed in tuples prior to Python 3.8",
+            "message": "Unpack operation not allowed in tuples prior to Viper 3.8",
             "comment": "'tuple' is a keyword and should not be localized, but here it is pluralized"
         },
         "unpackedArgInTypeArgument": "Unpacked arguments cannot be used in this context",
@@ -1724,7 +1724,7 @@
             "comment": "{Locked='str'}"
         },
         "unpackedDictSubscriptIllegal": "Dictionary unpack operator in subscript is not allowed",
-        "unpackedSubscriptIllegal": "Unpack operator in subscript requires Python 3.11 or newer",
+        "unpackedSubscriptIllegal": "Unpack operator in subscript requires Viper 3.11 or newer",
         "unpackedTypeVarTupleExpected": {
             "message": "Expected unpacked TypeVarTuple; use Unpack[{name1}] or *{name2}",
             "comment": "{Locked='TypeVarTuple','Unpack[{name1}]','*{name2}'}"
@@ -1751,7 +1751,7 @@
         },
         "unusedExpression": "Expression value is unused",
         "varAnnotationIllegal": {
-            "message": "Type annotations for variables requires Python 3.6 or newer; use type comment for compatibility with previous versions",
+            "message": "Type annotations for variables requires Viper 3.6 or newer; use type comment for compatibility with previous versions",
             "comment": "{Locked='type'}"
         },
         "variableFinalOverride": {
@@ -1770,7 +1770,7 @@
             "message": "Generic class can have at most one TypeVarTuple type parameter but received multiple ({names})",
             "comment": ["{Locked='TypeVarTuple'}", "A generic type is a parameterized type, for example a container where the generic type parameter specifies the type of elements in the container"]
         },
-        "walrusIllegal": "Operator \":=\" requires Python 3.8 or newer",
+        "walrusIllegal": "Operator \":=\" requires Viper 3.8 or newer",
         "walrusNotAllowed": "Operator \":=\" is not allowed in this context without surrounding parentheses",
         "wildcardInFunction": {
             "message": "Wildcard import not allowed within a class or function",
@@ -1783,7 +1783,7 @@
         "wildcardPatternTypePartiallyUnknown": "Type captured by wildcard pattern is partially unknown",
         "wildcardPatternTypeUnknown": "Type captured by wildcard pattern is unknown",
         "yieldFromIllegal": {
-            "message": "Use of \"yield from\" requires Python 3.3 or newer",
+            "message": "Use of \"yield from\" requires Viper 3.3 or newer",
             "comment": "{Locked='yield from'}"
         },
         "yieldFromOutsideAsync": {

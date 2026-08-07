@@ -7376,44 +7376,7 @@ export function createTypeEvaluator(
         return isAsymmetric;
     }
 
-    function isClassWithAsymmetricAttributeAccessor(classType: ClassType): boolean {
-        // If the value has already been cached in this type, return the cached value.
-        if (classType.priv.isAsymmetricAttributeAccessor !== undefined) {
-            return classType.priv.isAsymmetricAttributeAccessor;
-        }
-
-        let isAsymmetric = false;
-
-        const getterSymbolResult = lookUpClassMember(classType, '__getattr__', MemberAccessFlags.SkipBaseClasses);
-        const setterSymbolResult = lookUpClassMember(classType, '__setattr__', MemberAccessFlags.SkipBaseClasses);
-
-        if (!getterSymbolResult || !setterSymbolResult) {
-            isAsymmetric = false;
-        } else {
-            const getterType = getEffectiveTypeOfSymbol(getterSymbolResult.symbol);
-            const setterType = getEffectiveTypeOfSymbol(setterSymbolResult.symbol);
-
-            // If either the setter or getter is an overload (or some other non-function type),
-            // conservatively assume that it's not asymmetric.
-            if (isFunction(getterType) && isFunction(setterType)) {
-                // If there's no declared return type on the getter, assume it's symmetric.
-                if (setterType.shared.parameters.length >= 3 && getterType.shared.declaredReturnType) {
-                    const setterValueType = FunctionType.getParamType(setterType, 2);
-                    const getterReturnType = FunctionType.getEffectiveReturnType(getterType) ?? UnknownType.create();
-
-                    if (!isTypeSame(setterValueType, getterReturnType)) {
-                        isAsymmetric = true;
-                    }
-                }
-            }
-        }
-
-        // Cache the value for next time.
-        classType.priv.isAsymmetricAttributeAccessor = isAsymmetric;
-        return isAsymmetric;
-    }
-
-    // Applies the __getattr__, __setattr__ or __delattr__ method if present.
+    // Applies the CPtr[Struct] pointer-dereference semantics for member access.
     // If it's not applicable, returns undefined.
     function applyAttributeAccessOverride(
         errorNode: ExpressionNode,
@@ -7449,90 +7412,8 @@ export function createTypeEvaluator(
                     }
                 }
             }
-            return undefined;
         }
-
-        const getAttributeAccessMember = (name: string) => {
-            return getTypeOfBoundMember(
-                errorNode,
-                classType,
-                name,
-                /* usage */ undefined,
-                /* diag */ undefined,
-                MemberAccessFlags.SkipInstanceMembers |
-                    MemberAccessFlags.SkipObjectBaseClass |
-                    MemberAccessFlags.SkipTypeBaseClass |
-                    MemberAccessFlags.SkipAttributeAccessOverride,
-                selfType
-            )?.type;
-        };
-
-        let accessMemberType: Type | undefined;
-        if (usage.method === 'get') {
-            accessMemberType = getAttributeAccessMember('__getattribute__') ?? getAttributeAccessMember('__getattr__');
-        } else if (usage.method === 'set') {
-            accessMemberType = getAttributeAccessMember('__setattr__');
-        } else {
-            assert(usage.method === 'del');
-            accessMemberType = getAttributeAccessMember('__delattr__');
-        }
-
-        if (!accessMemberType) {
-            return undefined;
-        }
-
-        const argList: Arg[] = [];
-
-        // Provide "name" argument.
-        argList.push({
-            argCategory: ArgCategory.Simple,
-            typeResult: {
-                type:
-                    prefetched?.strClass && isInstantiableClass(prefetched.strClass)
-                        ? ClassType.cloneWithLiteral(ClassType.cloneAsInstance(prefetched.strClass), memberName)
-                        : AnyType.create(),
-            },
-        });
-
-        if (usage.method === 'set') {
-            // Provide "value" argument.
-            argList.push({
-                argCategory: ArgCategory.Simple,
-                typeResult: {
-                    type: usage.setType?.type ?? UnknownType.create(),
-                    isIncomplete: !!usage.setType?.isIncomplete,
-                },
-            });
-        }
-
-        if (!isFunctionOrOverloaded(accessMemberType)) {
-            if (isAnyOrUnknown(accessMemberType)) {
-                return { type: accessMemberType };
-            }
-
-            // TODO - emit an error for this condition.
-            return undefined;
-        }
-
-        const callResult = validateCallArgs(
-            errorNode,
-            argList,
-            { type: accessMemberType },
-            /* constraints */ undefined,
-            /* skipUnknownArgCheck */ true,
-            /* inferenceContext */ undefined
-        );
-
-        let isAsymmetricAccessor = false;
-        if (usage.method === 'set') {
-            isAsymmetricAccessor = isClassWithAsymmetricAttributeAccessor(classType);
-        }
-
-        return {
-            type: callResult.returnType ?? UnknownType.create(),
-            typeErrors: callResult.argumentErrors,
-            isAsymmetricAccessor,
-        };
+        return undefined;
     }
 
     function getTypeOfIndex(node: IndexNode, flags = EvalFlags.None): TypeResult {
@@ -15472,6 +15353,8 @@ export function createTypeEvaluator(
         const keyFlags = flags & ~(EvalFlags.TypeExpression | EvalFlags.StrLiteralAsType | EvalFlags.InstantiableType);
 
         // Infer the key and value types if possible.
+        // getTypeVarScopesForNode 与 node 无关，在循环外计算一次以复用。
+        const dictLiveTypeVarScopes = ParseTreeUtils.getTypeVarScopesForNode(node);
         node.d.items.forEach((entryNode, index) => {
             let addUnknown = true;
 
@@ -15517,8 +15400,7 @@ export function createTypeEvaluator(
                         expectedTypedDictEntries.knownItems.get(keyType.priv.literalValue as string)?.valueType ??
                         expectedTypedDictEntries.extraItems?.valueType;
                     if (effectiveValueType) {
-                        const liveTypeVarScopes = ParseTreeUtils.getTypeVarScopesForNode(node);
-                        effectiveValueType = transformExpectedType(effectiveValueType, liveTypeVarScopes, node.start);
+                        effectiveValueType = transformExpectedType(effectiveValueType, dictLiveTypeVarScopes, node.start);
                     }
                     entryInferenceContext = makeInferenceContext(effectiveValueType);
                     valueTypeResult = getTypeOfExpression(
@@ -15530,8 +15412,7 @@ export function createTypeEvaluator(
                     let effectiveValueType =
                         expectedValueType ?? (forceStrictInference ? NeverType.createNever() : undefined);
                     if (effectiveValueType) {
-                        const liveTypeVarScopes = ParseTreeUtils.getTypeVarScopesForNode(node);
-                        effectiveValueType = transformExpectedType(effectiveValueType, liveTypeVarScopes, node.start);
+                        effectiveValueType = transformExpectedType(effectiveValueType, dictLiveTypeVarScopes, node.start);
                     }
                     entryInferenceContext = makeInferenceContext(effectiveValueType);
                     valueTypeResult = getTypeOfExpression(

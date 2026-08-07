@@ -2,33 +2,18 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Vipeye CLI",
+            "name": "Vipeye CLI (vipeye-internal)",
             "type": "node",
             "request": "launch",
-            "program": "${workspaceRoot}/packages/Vipeye/index.js",
-            "preLaunchTask": "npm: build:cli:dev",
-            "args": [
-                "--verifytypes",
-                "pandas.core.reshape.concat",
-            ],
-            "internalConsoleOptions": "openOnSessionStart",
-            "outFiles": [
-                "${workspaceRoot}/packages/Vipeye/dist/**/*.js"
-            ]
-        },
-        {
-            "name": "Vipeye CLI (Vipeye-internal)",
-            "type": "node",
-            "request": "launch",
-            "program": "${workspaceRoot}/packages/Vipeye-internal/debug.js",
+            "program": "${workspaceRoot}/packages/vipeye-internal/debug.js",
             "args": [
                 "--typeshedpath",
-                "${workspaceRoot}/packages/Vipeye-internal/typeshed-fallback",
+                "${workspaceRoot}/packages/vipeye-internal/typeshed-fallback",
                 "--version",
             ],
             "internalConsoleOptions": "openOnSessionStart",
             "outFiles": [
-                "${workspaceRoot}/packages/Vipeye-internal/out/**/*.js"
+                "${workspaceRoot}/packages/vipeye-internal/out/**/*.js"
             ]
         },
         {
@@ -38,51 +23,48 @@
             "args": [
                 "--runInBand"
             ],
-            "cwd": "${workspaceRoot}/packages/Vipeye-internal",
+            "cwd": "${workspaceRoot}/packages/vipeye-internal",
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
-            "program": "${workspaceFolder}/packages/Vipeye-internal/node_modules/jest/bin/jest"
+            "program": "${workspaceFolder}/packages/vipeye-internal/node_modules/jest/bin/jest"
         },
         {
             "name": "Vipeye extension",
             "type": "extensionHost",
             "request": "launch",
-            // "runtimeExecutable": "${workspaceRoot}/packages/vscode-Vipeye/dist/extension.js",
             "preLaunchTask": "npm: build:extension:dev",
             "args": [
-                "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-Vipeye",
-                //"--extensionDevelopmentPath=${workspaceFolder}/packages/viper",
-                // The published extension is named "ms-Vipeye.Vipeye", but in debug mode it's "ms-Vipeye.vscode-Vipeye"
-                // to allow the extension code to participate in the lerna monorepo. Make sure that the published extension
-                // isn't enabled, otherwise both are loaded and conflict.
-                "--disable-extension=ms-Vipeye.Vipeye"
+                // 合并架构：vscode-vipeye 单一包含 Viper 核心（packages/viper）源码，
+                // 调试只加载这一个扩展。不要追加 packages/viper 的 extensionDevelopmentPath，
+                // 否则与合并后的核心重复注册 viper.* 命令 / viper.vpjEditor / 配置属性，
+                // 导致 "command 'xxx' already exists" / "Provider ... already registered"
+                // / "Cannot register 'viper.xxx' ... already registered" 激活失败。
+                "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-vipeye",
+                // 禁用已安装的发布版，避免与调试版同时加载冲突。
+                "--disable-extension=TermiNexus.vscode-vipeye"
             ],
             "smartStep": true,
             "sourceMaps": true,
             "outFiles": [
-                "${workspaceRoot}/packages/vscode-Vipeye/dist/**/*.js"
+                "${workspaceRoot}/packages/vscode-vipeye/dist/**/*.js"
             ]
         },
         {
             "name": "Vipeye extension (watch)",
             "type": "extensionHost",
             "request": "launch",
-            // "runtimeExecutable": "${workspaceRoot}/packages/vscode-Vipeye/dist/extension.js",
             "preLaunchTask": "Watch extension",
             "args": [
-                "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-Vipeye",
-                // "--extensionDevelopmentPath=${workspaceFolder}/packages/viper",
-                // The published extension is named "ms-Vipeye.Vipeye", but in debug mode it's "ms-Vipeye.vscode-Vipeye"
-                // to allow the extension code to participate in the lerna monorepo. Make sure that the published extension
-                // isn't enabled, otherwise both are loaded and conflict.
-                "--disable-extension=ms-Vipeye.Vipeye",
+                // 同 "Vipeye extension"：只加载 vscode-vipeye，不要加载 packages/viper。
+                "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-vipeye",
+                "--disable-extension=TermiNexus.vscode-vipeye",
                 "--disable-extension=be5invis.vscode-custom-css",
                 "--disable-extension=msgcenterext.msgcenter"
             ],
             "smartStep": true,
             "sourceMaps": true,
             "outFiles": [
-                "${workspaceRoot}/packages/vscode-Vipeye/dist/**/*.js"
+                "${workspaceRoot}/packages/vscode-vipeye/dist/**/*.js"
             ]
         },
         {
@@ -93,7 +75,7 @@
             "smartStep": true,
             "sourceMaps": true,
             "outFiles": [
-                "${workspaceRoot}/packages/vscode-Vipeye/dist/**/*.js"
+                "${workspaceRoot}/packages/vscode-vipeye/dist/**/*.js"
             ]
         },
         {
@@ -107,20 +89,20 @@
                 "--forceExit",
                 "--testTimeout=180000"
             ],
-            "cwd": "${workspaceRoot}/packages/Vipeye-internal",
+            "cwd": "${workspaceRoot}/packages/vipeye-internal",
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
-            "program": "${workspaceFolder}/packages/Vipeye-internal/node_modules/jest/bin/jest"
+            "program": "${workspaceFolder}/packages/vipeye-internal/node_modules/jest/bin/jest"
         },
         {
             "name": "Vipeye jest selected test",
             "type": "node",
             "request": "launch",
             "args": ["${fileBasenameNoExtension}", "--runInBand", "-t", "${selectedText}", "--forceExit", "--testTimeout=180000"],
-            "cwd": "${workspaceRoot}/packages/Vipeye-internal",
+            "cwd": "${workspaceRoot}/packages/vipeye-internal",
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
-            "program": "${workspaceFolder}/packages/Vipeye-internal/node_modules/jest/bin/jest"
+            "program": "${workspaceFolder}/packages/vipeye-internal/node_modules/jest/bin/jest"
         },
         {
             "name": "Vipeye fourslash current file",
@@ -131,10 +113,10 @@
                 "-t ${fileBasenameNoExtension}",
                 "--runInBand",
             ],
-            "cwd": "${workspaceRoot}/packages/Vipeye-internal",
+            "cwd": "${workspaceRoot}/packages/vipeye-internal",
             "console": "integratedTerminal",
             "internalConsoleOptions": "neverOpen",
-            "program": "${workspaceFolder}/packages/Vipeye-internal/node_modules/jest/bin/jest"
+            "program": "${workspaceFolder}/packages/vipeye-internal/node_modules/jest/bin/jest"
         }
     ]
 }

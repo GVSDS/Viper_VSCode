@@ -559,6 +559,8 @@ export class ImportResolver {
         // and so on, until the import root is reached.
         const origin = sourceFileUri.getDirectory();
 
+        const importLogger = this._configOptions.verboseOutput ? new ImportLogger() : undefined;
+
         const result = this.cachedParentImportResults.getImportResult(origin, importName, importResult);
         if (result) {
             // Already ran the parent directory resolution for this import name on this location.
@@ -568,10 +570,30 @@ export class ImportResolver {
         // Check whether the given file is in the parent directory import resolution cache.
         const root = getParentImportResolutionRoot(sourceFileUri, execEnv.root);
         if (!this.cachedParentImportResults.checkValidPath(this.fileSystem, sourceFileUri, root)) {
+            // Viper 扩展：源文件不在执行根下（例如 LSP 工作区根被 .vpj 子项目收窄，
+            // main.py 位于子项目目录之外）时，Pyright 原逻辑直接放弃父目录回退。
+            // 这里仍从源文件自身目录解析一次绝对导入（Python 语义：脚本所在目录
+            // 在 sys.path 上），支持 main.py + 同目录包（如 App/lib）的导入。
+            // 不做向上遍历，避免误解析到执行根外的父目录包。
+            if (IsViperDialect(this._configOptions.dialect)) {
+                const originResult = this.resolveAbsoluteImport(
+                    sourceFileUri,
+                    origin,
+                    execEnv,
+                    moduleDescriptor,
+                    importName,
+                    importLogger,
+                    /* allowPartial */ undefined,
+                    /* allowNativeLib */ undefined,
+                    /* useStubPackage */ false,
+                    /* allowPyi */ true
+                );
+                if (originResult?.isImportFound) {
+                    return this.filterImplicitImports(originResult, moduleDescriptor.importedSymbols);
+                }
+            }
             return importResult;
         }
-
-        const importLogger = this._configOptions.verboseOutput ? new ImportLogger() : undefined;
 
         const importPath: ImportPath = { importPath: undefined };
 

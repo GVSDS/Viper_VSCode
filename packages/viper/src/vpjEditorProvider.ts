@@ -18,10 +18,18 @@ export class VpjEditorProvider implements vscode.CustomTextEditorProvider {
 
     public static Register(context: vscode.ExtensionContext): vscode.Disposable {
         const provider = new VpjEditorProvider(context);
-        return vscode.window.registerCustomEditorProvider(VpjEditorProvider.ViewType, provider, {
-            webviewOptions: { retainContextWhenHidden: true },
-            supportsMultipleEditorsPerDocument: false,
-        });
+        try {
+            return vscode.window.registerCustomEditorProvider(VpjEditorProvider.ViewType, provider, {
+                webviewOptions: { retainContextWhenHidden: true },
+                supportsMultipleEditorsPerDocument: false,
+            });
+        } catch (e) {
+            // viper 核心扩展与合并了核心代码的 vscode-vipeye 同时激活时，
+            // 后激活者会因 viewType 已注册而抛错，导致整个扩展激活失败。
+            // 此处跳过重复注册，编辑器由先注册的扩展提供，功能等价。
+            console.warn(`[viper] ${VpjEditorProvider.ViewType} already registered by another extension, skipping.`);
+            return { dispose() {} };
+        }
     }
 
     constructor(private readonly context: vscode.ExtensionContext) {}

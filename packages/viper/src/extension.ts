@@ -52,28 +52,28 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
 
     // 命令。
     context.subscriptions.push(
-        commands.registerCommand('viper.createProject', async () => {
+        RegisterCommandSafe(context, 'viper.createProject', async () => {
             await CreateProjectCommand();
             await projects.DiscoverProjects();
             projectView.Refresh();
         }),
-        commands.registerCommand('viper.selectToolchain', async () => {
+        RegisterCommandSafe(context, 'viper.selectToolchain', async () => {
             await toolchain.SelectToolchain();
         }),
-        commands.registerCommand('viper.showProjectInfo', () => {
+        RegisterCommandSafe(context, 'viper.showProjectInfo', () => {
             ShowProjectInfoCommand(projects);
         }),
-        commands.registerCommand('viper.openSettings', () => {
+        RegisterCommandSafe(context, 'viper.openSettings', () => {
             commands.executeCommand('workbench.action.openSettings', '@ext:TermiNexus.vipeye');
         }),
-        commands.registerCommand('viper.refreshView', async () => {
+        RegisterCommandSafe(context, 'viper.refreshView', async () => {
             await projects.DiscoverProjects();
             toolchain.Refresh();
             projectView.Refresh();
             toolchainView.Refresh();
             settingsView.Refresh();
         }),
-        commands.registerCommand('viper.openVpjAsJson', async (uri?: import('vscode').Uri) => {
+        RegisterCommandSafe(context, 'viper.openVpjAsJson', async (uri?: import('vscode').Uri) => {
             const target = uri ?? window.activeTextEditor?.document.uri;
             if (!target) {
                 window.showWarningMessage('No .vpj file selected.');
@@ -100,6 +100,22 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
 
 export function deactivate(): void {
     // 清理由 context.subscriptions 自动处理。
+}
+
+/** 安全注册命令：vscode-vipeye 单一合并了核心代码，若与独立的 viper 核心扩展
+ *  同时激活，命令可能已被先注册的扩展注册（command 'xxx' already exists）。
+ *  此处捕获重复注册错误并跳过，避免整个扩展激活失败；命令由先注册方提供。 */
+function RegisterCommandSafe(
+    context: ExtensionContext,
+    commandId: string,
+    handler: (...args: any[]) => any
+): import('vscode').Disposable {
+    try {
+        return commands.registerCommand(commandId, handler);
+    } catch (e) {
+        console.warn(`[viper] command '${commandId}' already registered by another extension, skipping.`);
+        return { dispose() {} };
+    }
 }
 
 /** 创建项目命令：在当前 workspace 根目录生成 .vpj 模板。 */

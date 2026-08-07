@@ -51,7 +51,7 @@
             "preLaunchTask": "npm: build:extension:dev",
             "args": [
                 "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-Vipeye",
-                "--extensionDevelopmentPath=${workspaceFolder}/packages/viper",
+                //"--extensionDevelopmentPath=${workspaceFolder}/packages/viper",
                 // The published extension is named "ms-Vipeye.Vipeye", but in debug mode it's "ms-Vipeye.vscode-Vipeye"
                 // to allow the extension code to participate in the lerna monorepo. Make sure that the published extension
                 // isn't enabled, otherwise both are loaded and conflict.
@@ -71,7 +71,7 @@
             "preLaunchTask": "Watch extension",
             "args": [
                 "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-Vipeye",
-                "--extensionDevelopmentPath=${workspaceFolder}/packages/viper",
+                // "--extensionDevelopmentPath=${workspaceFolder}/packages/viper",
                 // The published extension is named "ms-Vipeye.Vipeye", but in debug mode it's "ms-Vipeye.vscode-Vipeye"
                 // to allow the extension code to participate in the lerna monorepo. Make sure that the published extension
                 // isn't enabled, otherwise both are loaded and conflict.

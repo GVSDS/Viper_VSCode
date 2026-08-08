@@ -1459,9 +1459,19 @@ export class AnalyzerService {
             });
         }
 
-        // 写入 defaultExtraPaths；_ensureDefaultOptions 检测到已设置时不会覆盖。
+        // 累加写入 defaultExtraPaths（多个子项目配置时必须累加而非覆盖，
+        // 否则后一个配置会挤掉前一个的 source_dir/includes）；
+        // _ensureDefaultOptions 检测到已设置时不会覆盖。
         if (extraPaths.length > 0) {
-            configOptions.defaultExtraPaths = extraPaths;
+            const existing = configOptions.defaultExtraPaths ?? [];
+            const seen = new Set(existing.map((u) => u.key));
+            for (const p of extraPaths) {
+                if (!seen.has(p.key)) {
+                    existing.push(p);
+                    seen.add(p.key);
+                }
+            }
+            configOptions.defaultExtraPaths = existing;
         }
     }
 

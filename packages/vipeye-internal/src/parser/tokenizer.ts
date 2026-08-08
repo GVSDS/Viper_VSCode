@@ -645,9 +645,10 @@ enum MagicsKind {
 // Viper 支持将 C 修饰/声明语义写成语句前缀关键字：
 //   inline/export/extern/state def f(...)   —— 等价 t.CInline / t.CExport / t.CExtern / t.State
 //   enum/rnum class|struct Foo              —— 等价 t.CEnum / t.REnum
+//   enum Foo: / rnum Foo:                   —— 单独使用（等价 class Foo:）
 //   struct Foo:                             —— 独立的 struct 关键字（等价 class）
 // 返回 'skip'：跳过该关键字 token（后续 def/class 正常解析，位置与缩进不变）；
-// 返回 'class'：把 struct 当作 class 关键字；undefined：按普通标识符处理
+// 返回 'class'：把 enum/rnum/struct 当作 class 关键字；undefined：按普通标识符处理
 // （变量名、成员名、导入名等，如 `import struct as s` 不受影响）。
 function getViperStatementKeywordAction(
     text: string,
@@ -660,7 +661,15 @@ function getViperStatementKeywordAction(
         return nextWord === 'def' ? 'skip' : undefined;
     }
     if (name === 'enum' || name === 'rnum') {
-        return nextWord === 'class' || nextWord === 'struct' ? 'skip' : undefined;
+        if (nextWord === 'class' || nextWord === 'struct') {
+            return 'skip';
+        }
+        // `enum A:` / `rnum A:` 单独使用（等价 class A:）。
+        return isViperAtStatementStart(text, identifierStart) &&
+            nextWord.length > 0 &&
+            isIdentifierStartChar(nextWord.charCodeAt(0))
+            ? 'class'
+            : undefined;
     }
     if (name === 'struct') {
         // 仅当 struct 位于语句起始（行首仅空白）且后跟标识符（类名）时才视为 class，

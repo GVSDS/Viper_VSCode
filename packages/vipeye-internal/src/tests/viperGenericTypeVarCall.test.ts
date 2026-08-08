@@ -356,6 +356,14 @@ rnum class LLVMType:
     class Ptr:
         pointee: t.CPtr
 
+# enum / rnum 单独使用（等价 class）
+enum A:
+    k: t.State
+
+rnum B:
+    class Inner:
+        x: t.CInt
+
 def swap(p: IntPair | t.CPtr):
     tmp: t.CInt = c.Deref(p).a
     c.Deref(p).a = c.Deref(p).b

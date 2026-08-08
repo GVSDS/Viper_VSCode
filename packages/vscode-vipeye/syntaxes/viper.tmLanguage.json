@@ -47,7 +47,7 @@
                 },
                 {
                     "name": "storage.type.class.viper",
-                    "match": "\\b(enum|rnum)\\b(?=\\s+(class|struct)\\b)"
+                    "match": "\\b(enum|rnum)\\b(?=\\s+(class|struct)\\b|\\s+[A-Za-z_][A-Za-z0-9_]*)"
                 },
                 {
                     "name": "storage.type.class.viper",

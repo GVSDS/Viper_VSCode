@@ -6371,6 +6371,24 @@ export function createTypeEvaluator(
                 }
 
                 if (!typeResult) {
+                    // Viper 扩展：REnum 变体字段访问（tagged-union 语义）。
+                    // REnum（t.REnum）的字段定义在嵌套类变体（如 class LLVMType 内的
+                    // class Ptr: Pointee）中，常规类成员查找找不到，需遍历所有
+                    // 嵌套类变体的字段表。放在 getTypeOfBoundMember 之前，避免其
+                    // 先产生 "Attribute is unknown" 诊断。
+                    if (
+                        IsViperDialect(fileInfo.executionEnvironment.dialect) &&
+                        isClassInstance(baseType) &&
+                        isViperREnumClass(baseType)
+                    ) {
+                        const variantFieldType = getViperREnumVariantFieldType(baseType, memberName);
+                        if (variantFieldType) {
+                            typeResult = { type: variantFieldType };
+                        }
+                    }
+                }
+
+                if (!typeResult) {
                     typeResult = getTypeOfBoundMember(
                         node.d.member,
                         baseType,
@@ -7080,6 +7098,17 @@ export function createTypeEvaluator(
 
         if (!isFunctionOrOverloaded(methodType)) {
             if (isAnyOrUnknown(methodType)) {
+                // Viper 扩展：描述符协议（__get__/__set__/__delete__）是 Python 概念，
+                // Viper 的 C 风格结构体字段不适用。当 `__get__` 查找返回 Unknown/Any
+                // （而非 undefined，如 CPtr 等 C 类型类上的查找）时，若直接返回该
+                // Unknown 会污染结构体字段类型（如 `Value.Ty` → Unknown，进而导致
+                // `elem_ptr.Ty.Pointee` 无法解析）。此时应保留成员原始类型 memberType。
+                if (
+                    errorNode &&
+                    IsViperDialect(AnalyzerNodeInfo.getFileInfo(errorNode).executionEnvironment.dialect)
+                ) {
+                    return { type: memberType };
+                }
                 return { type: methodType };
             }
 
@@ -8549,6 +8578,49 @@ export function createTypeEvaluator(
         const parentNode = classNode.parent;
         const grandparentNode = parentNode?.nodeType === ParseNodeType.Suite ? parentNode.parent : undefined;
         return grandparentNode?.nodeType === ParseNodeType.Class;
+    }
+
+    // Viper 扩展：判断类类型是否继承自 t.REnum（REnum tagged-union 根类）。
+    function isViperREnumClass(classType: ClassType): boolean {
+        return classType.shared.mro.some(
+            (baseClass) => isClass(baseClass) && baseClass.shared.fullName?.endsWith('.REnum')
+        );
+    }
+
+    // Viper 扩展：在 REnum 类的所有嵌套类变体中查找字段。
+    // REnum 字段定义在嵌套类变体（如 class LLVMType 内的 class Ptr: Pointee）中，
+    // 访问 REnum 实例的成员时按 tagged-union 语义返回匹配变体的字段符号与类型。
+    function getViperREnumVariantFieldInfo(
+        renumType: ClassType,
+        memberName: string
+    ): { symbol: Symbol; type: Type } | undefined {
+        const symbolTable = ClassType.getSymbolTable(renumType);
+        for (const symbol of symbolTable.values()) {
+            const symType = getEffectiveTypeOfSymbolForUsage(
+                symbol,
+                /* usageNode */ undefined,
+                /* useLastDecl */ true
+            ).type;
+            if (!isClass(symType) || !isViperREnumVariantType(symType)) {
+                continue;
+            }
+            const variantInstance = TypeBase.isInstance(symType) ? symType : ClassType.cloneAsInstance(symType);
+            const fieldSymbol = ClassType.getSymbolTable(variantInstance).get(memberName);
+            if (fieldSymbol) {
+                const fieldType = getEffectiveTypeOfSymbolForUsage(
+                    fieldSymbol,
+                    /* usageNode */ undefined,
+                    /* useLastDecl */ true
+                ).type;
+                return { symbol: fieldSymbol, type: convertToInstance(fieldType) };
+            }
+        }
+        return undefined;
+    }
+
+    // Viper 扩展：REnum 变体字段类型（仅取类型，见 getViperREnumVariantFieldInfo）。
+    function getViperREnumVariantFieldType(renumType: ClassType, memberName: string): Type | undefined {
+        return getViperREnumVariantFieldInfo(renumType, memberName)?.type;
     }
 
     // Viper 扩展：构造带 t.CChar 类型别名信息的 int 类型（表示 C 的 char 类型）。
@@ -23595,6 +23667,17 @@ export function createTypeEvaluator(
                         }
                         if (member) {
                             symbol = member.symbol;
+                        } else if (
+                            IsViperDialect(AnalyzerNodeInfo.getFileInfo(node)?.executionEnvironment.dialect) &&
+                            isViperREnumClass(subtypeForLookup)
+                        ) {
+                            // Viper 扩展：REnum 变体字段（如 x.Pointee，字段定义在
+                            // 嵌套类变体 class Ptr 内）常规 lookUpObjectMember 找不到，
+                            // 按 tagged-union 语义在所有嵌套类变体中查找字段符号。
+                            const variantFieldInfo = getViperREnumVariantFieldInfo(subtypeForLookup, memberName);
+                            if (variantFieldInfo) {
+                                symbol = variantFieldInfo.symbol;
+                            }
                         }
                     } else if (isModule(subtype)) {
                         symbol = ModuleType.getField(subtype, memberName);

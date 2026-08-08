@@ -609,8 +609,24 @@ class SemanticTokenWalker extends ParseTreeWalker {
             tokenType = SemanticTokenTypes.function;
             tokenModifiers = 0;
         } else if (!declInfo || !declInfo.decls || declInfo.decls.length === 0) {
-            // 未定义符号 → 白色（默认前景）
-            tokenType = SemanticTokenTypes.undefined;
+            // Viper 扩展：REnum 变体字段（如 x.Pointee，字段定义在嵌套类变体
+            // class Ptr 内）常规声明查找找不到，且 getType 对成员裸名称返回 Unknown；
+            // 改用成员访问表达式求值获取类型，可求值时显示为 property 而非未定义白色。
+            if (this._isViperMemberAccess(node)) {
+                const memberAccessType = this._evaluator.getTypeOfExpression(node.parent as MemberAccessNode).type;
+                if (
+                    memberAccessType !== undefined &&
+                    memberAccessType.category !== TypeCategory.Unknown &&
+                    memberAccessType.category !== TypeCategory.Unbound
+                ) {
+                    tokenType = SemanticTokenTypes.property;
+                } else {
+                    tokenType = SemanticTokenTypes.undefined;
+                }
+            } else {
+                // 未定义符号 → 白色（默认前景）
+                tokenType = SemanticTokenTypes.undefined;
+            }
         } else {
             const decl: Declaration | undefined = declInfo.decls[0];
             const declType = decl?.type;

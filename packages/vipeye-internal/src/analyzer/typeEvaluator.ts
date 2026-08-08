@@ -8093,6 +8093,18 @@ export function createTypeEvaluator(
                         isCArrayType(subtype))
             );
 
+        // Viper 扩展：PEP 695 风格显式类型实参 `fn[TypeArgs]`。
+        // Viper 的 `def double[T](x: int) -> int` 中 `[T]` 已被预处理移除，
+        // 类型系统中 double 是无类型参数的普通函数；调用处 `double[t.CInt](21)`
+        // 的 `[t.CInt]` 只是显式类型标注，直接忽略并按 `double` 处理，
+        // 否则会把函数误报为 "不可下标"。
+        if (
+            IsViperDialect(viperIndexFileInfo.executionEnvironment.dialect) &&
+            (isFunction(baseTypeResult.type) || isOverloaded(baseTypeResult.type))
+        ) {
+            return { type: baseTypeResult.type, isIncomplete };
+        }
+
         const type = mapSubtypesExpandTypeVars(
             baseTypeResult.type,
             /* options */ undefined,

@@ -126,7 +126,7 @@ def make_box():
     b = Box(42)
     return b.get()
 `;
-    const testDir = path.join(TRANSPYC_INCLUDES, '__typevar_call_test__');
+    const testDir = path.join(__dirname, '__typevar_call_test__');
     const fs = require('fs');
     fs.mkdirSync(testDir, { recursive: true });
     const testFile = path.join(testDir, 'typevar.vp');
@@ -152,6 +152,71 @@ def make_box():
             notCallable.length,
             0,
             `unexpected not-callable errors: ${JSON.stringify(diagnostics)}`
+        );
+
+        program.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});
+
+
+
+test('PEP 695 显式类型实参 double[t.CInt](21) 不报不可下标', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+
+def double[T](x: int) -> int:
+    return x * 2
+
+def test_explicit_type_arg():
+    r: t.CInt = double[t.CInt](21)
+`;
+    const testDir = path.join(__dirname, '__typevar_call_test__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'explicit_type_arg.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== explicit_type_arg.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        const notSubscriptable = diagnostics.filter(
+            (d) => d.includes('not subscriptable') || d.includes('不可下标')
+        );
+        assert.strictEqual(
+            notSubscriptable.length,
+            0,
+            `unexpected subscriptable errors: ${JSON.stringify(diagnostics)}`
         );
 
         program.dispose();

@@ -340,7 +340,7 @@ export def double_export(x: t.CInt) -> t.CInt:
     return x * 2
 
 extern def double_extern(x: t.CInt) -> t.CInt:
-    return x * 2
+    pass
 
 # state 不是关键字，仍可作字段名/成员名
 state: t.CInt = 0
@@ -464,6 +464,91 @@ inline def ok(x: t.CInt) -> t.CInt:
             modifierErrors.length,
             3,
             `expected 3 modifier errors, got: ${JSON.stringify(diagnostics)}`
+        );
+
+        program.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});
+
+test('Viper def 别名 fn/fun/func/function 与 extern 函数体校验', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+
+# def 别名
+fn f1(x: t.CInt) -> t.CInt:
+    return x
+
+fun f2(x: t.CInt) -> t.CInt:
+    return x
+
+func f3(x: t.CInt) -> t.CInt:
+    return x
+
+function f4(x: t.CInt) -> t.CInt:
+    return x
+
+# extern：函数体必须为 pass 或 None
+extern def e_ok1(x: t.CInt) -> t.CInt:
+    pass
+
+extern def e_ok2(x: t.CInt) -> t.CInt:
+    None
+
+extern def e_bad(x: t.CInt) -> t.CInt:
+    return x
+
+def use():
+    a: t.CInt = f1(1) + f2(2) + f3(3) + f4(4)
+`;
+    const testDir = path.join(__dirname, '__viper_alias_extern_test__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'alias_extern.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== alias_extern.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        // 期望恰好 1 个 extern 函数体错误（e_bad），fn/fun/func/function 别名与
+        // extern pass/None 函数体都不应报错。
+        const externErrors = diagnostics.filter(
+            (d) => d.includes('必须为 pass 或 None') || d.includes("body of only 'pass' or 'None'")
+        );
+        assert.strictEqual(
+            externErrors.length,
+            1,
+            `expected 1 extern body error, got: ${JSON.stringify(diagnostics)}`
         );
 
         program.dispose();

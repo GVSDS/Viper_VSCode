@@ -430,23 +430,22 @@ export class Parser {
 
         switch (this._peekKeywordType()) {
             case KeywordType.ViperModifier: {
-                // Viper 扩展：inline/export/extern 必须与 def 搭配使用。
+                // Viper 扩展：inline/export/extern 必须与 def（或其别名）搭配使用。
                 // 与 def 搭配时跳过修饰关键字并正常解析函数；单独使用时报错。
                 const modifierToken = this._peekToken() as KeywordToken;
+                const modifierText = this._fileContents!.slice(
+                    modifierToken.start,
+                    modifierToken.start + modifierToken.length
+                );
                 if (
                     this._peekToken(1).type === TokenType.Keyword &&
                     (this._peekToken(1) as KeywordToken).keywordType === KeywordType.Def
                 ) {
                     this._getNextToken();
-                    return this._parseFunctionDef();
+                    return this._parseFunctionDef(/* asyncToken */ undefined, /* decorators */ undefined, modifierText);
                 }
                 this._addSyntaxError(
-                    LocMessage.viperModifierRequiresDef().format({
-                        name: this._fileContents!.slice(
-                            modifierToken.start,
-                            modifierToken.start + modifierToken.length
-                        ),
-                    }),
+                    LocMessage.viperModifierRequiresDef().format({ name: modifierText }),
                     modifierToken
                 );
                 this._getNextToken();
@@ -2050,7 +2049,11 @@ export class Parser {
 
     // funcdef: 'def' NAME parameters ['->' test] ':' suite
     // parameters: '(' [typedargslist] ')'
-    private _parseFunctionDef(asyncToken?: KeywordToken, decorators?: DecoratorNode[]): FunctionNode | ErrorNode {
+    private _parseFunctionDef(
+        asyncToken?: KeywordToken,
+        decorators?: DecoratorNode[],
+        viperModifier?: string
+    ): FunctionNode | ErrorNode {
         const defToken = this._getKeywordToken(KeywordType.Def);
 
         const nameToken = this._getTokenIfIdentifier();
@@ -2119,6 +2122,7 @@ export class Parser {
         this._isInFinallyLoop = wasInFinallyLoop;
 
         const functionNode = FunctionNode.create(defToken, NameNode.create(nameToken), suite, typeParameters);
+        functionNode.d.viperModifier = viperModifier;
         if (asyncToken) {
             functionNode.d.isAsync = true;
             extendRange(functionNode, asyncToken);

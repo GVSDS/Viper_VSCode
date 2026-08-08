@@ -1619,6 +1619,7 @@
         "unexpectedIndent": "Unexpected indentation",
         "unexpectedUnindent": "Unindent not expected",
         "viperModifierRequiresDef": "The modifier \"{name}\" must be used with 'def'",
+        "viperExternBodyInvalid": "The extern function \"{name}\" must have a body of only 'pass' or 'None'",
         "unhashableDictKey": "Dictionary key must be hashable",
         "unhashableSetEntry": {
             "message": "Set entry must be hashable",

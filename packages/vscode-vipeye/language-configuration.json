@@ -28,7 +28,7 @@
     ],
     "onEnterRules": [
         {
-            "beforeText": "^\\s*(?:(?:inline|export|extern|enum|rnum)\\s+)?(?:def|class|for|if|elif|else|while|try|finally|with|except|async|struct)\\b.*?:\\s*$",
+            "beforeText": "^\\s*(?:(?:inline|export|extern|enum|rnum)\\s+)?(?:def|fn|fun|func|function|class|for|if|elif|else|while|try|finally|with|except|async|struct)\\b.*?:\\s*$",
             "action": { "indent": "indent" }
         },
         {
@@ -45,7 +45,7 @@
     },
     "wordPattern": "(?x)\n  \\b\\w*\\b  \n  |  (?<=\\.)\\w+\n  | (?<=@)\\w+\n  | \\p{Lu}[\\p{Ll}_\\p{Lu}\\p{Nd}]*\n  | [[:alpha:]_][[:alpha:]_\\p{Nd}]*\n  | \\p{Lu}[\\p{Ll}_\\p{Lu}\\p{Nd}]*f?\\b",
     "indentationRules": {
-        "increaseIndentPattern": "^\\s*(?:(?:inline|export|extern|enum|rnum)\\s+)?(?:class|def|elif|else|except|finally|for|if|try|while|with|struct|async\\s+def|async\\s+for|async\\s+with)\\b.*?:\\s*$",
+        "increaseIndentPattern": "^\\s*(?:(?:inline|export|extern|enum|rnum)\\s+)?(?:class|def|fn|fun|func|function|elif|else|except|finally|for|if|try|while|with|struct|async\\s+def|async\\s+for|async\\s+with)\\b.*?:\\s*$",
         "decreaseIndentPattern": "^\\s*(elif|else|except|finally)\\b.*?:\\s*$"
     }
 }

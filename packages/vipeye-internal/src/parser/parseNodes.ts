@@ -471,11 +471,19 @@ export interface FunctionNode extends ParseNodeBase<ParseNodeType.Function> {
         returnAnnotation: ExpressionNode | undefined;
         funcAnnotationComment: FunctionAnnotationNode | undefined;
         suite: SuiteNode;
+        // Viper 扩展：函数声明前的 C 修饰关键字（inline/export/extern），用于语义校验。
+        viperModifier: string | undefined;
     };
 }
 
 export namespace FunctionNode {
-    export function create(defToken: Token, name: NameNode, suite: SuiteNode, typeParams?: TypeParameterListNode) {
+    export function create(
+        defToken: Token,
+        name: NameNode,
+        suite: SuiteNode,
+        typeParams?: TypeParameterListNode,
+        viperModifier?: string
+    ) {
         const node: FunctionNode = {
             start: defToken.start,
             length: defToken.length,
@@ -493,6 +501,7 @@ export namespace FunctionNode {
                 returnAnnotation: undefined,
                 funcAnnotationComment: undefined,
                 suite: suite,
+                viperModifier,
             },
         };
 

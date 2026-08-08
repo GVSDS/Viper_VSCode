@@ -38,6 +38,10 @@
                     "match": "\\bdef\\b"
                 },
                 {
+                    "name": "storage.type.function.viper",
+                    "match": "\\b(fn|fun|func|function)\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*)"
+                },
+                {
                     "name": "storage.type.class.viper",
                     "match": "\\bclass\\b"
                 },

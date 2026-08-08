@@ -36,6 +36,7 @@ import {
     ClassNode,
     ComprehensionIfNode,
     ComprehensionNode,
+    ConstantNode,
     DelNode,
     DictionaryNode,
     ErrorNode,
@@ -89,7 +90,7 @@ import {
 } from '../parser/parseNodes';
 import { ParserOutput } from '../parser/parser';
 import { UnescapeError, UnescapeErrorType, getUnescapedString } from '../parser/stringTokenUtils';
-import { OperatorType, StringTokenFlags, TokenType } from '../parser/tokenizerTypes';
+import { KeywordType, OperatorType, StringTokenFlags, TokenType } from '../parser/tokenizerTypes';
 import { AnalyzerFileInfo } from './analyzerFileInfo';
 import * as AnalyzerNodeInfo from './analyzerNodeInfo';
 import { ConstraintTracker } from './constraintTracker';
@@ -216,6 +217,26 @@ interface TypeVarUsageInfo {
 // When enabled, this debug flag causes the code complexity of
 // functions to be emitted.
 const isPrintCodeComplexityEnabled = false;
+
+// Viper 扩展：extern 函数体允许的语句——只允许 pass 或 None（仅声明原型）。
+function isViperExternAllowedBody(stmt: ParseNode): boolean {
+    if (stmt.nodeType === ParseNodeType.Pass) {
+        return true;
+    }
+    if (stmt.nodeType === ParseNodeType.StatementList) {
+        const smallStatements = (stmt as StatementListNode).d.statements;
+        return smallStatements.every((s) => {
+            if (s.nodeType === ParseNodeType.Pass) {
+                return true;
+            }
+            if (s.nodeType === ParseNodeType.Constant) {
+                return (s as ConstantNode).d.constType === KeywordType.None;
+            }
+            return false;
+        });
+    }
+    return false;
+}
 
 export class Checker extends ParseTreeWalker {
     private readonly _moduleNode: ModuleNode;
@@ -428,6 +449,22 @@ export class Checker extends ParseTreeWalker {
                 LocMessage.viperBeforeInitReserved(),
                 node.d.name
             );
+        }
+
+        // Viper 扩展：extern 声明的函数体必须为 pass 或 None（仅声明原型，不定义实现）。
+        if (
+            node.d.viperModifier === 'extern' &&
+            IsViperDialect(this._fileInfo.executionEnvironment.dialect)
+        ) {
+            const bodyStatements = node.d.suite.d.statements;
+            const invalidStatement = bodyStatements.find((stmt) => !isViperExternAllowedBody(stmt));
+            if (invalidStatement) {
+                this._evaluator.addDiagnostic(
+                    DiagnosticRule.reportGeneralTypeIssues,
+                    LocMessage.viperExternBodyInvalid().format({ name: node.d.name.d.value }),
+                    invalidStatement
+                );
+            }
         }
 
         if (functionTypeResult) {
@@ -4793,7 +4830,19 @@ export class Checker extends ParseTreeWalker {
                 declaredReturnType !== undefined &&
                 isPureCModifierType(declaredReturnType);
 
-            if (declaredReturnType && !functionNeverReturns && implicitlyReturnsNone && !isPureModifierReturn) {
+            // Viper 扩展：extern 关键字声明的函数仅声明原型（函数体必须为 pass/None），
+            // 不要求返回语句与声明类型匹配。
+            const isViperExternDecl =
+                IsViperDialect(this._fileInfo.executionEnvironment.dialect) &&
+                node.d.viperModifier === 'extern';
+
+            if (
+                declaredReturnType &&
+                !functionNeverReturns &&
+                implicitlyReturnsNone &&
+                !isPureModifierReturn &&
+                !isViperExternDecl
+            ) {
                 if (isNever(declaredReturnType)) {
                     // If the function consists entirely of "...", assume that it's
                     // an abstract method or a protocol method and don't require that

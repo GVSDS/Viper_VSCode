@@ -302,3 +302,99 @@ def generic_swap[T](p: IntPair | t.CPtr):
     }
     serviceProvider.dispose();
 });
+
+
+test('Viper 关键字 inline/export/extern/state/enum/rnum/struct 解析与语义', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+import c
+
+# 单独的 struct 关键字（等价 class）
+struct IntPair:
+    a: t.CInt
+    b: t.CInt
+
+# 修饰关键字 + def（等价 t.CInline / t.CExport / t.CExtern / t.State）
+inline def double_inline(x: t.CInt) -> t.CInt:
+    return x * 2
+
+export def double_export(x: t.CInt) -> t.CInt:
+    return x * 2
+
+extern def double_extern(x: t.CInt) -> t.CInt:
+    return x * 2
+
+state def double_state(x: t.CInt) -> t.CInt:
+    return x * 2
+
+# enum / rnum + class（等价 t.CEnum / t.REnum）
+enum class Color:
+    RED: t.CInt = 0
+    GREEN: t.CInt = 1
+
+rnum class LLVMType:
+    class Int:
+        bits: t.CInt
+    class Ptr:
+        pointee: t.CPtr
+
+def swap(p: IntPair | t.CPtr):
+    tmp: t.CInt = c.Deref(p).a
+    c.Deref(p).a = c.Deref(p).b
+    c.Deref(p).b = tmp
+
+def test_usage():
+    r: t.CInt = double_export(21)
+    g: t.CInt = Color.GREEN
+`;
+    const testDir = path.join(__dirname, '__viper_keywords_test__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'keywords.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== keywords.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        // 期望没有任何错误级诊断（语法错误/类型错误都不允许）。
+        const errors = diagnostics.filter((d) => d.startsWith('[category=0]'));
+        assert.strictEqual(
+            errors.length,
+            0,
+            `unexpected error diagnostics: ${JSON.stringify(errors)}`
+        );
+
+        program.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});

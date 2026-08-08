@@ -42,6 +42,18 @@
                     "match": "\\bclass\\b"
                 },
                 {
+                    "name": "storage.modifier.viper",
+                    "match": "\\b(inline|export|extern|state)\\b(?=\\s+def\\b)"
+                },
+                {
+                    "name": "storage.type.class.viper",
+                    "match": "\\b(enum|rnum)\\b(?=\\s+(class|struct)\\b)"
+                },
+                {
+                    "name": "storage.type.class.viper",
+                    "match": "\\bstruct\\b"
+                },
+                {
                     "name": "keyword.other.viper",
                     "match": "\\b(global|nonlocal|is|not|and|or|type)\\b"
                 },

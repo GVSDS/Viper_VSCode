@@ -69,22 +69,35 @@ export function findVpjFileInDir(fs: ReadOnlyFileSystem, dirUri: Uri): Uri | und
     return undefined;
 }
 
-// Viper 扩展：在目录的一级子目录中查找所有 Viper 项目配置文件（*.vpj / project.json）。
+// Viper 扩展：递归查找工作区下所有 Viper 项目配置文件（*.vpj / project.json）。
 // 用于 LSP 模式下工作区根（如 TransPyC）未直接包含配置文件，
-// 但子目录（如 TransPyV/）包含 Viper 项目配置的场景。
+// 但子目录（如 TransPyV/、Test/G4/）包含 Viper 项目配置的场景。
 // 每个子项目的 source_dir（如 ./App）都应作为全局导入根，
 // includes 作为额外搜索路径 —— App 根级全局可导入。
-// 仅扫描一级子目录（非递归），避免深层遍历开销。
+// 递归深度限制 + 跳过常见非项目目录，避免深层遍历开销。
 // 失败或未找到时返回空数组。
+const _viperConfigScanMaxDepth = 6;
+const _viperConfigSkipDirs = new Set(['.git', 'node_modules', '__pycache__', '.tpv_build', 'build', 'dist']);
+
 export function findViperProjectConfigsInChildDirs(fs: ReadOnlyFileSystem, dirUri: Uri): Uri[] {
+    return _findViperProjectConfigsRecursive(fs, dirUri, 1);
+}
+
+function _findViperProjectConfigsRecursive(fs: ReadOnlyFileSystem, dirUri: Uri, depth: number): Uri[] {
     const configs: Uri[] = [];
     try {
-        if (!fs.existsSync(dirUri)) {
+        if (!fs.existsSync(dirUri) || depth > _viperConfigScanMaxDepth) {
             return configs;
         }
         const entries = fs.readdirEntriesSync(dirUri);
+        // 第一轮：只收集直接子目录中的项目配置（保持原有主配置优先级，
+        // 即 configs[0] 仍是工作区根下第一个含配置的直接子目录）。
+        const nonProjectDirs: Uri[] = [];
         for (const entry of entries) {
             if (!entry.isDirectory()) {
+                continue;
+            }
+            if (_viperConfigSkipDirs.has(entry.name)) {
                 continue;
             }
             const childDir = dirUri.resolvePaths(entry.name);
@@ -98,7 +111,13 @@ export function findViperProjectConfigsInChildDirs(fs: ReadOnlyFileSystem, dirUr
             const projectFileName = childDir.resolvePaths(viperProjectFileName);
             if (fs.existsSync(projectFileName) && isViperProjectConfig(fs, projectFileName)) {
                 configs.push(fs.realCasePath(projectFileName));
+                continue;
             }
+            nonProjectDirs.push(childDir);
+        }
+        // 第二轮：对非项目目录递归深入，查找嵌套项目（如 TransPyC/Test/G4）。
+        for (const childDir of nonProjectDirs) {
+            configs.push(..._findViperProjectConfigsRecursive(fs, childDir, depth + 1));
         }
     } catch {
         // 读取目录失败：跳过

@@ -225,3 +225,80 @@ def test_explicit_type_arg():
     }
     serviceProvider.dispose();
 });
+
+
+test('c.Deref 对 IntPair | t.CPtr 联合返回结构体，成员访问解析为 CInt', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+import c
+
+class IntPair:
+    a: t.CInt
+    b: t.CInt
+
+def generic_swap[T](p: IntPair | t.CPtr):
+    tmp: t.CInt = c.Deref(p).a
+    c.Deref(p).a = c.Deref(p).b
+    c.Deref(p).b = tmp
+    bad: t.CInt = c.Deref(p).zzz
+`;
+    const testDir = path.join(__dirname, '__deref_test__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'deref.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== deref.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        // 期望恰好 1 条"没有属性"：c.Deref(p).zzz 应报错（证明 Deref 结果是
+        // 具体结构体 IntPair 而非 Unknown——Unknown 上访问任何成员都静默通过），
+        // 而 c.Deref(p).a / .b 都不应报。
+        const noAttr = diagnostics.filter(
+            (d) =>
+                d.includes('无法访问') ||
+                d.includes('没有属性') ||
+                d.includes('has no attribute') ||
+                d.includes('未知的属性')
+        );
+        assert.strictEqual(
+            noAttr.length,
+            1,
+            `expected exactly 1 no-attribute error, got: ${JSON.stringify(diagnostics)}`
+        );
+        assert.ok(noAttr[0].includes('zzz'), `expected zzz error: ${JSON.stringify(diagnostics)}`);
+
+        program.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});

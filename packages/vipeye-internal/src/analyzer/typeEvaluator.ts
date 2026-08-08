@@ -9308,6 +9308,56 @@ export function createTypeEvaluator(
         );
     }
 
+    // Viper 扩展：计算 c.Deref 的解引用结果类型。
+    // Viper 中 `X | t.CPtr` 表示"指向 X 的指针"，解引用后得到值类型 X。
+    // 对 TypeSet（联合）取用户自定义结构体类实例子类型作为解引用结果；
+    // 对 CPtr[Po] 取类型参数 Po；C 标量（t.CInt 等）、内置 str/bytes（i8*）、
+    // 修饰符、CVoid 以及裸指针无法确定目标类型，跳过。
+    // 无具体结果时返回 undefined，由调用方回退 Unknown，保持旧行为，
+    // 避免对 memcpy(c.Deref(out), ...) 这类把解引用结果当指针传递的代码引入误报。
+    function computeViperDerefResult(argExpr: ExpressionNode): Type | undefined {
+        const argTypeResult = getTypeOfExpression(argExpr);
+        const argType = argTypeResult.type;
+        const subtypes = isUnion(argType) ? argType.priv.subtypes : [argType];
+        const resultTypes: Type[] = [];
+
+        for (const subtype of subtypes) {
+            if (!isClassInstance(subtype)) {
+                continue;
+            }
+            if (isCPtrType(subtype)) {
+                // 指针类型：CPtr[Po] → Po；裸 CPtr 无法确定目标类型。
+                const typeArgs = subtype.priv.typeArgs;
+                if (typeArgs && typeArgs.length > 0) {
+                    const pointee = typeArgs[0];
+                    resultTypes.push(
+                        isClass(pointee) && !isClassInstance(pointee) ? convertToInstance(pointee) : pointee
+                    );
+                }
+            } else if (isViperUserStructValue(subtype)) {
+                // 用户自定义结构体（非 C 标量、非 str/bytes）：即解引用后的值。
+                resultTypes.push(subtype);
+            }
+        }
+
+        if (resultTypes.length === 0) {
+            return undefined;
+        }
+        return combineTypes(resultTypes);
+    }
+
+    // Viper 扩展：判断类实例是否为用户自定义结构体值类型。
+    // C 标量（t.CInt/t.CUInt8T 等，fullName 以 t. 开头）、内置类型
+    // （builtins.* 与 str/bytes 的 i8* 指针表示）不算，只有用户代码或
+    // 第三方库定义的类（如 IntPair）才算，以便 c.Deref(p).a 解析字段。
+    function isViperUserStructValue(type: ClassType): boolean {
+        const name = type.shared.name;
+        const fullName = type.shared.fullName;
+        if (name === 'str' || name === 'bytes' || fullName === 'str' || fullName === 'bytes') {
+            return false;
+        }
+        return !fullName.startsWith('builtins.') && !fullName.startsWith('t.');
+    }
     // Viper 扩展：检查类型注解 AST 节点是否包含 CPtr 引用。
     // 用于判断循环引用是否被指针打破（如 next: 'Node' | t.CPtr）。
     // 递归遍历类型注解表达式，查找名称为 CPtr/CNeedPtr/CAutoPtr/CArrayPtr 的标识符。
@@ -9700,10 +9750,14 @@ export function createTypeEvaluator(
                 if (node.d.leftExpr.nodeType === ParseNodeType.MemberAccess &&
                     node.d.leftExpr.d.member.d.value === 'Deref' &&
                     node.d.args.length >= 1) {
-                    // c.Deref(ptr) → 解引用结果。返回类型为 c.Deref 的 T 类型参数
-                    // 对应的实例类型（从 c.vpi 的 `def Deref(ptr: int) -> T` 推导）。
-                    // 简化：返回 Unknown，由赋值上下文推断（如 `v: int = c.Deref(p)`）。
-                    typeResult.type = UnknownType.create();
+                    // c.Deref(ptr) → 解引用结果。
+                    // 之前简化返回 Unknown，由赋值上下文推断；但 `c.Deref(p).a` 这类
+                    // 链式成员访问需要可用的具体类型。当参数为 TypeSet（如
+                    // `IntPair | t.CPtr`）时，用户自定义结构体类实例即为解引用后的
+                    // 值类型；CPtr[Po] 的类型参数 Po 为目标类型。纯指针、C 标量、
+                    // str/bytes（i8*）等无法确定目标类型时保持 Unknown。
+                    const derefResult = computeViperDerefResult(node.d.args[0].d.valueExpr);
+                    typeResult.type = derefResult ?? UnknownType.create();
                 } else {
                     typeResult.type = UnknownType.create();
                 }

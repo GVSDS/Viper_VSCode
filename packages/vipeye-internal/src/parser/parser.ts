@@ -429,6 +429,30 @@ export class Parser {
         }
 
         switch (this._peekKeywordType()) {
+            case KeywordType.ViperModifier: {
+                // Viper 扩展：inline/export/extern 必须与 def 搭配使用。
+                // 与 def 搭配时跳过修饰关键字并正常解析函数；单独使用时报错。
+                const modifierToken = this._peekToken() as KeywordToken;
+                if (
+                    this._peekToken(1).type === TokenType.Keyword &&
+                    (this._peekToken(1) as KeywordToken).keywordType === KeywordType.Def
+                ) {
+                    this._getNextToken();
+                    return this._parseFunctionDef();
+                }
+                this._addSyntaxError(
+                    LocMessage.viperModifierRequiresDef().format({
+                        name: this._fileContents!.slice(
+                            modifierToken.start,
+                            modifierToken.start + modifierToken.length
+                        ),
+                    }),
+                    modifierToken
+                );
+                this._getNextToken();
+                return this._parseSimpleStatement();
+            }
+
             case KeywordType.If:
                 return this._parseIfStatement();
 

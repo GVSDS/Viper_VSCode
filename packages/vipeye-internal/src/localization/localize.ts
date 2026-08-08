@@ -1178,6 +1178,8 @@ export namespace Localizer {
         export const unexpectedExprToken = () => getRawString('Diagnostic.unexpectedExprToken');
         export const unexpectedIndent = () => getRawString('Diagnostic.unexpectedIndent');
         export const unexpectedUnindent = () => getRawString('Diagnostic.unexpectedUnindent');
+        export const viperModifierRequiresDef = () =>
+            new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperModifierRequiresDef'));
         export const unhashableDictKey = () => getRawString('Diagnostic.unhashableDictKey');
         export const unhashableSetEntry = () => getRawString('Diagnostic.unhashableSetEntry');
         export const unionForwardReferenceNotAllowed = () => getRawString('Diagnostic.unionForwardReferenceNotAllowed');

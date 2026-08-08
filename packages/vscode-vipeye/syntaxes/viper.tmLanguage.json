@@ -43,7 +43,7 @@
                 },
                 {
                     "name": "storage.modifier.viper",
-                    "match": "\\b(inline|export|extern|state)\\b(?=\\s+def\\b)"
+                    "match": "\\b(inline|export|extern)\\b(?=\\s+def\\b|[ \\t]*$)"
                 },
                 {
                     "name": "storage.type.class.viper",

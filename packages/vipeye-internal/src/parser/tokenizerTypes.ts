@@ -150,6 +150,8 @@ export const enum KeywordType {
     While,
     With,
     Yield,
+    // Viper 扩展：inline/export/extern 等 C 风格修饰关键字（必须与 def 搭配）。
+    ViperModifier,
 }
 
 export const softKeywords = [

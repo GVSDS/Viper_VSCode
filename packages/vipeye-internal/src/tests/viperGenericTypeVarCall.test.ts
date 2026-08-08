@@ -332,7 +332,7 @@ struct IntPair:
     a: t.CInt
     b: t.CInt
 
-# 修饰关键字 + def（等价 t.CInline / t.CExport / t.CExtern / t.State）
+# 修饰关键字 + def（等价 t.CInline / t.CExport / t.CExtern）
 inline def double_inline(x: t.CInt) -> t.CInt:
     return x * 2
 
@@ -342,8 +342,8 @@ export def double_export(x: t.CInt) -> t.CInt:
 extern def double_extern(x: t.CInt) -> t.CInt:
     return x * 2
 
-state def double_state(x: t.CInt) -> t.CInt:
-    return x * 2
+# state 不是关键字，仍可作字段名/成员名
+state: t.CInt = 0
 
 # enum / rnum + class（等价 t.CEnum / t.REnum）
 enum class Color:
@@ -398,6 +398,72 @@ def test_usage():
             errors.length,
             0,
             `unexpected error diagnostics: ${JSON.stringify(errors)}`
+        );
+
+        program.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});
+
+test('Viper 修饰关键字 inline/export/extern 单独使用报错', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+
+inline
+export = 5
+extern + 1
+
+inline def ok(x: t.CInt) -> t.CInt:
+    return x
+`;
+    const testDir = path.join(__dirname, '__viper_modifier_test__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'modifier.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== modifier.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        // 期望：3 个"必须与 def 搭配"错误（inline / export / extern 单独使用），
+        // 而 `inline def ok(...)` 不报错。
+        const modifierErrors = diagnostics.filter(
+            (d) => d.includes('必须与 def 搭配') || d.includes('must be used with')
+        );
+        assert.strictEqual(
+            modifierErrors.length,
+            3,
+            `expected 3 modifier errors, got: ${JSON.stringify(diagnostics)}`
         );
 
         program.dispose();

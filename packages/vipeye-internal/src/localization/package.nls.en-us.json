@@ -1618,6 +1618,7 @@
         "unexpectedExprToken": "Unexpected token at end of expression",
         "unexpectedIndent": "Unexpected indentation",
         "unexpectedUnindent": "Unindent not expected",
+        "viperModifierRequiresDef": "The modifier \"{name}\" must be used with 'def'",
         "unhashableDictKey": "Dictionary key must be hashable",
         "unhashableSetEntry": {
             "message": "Set entry must be hashable",

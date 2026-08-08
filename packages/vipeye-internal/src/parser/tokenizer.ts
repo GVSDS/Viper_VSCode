@@ -643,22 +643,35 @@ enum MagicsKind {
 
 // Viper 扩展：C 风格修饰/声明关键字处理。
 // Viper 支持将 C 修饰/声明语义写成语句前缀关键字：
-//   inline/export/extern/state def f(...)   —— 等价 t.CInline / t.CExport / t.CExtern / t.State
+//   inline/export/extern def f(...)         —— 修饰关键字，必须与 def 搭配
 //   enum/rnum class|struct Foo              —— 等价 t.CEnum / t.REnum
 //   enum Foo: / rnum Foo:                   —— 单独使用（等价 class Foo:）
 //   struct Foo:                             —— 独立的 struct 关键字（等价 class）
 // 返回 'skip'：跳过该关键字 token（后续 def/class 正常解析，位置与缩进不变）；
-// 返回 'class'：把 enum/rnum/struct 当作 class 关键字；undefined：按普通标识符处理
-// （变量名、成员名、导入名等，如 `import struct as s` 不受影响）。
+// 返回 'class'：把 enum/rnum/struct 当作 class 关键字；
+// 返回 'viperModifier'：inline/export/extern 单独使用（未与 def 搭配），由 parser 报错；
+// undefined：按普通标识符处理（变量名、成员名、导入名、`state:` 注解等）。
 function getViperStatementKeywordAction(
     text: string,
     identifierStart: number,
     identifierEnd: number,
     name: string
-): 'skip' | 'class' | undefined {
+): 'skip' | 'class' | 'viperModifier' | undefined {
     const nextWord = peekViperKeywordWord(text, identifierEnd);
-    if (name === 'inline' || name === 'export' || name === 'extern' || name === 'state') {
-        return nextWord === 'def' ? 'skip' : undefined;
+    if (name === 'inline' || name === 'export' || name === 'extern') {
+        // 修饰关键字仅在语句起始处生效，避免误伤 `self.inline` 等成员名。
+        if (!isViperAtStatementStart(text, identifierStart)) {
+            return undefined;
+        }
+        if (nextWord === 'def') {
+            return 'skip';
+        }
+        // 后跟 ':'（注解，如 `state: t.CArray[...]` 风格的字段声明）按普通标识符处理。
+        if (isViperNextCharColon(text, identifierEnd)) {
+            return undefined;
+        }
+        // 单独使用（未与 def 搭配）→ 关键字 token，由 parser 报错。
+        return 'viperModifier';
     }
     if (name === 'enum' || name === 'rnum') {
         if (nextWord === 'class' || nextWord === 'struct') {
@@ -693,6 +706,15 @@ function peekViperKeywordWord(text: string, from: number): string {
         pos++;
     }
     return text.slice(start, pos);
+}
+
+function isViperNextCharColon(text: string, from: number): boolean {
+    let pos = from;
+    const len = text.length;
+    while (pos < len && (text[pos] === ' ' || text[pos] === '\t')) {
+        pos++;
+    }
+    return pos < len && text[pos] === ':';
 }
 
 function isViperAtStatementStart(text: string, identifierStart: number): boolean {
@@ -1446,15 +1468,23 @@ export class Tokenizer {
             } else {
                 const value = this._internIdentifier(text, start, end, length);
                 // Viper 扩展：C 风格修饰/声明关键字。
-                // inline/export/extern/state 作为 def 前缀修饰、enum/rnum 作为 class/struct
+                // inline/export/extern 作为 def 前缀修饰、enum/rnum 作为 class/struct
                 // 前缀时跳过该 token（保留原始位置与缩进；着色由 TextMate 规则处理）；
-                // struct 在语句起始且后跟类名时按 class 关键字处理。
+                // enum/rnum/struct 在语句起始且后跟类名时按 class 关键字处理；
+                // inline/export/extern 单独使用（未与 def 搭配）时生成修饰关键字 token，
+                // 由 parser 报错。
                 const viperAction = getViperStatementKeywordAction(text, start, end, value);
                 if (viperAction === 'skip') {
                     return true;
                 }
                 if (viperAction === 'class') {
                     this._tokens.push(KeywordToken.create(start, length, KeywordType.Class, this._getComments()));
+                    return true;
+                }
+                if (viperAction === 'viperModifier') {
+                    this._tokens.push(
+                        KeywordToken.create(start, length, KeywordType.ViperModifier, this._getComments())
+                    );
                     return true;
                 }
                 this._tokens.push(IdentifierToken.create(start, length, value, this._getComments()));

@@ -2560,3 +2560,34 @@ if sys.version_info >= (3, 11):
 
 if sys.version_info >= (3, 13):
     class PythonFinalizationError(RuntimeError): ...
+
+# --- Viper 扩展：C 内联汇编 / LLVM IR 内联设施 ---
+# 签名照抄 vipershed-fallback/stdlib/c.vpi（c.Asm / c.LLVMIR / c.AsmInp / c.AsmOut /
+# c.LInp / c.LOut），供 Viper 代码直接以内置函数形式使用。
+
+def Asm(asm: str, *args: Any, inp: Any = None, out: Any = None, op: Any = None) -> Any:
+    """内联汇编（等价 c.Asm）。inp 为输入操作数描述符列表，out 为输出操作数
+    描述符列表，op 为破坏描述符列表。"""
+    ...
+
+def LLVMIR(ir: str, *args: Any, inp: Any = None, out: Any = None, op: Any = None) -> Any:
+    """LLVM IR 内联（等价 c.LLVMIR）。inp/out/op 为操作数描述符列表。"""
+    ...
+
+def AsmInp(expr: Any, constraint: Any = None) -> Any:
+    """汇编输入操作数标记（等价 c.AsmInp）。constraint 为寄存器约束
+    （如 t.ASM_DESCR.REG_ANY）。"""
+    ...
+
+def AsmOut(expr: Any, constraint: Any = None) -> Any:
+    """汇编输出操作数标记（等价 c.AsmOut）。constraint 为寄存器约束
+    （如 t.ASM_DESCR.OUTPUT_REG）。"""
+    ...
+
+def LInp(expr: Any, constraint: Any = None) -> Any:
+    """LLVM IR 输入操作数标记（等价 c.LInp）。"""
+    ...
+
+def LOut(expr: Any, constraint: Any = None) -> Any:
+    """LLVM IR 输出操作数标记（等价 c.LOut）。"""
+    ...

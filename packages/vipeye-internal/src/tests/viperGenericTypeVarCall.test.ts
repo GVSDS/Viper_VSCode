@@ -364,6 +364,15 @@ rnum B:
     class Inner:
         x: t.CInt
 
+# union + class（等价 t.CUnion 风格）
+union class Value:
+    i: t.CInt
+    f: t.CFloat
+
+# union 单独使用（等价 class）
+union D:
+    x: t.CInt
+
 def swap(p: IntPair | t.CPtr):
     tmp: t.CInt = c.Deref(p).a
     c.Deref(p).a = c.Deref(p).b
@@ -372,6 +381,7 @@ def swap(p: IntPair | t.CPtr):
 def test_usage():
     r: t.CInt = double_export(21)
     g: t.CInt = Color.GREEN
+    u: t.CFloat = Value.f
 `;
     const testDir = path.join(__dirname, '__viper_keywords_test__');
     const fs = require('fs');
@@ -518,6 +528,12 @@ extern def e_ok2(x: t.CInt) -> t.CInt:
 extern def e_bad(x: t.CInt) -> t.CInt:
     return x
 
+# extern 声明可以省略函数体（无冒号、无 pass），": pass" 方式保留
+extern def e_no_body(x: t.CInt) -> t.CInt
+
+# extern + fn 别名，同样可以省略函数体
+extern fn e_fn_no_body(x: t.CInt) -> t.CInt
+
 def use():
     a: t.CInt = f1(1) + f2(2) + f3(3) + f4(4)
 `;
@@ -549,6 +565,149 @@ def use():
             externErrors.length,
             1,
             `expected 1 extern body error, got: ${JSON.stringify(diagnostics)}`
+        );
+
+        program.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});
+
+test('Viper fn/fun/func/function 单独使用报错，后跟 :/=/ 保持标识符', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+
+# fn 行尾单独使用 → 视为 def，报缺函数名
+fn
+
+# fun 后跟 '=' → 保持标识符（赋值，不是关键字）
+fun = 5
+
+# func 后跟 '(' → 保持标识符（调用，不是关键字）
+func(1)
+
+# function 后跟 ':' → 保持标识符（注解声明，不是关键字）
+function: t.CInt = 0
+
+# 正常用法不受影响
+fn ok(x: t.CInt) -> t.CInt:
+    return x
+`;
+    const testDir = path.join(__dirname, '__viper_fn_keyword_test__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'fn_keyword.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== fn_keyword.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        // 期望恰好 1 个错误级诊断：fn 行尾单独使用报"缺函数名"；
+        // fun=/func(/function: 保持标识符不应产生语法/类型错误。
+        const errors = diagnostics.filter((d) => d.startsWith('[category=0]'));
+        assert.strictEqual(
+            errors.length,
+            1,
+            `expected exactly 1 error (fn alone), got: ${JSON.stringify(diagnostics)}`
+        );
+        assert.ok(
+            errors[0].includes('函数名') || errors[0].includes('function name'),
+            `expected missing-function-name error: ${JSON.stringify(errors)}`
+        );
+
+        program.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});
+
+test('builtins.vp 中 Asm/LLVMIR/AsmInp/AsmOut/LInp/LOut 签名可用且不报未定义', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+
+def test_builtins_asm_llvmir():
+    r: t.CInt = 0
+    # Asm：基础 + 输出/输入操作数 + 破坏列表
+    Asm("nop")
+    Asm(f"mov {AsmOut(r, t.ASM_DESCR.OUTPUT_REG)}, rdi", op=[t.ASM_DESCR.CLOBBER_MEMORY])
+    Asm(f"mov eax, {AsmInp(r, t.ASM_DESCR.REG_ANY)}")
+    # LLVMIR：LInp/LOut 标记操作数
+    LLVMIR(f"{LOut(r)} = add i32 {LInp(r)}, {LInp(r)}")
+`;
+    const testDir = path.join(__dirname, '__viper_builtins_asm_test__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'builtins_asm.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== builtins_asm.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        // 期望没有任何错误级诊断：Asm/LLVMIR/AsmInp/AsmOut/LInp/LOut 由隐式
+        // builtins（builtins.vpi）提供，无需 import 即可直接使用。
+        const errors = diagnostics.filter((d) => d.startsWith('[category=0]'));
+        assert.strictEqual(
+            errors.length,
+            0,
+            `unexpected error diagnostics: ${JSON.stringify(diagnostics)}`
         );
 
         program.dispose();

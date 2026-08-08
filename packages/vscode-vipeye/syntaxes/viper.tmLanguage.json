@@ -39,7 +39,7 @@
                 },
                 {
                     "name": "storage.type.function.viper",
-                    "match": "\\b(fn|fun|func|function)\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*)"
+                    "match": "\\b(fn|fun|func|function)\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*|\\s*$)"
                 },
                 {
                     "name": "storage.type.class.viper",
@@ -47,11 +47,11 @@
                 },
                 {
                     "name": "storage.modifier.viper",
-                    "match": "\\b(inline|export|extern)\\b(?=\\s+def\\b|[ \\t]*$)"
+                    "match": "\\b(inline|export|extern)\\b(?=\\s+(?:def|fn|fun|func|function)\\b|[ \\t]*$)"
                 },
                 {
                     "name": "storage.type.class.viper",
-                    "match": "\\b(enum|rnum)\\b(?=\\s+(class|struct)\\b|\\s+[A-Za-z_][A-Za-z0-9_]*)"
+                    "match": "\\b(enum|rnum|union)\\b(?=\\s+(class|struct)\\b|\\s+[A-Za-z_][A-Za-z0-9_]*)"
                 },
                 {
                     "name": "storage.type.class.viper",

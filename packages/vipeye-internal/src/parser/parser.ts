@@ -2111,11 +2111,22 @@ export class Parser {
         this._isInFinallyBlock = false;
         this._isInFinallyLoop = false;
 
-        const suite = this._parseSuite(/* isFunction */ true, this._parseOptions.skipFunctionAndClassBody, () => {
-            if (!functionTypeAnnotationToken) {
-                functionTypeAnnotationToken = this._getTypeAnnotationCommentText();
+        let suite: SuiteNode;
+        const possibleSuiteStart = this._peekToken();
+        if (viperModifier === 'extern' && possibleSuiteStart.type !== TokenType.Colon) {
+            // Viper extern 声明允许省略函数体（`extern def f(...) -> T`，无冒号、无 pass）。
+            // 创建空 suite 并消费行尾换行；`: pass` 方式仍走 _parseSuite 正常解析。
+            suite = SuiteNode.create(possibleSuiteStart);
+            if (this._consumeTokenIfType(TokenType.NewLine)) {
+                extendRange(suite, this._tokenizerOutput!.tokens.getItemAt(this._tokenIndex - 1));
             }
-        });
+        } else {
+            suite = this._parseSuite(/* isFunction */ true, this._parseOptions.skipFunctionAndClassBody, () => {
+                if (!functionTypeAnnotationToken) {
+                    functionTypeAnnotationToken = this._getTypeAnnotationCommentText();
+                }
+            });
+        }
 
         this._isInExceptionGroup = wasInExceptionGroup;
         this._isInFinallyBlock = wasInFinallyBlock;

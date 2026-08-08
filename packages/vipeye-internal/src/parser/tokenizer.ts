@@ -675,18 +675,24 @@ function getViperStatementKeywordAction(
         return 'viperModifier';
     }
     if (name === 'fn' || name === 'fun' || name === 'func' || name === 'function') {
-        // def 别名：语句起始（或紧跟在修饰关键字后，如 `inline fn f()`）且后跟
-        // 标识符（函数名）时按 def 关键字处理。
+        // def 别名：语句起始（或紧跟修饰关键字后，如 `inline fn f()`）时：
+        // 后跟标识符（函数名）→ def；
+        // 行尾单独使用（后面无任何内容）→ def（parser 会报缺函数名）；
+        // 后跟 ':' / '=' / '(' 等 → 保持标识符（保护 TransPyC 现有
+        //   `func:` 注解、`func = x` 赋值、`func(x)` 调用等合法用法）。
         if (!isViperAtStatementStart(text, identifierStart) && !precededByViperModifier) {
             return undefined;
         }
-        return nextWord.length > 0 && isIdentifierStartChar(nextWord.charCodeAt(0)) ? 'def' : undefined;
+        if (nextWord.length > 0) {
+            return isIdentifierStartChar(nextWord.charCodeAt(0)) ? 'def' : undefined;
+        }
+        return peekViperNextNonWsChar(text, identifierEnd) === undefined ? 'def' : undefined;
     }
-    if (name === 'enum' || name === 'rnum') {
+    if (name === 'enum' || name === 'rnum' || name === 'union') {
         if (nextWord === 'class' || nextWord === 'struct') {
             return 'skip';
         }
-        // `enum A:` / `rnum A:` 单独使用（等价 class A:）。
+        // `enum A:` / `rnum A:` / `union A:` 单独使用（等价 class A:）。
         return isViperAtStatementStart(text, identifierStart) &&
             nextWord.length > 0 &&
             isIdentifierStartChar(nextWord.charCodeAt(0))
@@ -732,6 +738,19 @@ function isViperAtStatementStart(text: string, identifierStart: number): boolean
         pos--;
     }
     return pos === 0 || text[pos - 1] === '\n' || text[pos - 1] === '\r';
+}
+
+// 跳过空白后返回首个非空白字符；若到行尾（换行）或文件结束则返回 undefined。
+function peekViperNextNonWsChar(text: string, from: number): string | undefined {
+    let pos = from;
+    const len = text.length;
+    while (pos < len && (text[pos] === ' ' || text[pos] === '\t')) {
+        pos++;
+    }
+    if (pos < len && text[pos] !== '\r' && text[pos] !== '\n') {
+        return text[pos];
+    }
+    return undefined;
 }
 
 export class Tokenizer {

@@ -716,3 +716,93 @@ def test_builtins_asm_llvmir():
     }
     serviceProvider.dispose();
 });
+
+test('Viper len 接受任意值并返回 t.SizeT', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+
+class Vec3:
+    def __init__(self, x: t.CInt, y: t.CInt, z: t.CInt):
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def __len__(self) -> t.CInt:
+        return 3
+
+class NoLen:
+    a: t.CInt = 0
+
+def test_len_any():
+    n: t.CInt = 5
+    f: t.CFloat = 3.5
+    p: t.CPtr = None
+    s: str = "hello"
+    v = Vec3(1, 2, 3)
+    nl = NoLen()
+    # len 对 t.CType 原生类型（int/float/指针/str）：返回 t.SizeT，不报错
+    a: t.CSizeT = len(n)
+    b: t.CSizeT = len(f)
+    c: t.CSizeT = len(p)
+    d: t.CSizeT = len(s)
+    # len 优先调用 __len__：有 __len__ 的结构体返回其返回类型
+    e: t.CSizeT = len(v)
+    # 无 __len__ 的结构体：报错
+    bad = len(nl)
+`;
+    const testDir = path.join(__dirname, '__viper_len_test__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'len_any.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== len_any.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        // 期望恰好 1 个错误级诊断：无 __len__ 的结构体 NoLen 使用 len() 报错；
+        // t.CType 原生类型（int/float/指针/str）豁免；有 __len__ 的 Vec3 返回其返回类型。
+        const errors = diagnostics.filter((d) => d.startsWith('[category=0]'));
+        assert.strictEqual(
+            errors.length,
+            1,
+            `expected exactly 1 error (NoLen without __len__), got: ${JSON.stringify(diagnostics)}`
+        );
+        assert.ok(
+            errors[0].includes('__len__'),
+            `expected __len__ error message: ${JSON.stringify(errors)}`
+        );
+
+        program.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});

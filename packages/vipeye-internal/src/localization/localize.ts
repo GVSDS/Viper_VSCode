@@ -1182,6 +1182,8 @@ export namespace Localizer {
             new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperModifierRequiresDef'));
         export const viperExternBodyInvalid = () =>
             new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperExternBodyInvalid'));
+        export const viperLenNoLenMethod = () =>
+            new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperLenNoLenMethod'));
         export const unhashableDictKey = () => getRawString('Diagnostic.unhashableDictKey');
         export const unhashableSetEntry = () => getRawString('Diagnostic.unhashableSetEntry');
         export const unionForwardReferenceNotAllowed = () => getRawString('Diagnostic.unionForwardReferenceNotAllowed');

@@ -618,6 +618,7 @@
         "unexpectedUnindent": "不应取消缩进",
         "viperModifierRequiresDef": "修饰关键字 \"{name}\" 必须与 def 搭配使用",
         "viperExternBodyInvalid": "extern 函数 \"{name}\" 的函数体必须为 pass 或 None",
+        "viperLenNoLenMethod": "类型 \"{name}\" 没有 __len__ 方法，不能用于 len()",
         "unhashableDictKey": "字典密钥必须可哈希",
         "unhashableSetEntry": "Set 条目必须是可哈希的",
         "uninitializedAbstractVariables": "抽象基类中定义的变量未在 final 类 \"{classType}\" 中初始化",

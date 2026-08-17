@@ -9280,6 +9280,50 @@ export function createTypeEvaluator(
         return false;
     }
 
+    // Viper 扩展：判断调用节点是否为内置 len 调用。
+    // Viper 语义下 len 接受任意值（不限定 Sized 协议），返回 t.SizeT（size_t），
+    // 与 typeshed builtins.vpi 的 Python len 声明（obj: Sized, / -> int）语义不同。
+    // 当同一函数名存在多个"版本"定义时，以本特判（Viper 方言实现）优先。
+    function isViperLenCall(baseTypeResult: TypeResult): boolean {
+        return (
+            isFunction(baseTypeResult.type) &&
+            baseTypeResult.type.shared.name === 'len' &&
+            baseTypeResult.type.shared.moduleName === 'builtins'
+        );
+    }
+
+    // Viper 扩展：从 t 模块获取 SizeT（size_t）的实例类型。
+    // t.vpi 中类型名为 CSizeT；优先查找 'SizeT'，失败时回退 'CSizeT'。
+    // 查找失败返回 undefined。
+    function getViperSizeTType(node: ParseNode): Type | undefined {
+        const tSymbolWithScope = lookUpSymbolRecursive(node, 't', /* honorCodeFlow */ true);
+        if (!tSymbolWithScope) {
+            return undefined;
+        }
+        const tEffectiveType = getEffectiveTypeOfSymbolForUsage(
+            tSymbolWithScope.symbol,
+            /* usageNode */ undefined,
+            /* useLastDecl */ true
+        ).type;
+        if (!tEffectiveType || !isModule(tEffectiveType)) {
+            return undefined;
+        }
+        const sizeTSymbol =
+            ModuleType.getField(tEffectiveType, 'SizeT') ?? ModuleType.getField(tEffectiveType, 'CSizeT');
+        if (!sizeTSymbol) {
+            return undefined;
+        }
+        const sizeTType = getEffectiveTypeOfSymbolForUsage(
+            sizeTSymbol,
+            /* usageNode */ undefined,
+            /* useLastDecl */ true
+        ).type;
+        if (sizeTType && isInstantiableClass(sizeTType)) {
+            return convertToInstance(sizeTType);
+        }
+        return undefined;
+    }
+
     // Viper 扩展：判断调用节点是否为 stdarg.va_arg 调用。
     // va_arg 通过 `from stdarg import va_arg` 引入，baseTypeResult 为 FunctionType，
     // 其 shared.name 为 'va_arg'。TPV 将 va_arg 视为 builtin，第二参数是类型名。
@@ -9760,6 +9804,40 @@ export function createTypeEvaluator(
                     typeResult.type = derefResult ?? UnknownType.create();
                 } else {
                     typeResult.type = UnknownType.create();
+                }
+            } else if (
+                // Viper 扩展：拦截内置 len 调用。
+                // Viper 语义下 len 优先调用 __len__ 魔法函数：
+                // - 用户自定义结构体类实例：必须有 __len__ 方法，否则报错；
+                //   返回 __len__ 的返回类型。
+                // - t.CType 原生类型（C 标量/指针/str/bytes 等，任意值以 t.CType 表示）：
+                //   豁免检查，直接返回 t.SizeT（size_t）。
+                // typeshed builtins.vpi 的 Python len 声明 `len(obj: Sized, /) -> int`
+                // 与 Viper 语义不符，版本重复时以本特判（Viper 方言实现）优先。
+                IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                isViperLenCall(baseTypeResult)
+            ) {
+                const argExpr = node.d.args.length >= 1 ? node.d.args[0].d.valueExpr : undefined;
+                const argType = argExpr ? getTypeOfExpression(argExpr).type : UnknownType.create();
+                if (isClassInstance(argType) && isViperUserStructValue(argType)) {
+                    // 用户自定义结构体：要求实现 __len__。
+                    const lenMethodResult = argExpr ? getTypeOfBoundMember(argExpr, argType, '__len__') : undefined;
+                    if (lenMethodResult && isFunction(lenMethodResult.type)) {
+                        const lenRetType = lenMethodResult.type.shared.declaredReturnType;
+                        typeResult.type =
+                            lenRetType && isInstantiableClass(lenRetType)
+                                ? convertToInstance(lenRetType)
+                                : lenRetType ?? UnknownType.create();
+                    } else {
+                        addDiagnostic(
+                            DiagnosticRule.reportGeneralTypeIssues,
+                            LocMessage.viperLenNoLenMethod().format({ name: argType.shared.name }),
+                            node
+                        );
+                        typeResult.type = UnknownType.create();
+                    }
+                } else {
+                    typeResult.type = getViperSizeTType(node) ?? getBuiltInObject(node, 'int');
                 }
             } else {
                 const callResult = validateCallArgs(

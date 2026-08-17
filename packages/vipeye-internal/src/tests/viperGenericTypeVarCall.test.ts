@@ -806,3 +806,73 @@ def test_len_any():
     }
     serviceProvider.dispose();
 });
+
+test('extern/export 支持直接声明形式 extern A(...)（无 def）', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+
+# extern/export 直接声明形式（无 def）
+extern E1(x: t.CInt) -> t.CInt
+extern E2(x: t.CInt) -> t.CInt: pass
+export X1(x: t.CInt) -> t.CInt
+export X2(x: t.CInt) -> t.CInt: pass
+# def 形式保留
+extern def E3(x: t.CInt) -> t.CInt
+export def X3(x: t.CInt) -> t.CInt
+# extern + fn 别名（无函数体）仍可用
+extern fn E4(x: t.CInt) -> t.CInt
+
+def use():
+    a: t.CInt = E1(1) + X1(2) + E3(3) + X3(4)
+`;
+    const testDir = path.join(__dirname, '__viper_extern_direct_test__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'extern_direct.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== extern_direct.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        // 期望没有任何错误级诊断：extern/export 直接声明形式与 def 形式均可。
+        const errors = diagnostics.filter((d) => d.startsWith('[category=0]'));
+        assert.strictEqual(
+            errors.length,
+            0,
+            `unexpected error diagnostics: ${JSON.stringify(diagnostics)}`
+        );
+
+        program.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});

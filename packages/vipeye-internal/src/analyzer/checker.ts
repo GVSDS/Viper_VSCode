@@ -4830,11 +4830,11 @@ export class Checker extends ParseTreeWalker {
                 declaredReturnType !== undefined &&
                 isPureCModifierType(declaredReturnType);
 
-            // Viper 扩展：extern 关键字声明的函数仅声明原型（函数体必须为 pass/None），
-            // 不要求返回语句与声明类型匹配。
+            // Viper 扩展：extern/export 关键字声明的函数仅声明原型（extern 函数体必须
+            // 为 pass/None），不要求返回语句与声明类型匹配。
             const isViperExternDecl =
                 IsViperDialect(this._fileInfo.executionEnvironment.dialect) &&
-                node.d.viperModifier === 'extern';
+                (node.d.viperModifier === 'extern' || node.d.viperModifier === 'export');
 
             if (
                 declaredReturnType &&

@@ -430,8 +430,11 @@ export class Parser {
 
         switch (this._peekKeywordType()) {
             case KeywordType.ViperModifier: {
-                // Viper 扩展：inline/export/extern 必须与 def（或其别名）搭配使用。
-                // 与 def 搭配时跳过修饰关键字并正常解析函数；单独使用时报错。
+                // Viper 扩展：inline/export/extern 修饰关键字。
+                // 与 def（或其别名）搭配时跳过修饰关键字并正常解析函数；
+                // extern/export 还支持直接声明形式：`extern A(...)`（等价 `extern def A(...)`），
+                // 此时以下一个标识符作为函数名解析函数定义；
+                // 其余单独使用时报错。
                 const modifierToken = this._peekToken() as KeywordToken;
                 const modifierText = this._fileContents!.slice(
                     modifierToken.start,
@@ -443,6 +446,21 @@ export class Parser {
                 ) {
                     this._getNextToken();
                     return this._parseFunctionDef(/* asyncToken */ undefined, /* decorators */ undefined, modifierText);
+                }
+                if (
+                    (modifierText === 'extern' || modifierText === 'export') &&
+                    this._peekToken(1).type === TokenType.Identifier
+                ) {
+                    // extern/export 直接声明形式：`extern A(...)`。
+                    // 消费修饰关键字后，下一个标识符即函数名；defToken 用修饰关键字
+                    // 作为范围起点（diagnostic 定位）。
+                    this._getNextToken();
+                    return this._parseFunctionDef(
+                        /* asyncToken */ undefined,
+                        /* decorators */ undefined,
+                        modifierText,
+                        modifierToken
+                    );
                 }
                 this._addSyntaxError(
                     LocMessage.viperModifierRequiresDef().format({ name: modifierText }),
@@ -2052,9 +2070,12 @@ export class Parser {
     private _parseFunctionDef(
         asyncToken?: KeywordToken,
         decorators?: DecoratorNode[],
-        viperModifier?: string
+        viperModifier?: string,
+        defTokenOverride?: Token
     ): FunctionNode | ErrorNode {
-        const defToken = this._getKeywordToken(KeywordType.Def);
+        // Viper 扩展：extern/export 直接声明形式（`extern A(...)`）没有 def 关键字，
+        // 用修饰关键字 token 作为范围起点；否则正常消费 Def 关键字 token。
+        const defToken = defTokenOverride ?? this._getKeywordToken(KeywordType.Def);
 
         const nameToken = this._getTokenIfIdentifier();
         if (!nameToken) {
@@ -2113,8 +2134,11 @@ export class Parser {
 
         let suite: SuiteNode;
         const possibleSuiteStart = this._peekToken();
-        if (viperModifier === 'extern' && possibleSuiteStart.type !== TokenType.Colon) {
-            // Viper extern 声明允许省略函数体（`extern def f(...) -> T`，无冒号、无 pass）。
+        if (
+            (viperModifier === 'extern' || viperModifier === 'export') &&
+            possibleSuiteStart.type !== TokenType.Colon
+        ) {
+            // Viper extern/export 声明允许省略函数体（`extern def f(...) -> T` 无冒号、无 pass）。
             // 创建空 suite 并消费行尾换行；`: pass` 方式仍走 _parseSuite 正常解析。
             suite = SuiteNode.create(possibleSuiteStart);
             if (this._consumeTokenIfType(TokenType.NewLine)) {

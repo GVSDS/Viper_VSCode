@@ -876,3 +876,71 @@ def use():
     }
     serviceProvider.dispose();
 });
+
+test('Viper 内置 double 类型（复刻 float，64 位）可用', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+
+def test_double():
+    # float 字面量 → double（32 位 → 64 位，无损）
+    d: double = 1.5
+    # double 运算返回 double
+    e: double = d * 2.0
+    # double 构造
+    f: double = double(3)
+    # double + int → double（整数位宽 <= 64 位浮点，无损）
+    g: double = d + 1
+    # 内置 double → t.CDouble
+    h: t.CDouble = d
+`;
+    const testDir = path.join(__dirname, '__viper_double_test__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'double_type.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== double_type.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        // 期望没有任何错误级诊断：double 类型、运算、构造及 t.CDouble 转换均可用。
+        const errors = diagnostics.filter((d) => d.startsWith('[category=0]'));
+        assert.strictEqual(
+            errors.length,
+            0,
+            `unexpected error diagnostics: ${JSON.stringify(diagnostics)}`
+        );
+
+        program.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});

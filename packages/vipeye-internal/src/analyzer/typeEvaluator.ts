@@ -26592,6 +26592,30 @@ export function createTypeEvaluator(
             return true;
         }
 
+        // Viper 扩展：内置 float ↔ double 隐式转换。
+        // Viper 中内置 double（64 位浮点，定义复刻 float）与内置 float 按 C 浮点
+        // 隐式转换规则互转：float → double 无损（32 位 → 64 位），
+        // double → float 允许降级（64 位 → 32 位）。
+        if (
+            isClassInstance(destType) && ClassType.isBuiltIn(destType, 'double') &&
+            isClassInstance(srcType) && ClassType.isBuiltIn(srcType, 'float')
+        ) {
+            return true;
+        }
+        if (
+            isClassInstance(destType) && ClassType.isBuiltIn(destType, 'float') &&
+            isClassInstance(srcType) && ClassType.isBuiltIn(srcType, 'double')
+        ) {
+            return true;
+        }
+        // 整数 → double（整数位宽 32/64 均 <= 64 位浮点，无损）。
+        if (
+            isClassInstance(destType) && ClassType.isBuiltIn(destType, 'double') &&
+            isClassInstance(srcType) && ClassType.isBuiltIn(srcType, 'int')
+        ) {
+            return true;
+        }
+
         // Viper 扩展：CEnum 子类 → int 隐式转换语义。
         // C 语言中 enum 值可以隐式转换为 int（如 int x = FR_OK）。
         // Viper 的 CEnum 子类（如 FRESULT）的成员（如 FRESULT.FR_OK）
@@ -26607,19 +26631,20 @@ export function createTypeEvaluator(
         // Viper 中所有 C 类型（CInt, CFloat, CChar 等）都是 CType 的子类，
         // 在底层等价于 Python 内置类型（int, float, str 等）。
         // 允许 `k: t.CInt = 1`（int → CInt）、`k: t.CFloat = 1.0`（float → CFloat）等赋值。
+        // double 为 Viper 内置 64 位浮点，可赋给 t.CDouble。
         if (
             isClassInstance(destType) && isCTypeSubclassType(destType) &&
-            isClassInstance(srcType) && ClassType.isBuiltIn(srcType, ['int', 'float', 'str', 'bool', 'bytes'])
+            isClassInstance(srcType) && ClassType.isBuiltIn(srcType, ['int', 'float', 'double', 'str', 'bool', 'bytes'])
         ) {
             return true;
         }
 
         // Viper 扩展：CType 子类 -> Python 内置类型隐式转换（反向）。
         // CInt/CFloat/CChar 等 CType 子类在底层等价于 Python 内置类型，
-        // 可隐式转换回 int/float/str/bool/bytes。
+        // 可隐式转换回 int/float/str/bool/bytes（含 t.CDouble → 内置 double）。
         // 覆盖场景：CInt 值传给 int 形参（如 def __init__(self, w: int) 接收 CInt 实参）。
         if (
-            isClassInstance(destType) && ClassType.isBuiltIn(destType, ['int', 'float', 'str', 'bool', 'bytes']) &&
+            isClassInstance(destType) && ClassType.isBuiltIn(destType, ['int', 'float', 'double', 'str', 'bool', 'bytes']) &&
             isClassInstance(srcType) && isCTypeSubclassType(srcType)
         ) {
             return true;

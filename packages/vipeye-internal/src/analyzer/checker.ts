@@ -238,6 +238,13 @@ function isViperExternAllowedBody(stmt: ParseNode): boolean {
     return false;
 }
 
+function isViperNoneLiteral(expr: ParseNode | undefined): boolean {
+    if (!expr || expr.nodeType !== ParseNodeType.Constant) {
+        return false;
+    }
+    return (expr as ConstantNode).d.constType === KeywordType.None;
+}
+
 export class Checker extends ParseTreeWalker {
     private readonly _moduleNode: ModuleNode;
     private readonly _fileInfo: AnalyzerFileInfo;
@@ -1083,6 +1090,24 @@ export class Checker extends ParseTreeWalker {
                             }) + diagAddendum.getString(),
                             node.d.expr ?? node,
                             returnTypeResult.expectedTypeDiagAddendum?.getEffectiveTextRange()
+                        );
+                    }
+
+                    // Viper 扩展：返回类型为 None（无返回值）的函数，return 只能写成
+                    // 裸 return 或 return None 字面量。若 return 的是另一个返回 None
+                    // 的表达式（如 `return g()`，g 的调用结果在 C 语义中无值），必须报错。
+                    if (
+                        returnTypeMatches &&
+                        node.d.expr &&
+                        IsViperDialect(this._fileInfo.executionEnvironment.dialect) &&
+                        isNoneInstance(adjReturnType) &&
+                        isNoneInstance(returnType) &&
+                        !isViperNoneLiteral(node.d.expr)
+                    ) {
+                        this._evaluator.addDiagnostic(
+                            DiagnosticRule.reportReturnType,
+                            LocMessage.viperReturnExprInNoneFunction(),
+                            node.d.expr
                         );
                     }
                 }

@@ -15,7 +15,7 @@
  */
 
 import * as AnalyzerNodeInfo from '../analyzer/analyzerNodeInfo';
-import { Declaration, DeclarationType, VariableDeclaration } from '../analyzer/declaration';
+import { Declaration, DeclarationType, FunctionDeclaration, VariableDeclaration } from '../analyzer/declaration';
 import { ParseTreeWalker } from '../analyzer/parseTreeWalker';
 import { isWithinTypeAnnotation } from '../analyzer/parseTreeUtils';
 import { TypeCategory, isCDefineType } from '../analyzer/types';
@@ -619,7 +619,14 @@ class SemanticTokenWalker extends ParseTreeWalker {
                     memberAccessType.category !== TypeCategory.Unknown &&
                     memberAccessType.category !== TypeCategory.Unbound
                 ) {
-                    tokenType = SemanticTokenTypes.property;
+                    // Viper 扩展：成员访问可求值时，若为函数类型（如 REnum 自带
+                    // kind()、CPtr 解引用转发的方法）显示为方法（函数颜色）；
+                    // 数据字段显示为 property。
+                    tokenType =
+                        memberAccessType.category === TypeCategory.Function ||
+                        memberAccessType.category === TypeCategory.Overloaded
+                            ? SemanticTokenTypes.function
+                            : SemanticTokenTypes.property;
                 } else {
                     tokenType = SemanticTokenTypes.undefined;
                 }
@@ -647,7 +654,12 @@ class SemanticTokenWalker extends ParseTreeWalker {
                     tokenModifiers |= defMod;
                     break;
                 case DeclarationType.Function:
-                    tokenType = SemanticTokenTypes.function;
+                    // Viper 扩展：define 宏函数名（定义处与调用处）显示为 macro（深蓝色）。
+                    if ((decl as FunctionDeclaration).node.d.isDefine) {
+                        tokenType = SemanticTokenTypes.macro;
+                    } else {
+                        tokenType = SemanticTokenTypes.function;
+                    }
                     tokenModifiers |= defMod;
                     break;
                 case DeclarationType.Param:

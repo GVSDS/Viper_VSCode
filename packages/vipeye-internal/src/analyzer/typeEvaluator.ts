@@ -4900,6 +4900,23 @@ export function createTypeEvaluator(
                 break;
             }
 
+            case ParseNodeType.UnaryOperation: {
+                // Viper 扩展：`*p = value`（C 指针解引用写回）。
+                // 将 value 赋给 p 指向的类型（pointee）。仅 Viper 方言、一元乘法（解引用）。
+                if (
+                    target.d.operator === OperatorType.Multiply &&
+                    IsViperDialect(AnalyzerNodeInfo.getFileInfo(target).executionEnvironment.dialect)
+                ) {
+                    // 解引用目标类型 = p 指向的类型（getTypeOfViperDeref）。
+                    const derefTypeResult = getTypeOfExpression(target);
+                    assignType(derefTypeResult.type, typeResult.type, expectedTypeDiagAddendum);
+                    writeTypeCache(target, derefTypeResult, EvalFlags.None);
+                    break;
+                }
+                addDiagnostic(DiagnosticRule.reportGeneralTypeIssues, LocMessage.assignmentTargetExpr(), target);
+                break;
+            }
+
             default: {
                 addDiagnostic(DiagnosticRule.reportGeneralTypeIssues, LocMessage.assignmentTargetExpr(), target);
                 break;
@@ -6218,7 +6235,15 @@ export function createTypeEvaluator(
             case TypeCategory.Never: {
                 // Viper 扩展：Unknown 类型成员访问时标黄警告"对象可能未定义"。
                 // 主要用于未解析的导入模块（如 import serial 失败后 serial.puts 访问）。
-                if (isUnknown(baseType) && IsViperDialect(fileInfo.executionEnvironment.dialect)) {
+                // 仅对"最终" Unknown（isIncomplete=false）报错：isIncomplete=true 表示
+                // 类型分析中间态（依赖尚未收敛，如循环 import 中方法绑定未完成），
+                // 此时报"对象可能未定义"是误报（收敛后类型会修正，如
+                // TransPyC StructGenMixin.get_mro_chain 内 self.find_struct）。
+                if (
+                    isUnknown(baseType) &&
+                    !(baseType.priv.isIncomplete ?? false) &&
+                    IsViperDialect(fileInfo.executionEnvironment.dialect)
+                ) {
                     fileInfo.diagnosticSink.addDiagnosticWithTextRange(
                         'warning',
                         LocMessage.viperUnknownMemberAccess().format({
@@ -6381,9 +6406,19 @@ export function createTypeEvaluator(
                         isClassInstance(baseType) &&
                         isViperREnumClass(baseType)
                     ) {
-                        const variantFieldType = getViperREnumVariantFieldType(baseType, memberName);
-                        if (variantFieldType) {
-                            typeResult = { type: variantFieldType };
+                        // Viper 扩展：REnum 自带 kind() 方法。
+                        // REnum 内存布局为 {i32 __tag, <max_variant_payload>}，
+                        // kind() 读取 __tag 判别值（对齐 TPC 的 _EmitREnumLlvm），
+                        // 返回 t.CInt（与 ast.AST.kind() 一致）。
+                        if (memberName === 'kind') {
+                            const kindFunctionType = FunctionType.createSynthesizedInstance('kind');
+                            kindFunctionType.shared.declaredReturnType = getBuiltInObject(node.d.member, 'int');
+                            typeResult = { type: kindFunctionType };
+                        } else {
+                            const variantFieldType = getViperREnumVariantFieldType(baseType, memberName);
+                            if (variantFieldType) {
+                                typeResult = { type: variantFieldType };
+                            }
                         }
                     }
                 }
@@ -9324,6 +9359,39 @@ export function createTypeEvaluator(
         return undefined;
     }
 
+    // Viper 扩展：判断调用节点是否为内置 enumerate 调用。
+    // Viper 语义下 enumerate 的迭代元素类型按 for 原迭代逻辑计算
+    //（str/bytes = i8* → t.CChar、CPtr[T] → T），索引类型为 t.CSizeT（size_t）。
+    function isViperEnumerateCall(node: CallNode, baseTypeResult: TypeResult): boolean {
+        return isInstantiableClass(baseTypeResult.type) && ClassType.isBuiltIn(baseTypeResult.type, 'enumerate');
+    }
+
+    // Viper 扩展：计算 enumerate(...) 迭代产生的元组类型 tuple[CSizeT, 元素类型]。
+    // 若非 Viper 方言下的 enumerate 调用则返回 undefined。
+    function getViperEnumerateIteratedType(expr: ExpressionNode): Type | undefined {
+        if (!IsViperDialect(AnalyzerNodeInfo.getFileInfo(expr).executionEnvironment.dialect)) {
+            return undefined;
+        }
+        if (expr.nodeType !== ParseNodeType.Call) {
+            return undefined;
+        }
+        const callNode = expr as CallNode;
+        const calleeTypeResult = getTypeOfExpression(callNode.d.leftExpr);
+        if (!isInstantiableClass(calleeTypeResult.type) || !ClassType.isBuiltIn(calleeTypeResult.type, 'enumerate')) {
+            return undefined;
+        }
+        const argExpr = callNode.d.args.length >= 1 ? callNode.d.args[0].d.valueExpr : undefined;
+        const elementType = argExpr
+            ? getTypeOfIterator(getTypeOfExpression(argExpr), /* isAsync */ false, argExpr)?.type ??
+              UnknownType.create()
+            : UnknownType.create();
+        const indexType = getViperSizeTType(expr) ?? getBuiltInObject(expr, 'int');
+        return makeTupleObject(evaluatorInterface, [
+            { type: indexType, isUnbounded: false },
+            { type: elementType, isUnbounded: false },
+        ]);
+    }
+
     // Viper 扩展：判断调用节点是否为 stdarg.va_arg 调用。
     // va_arg 通过 `from stdarg import va_arg` 引入，baseTypeResult 为 FunctionType，
     // 其 shared.name 为 'va_arg'。TPV 将 va_arg 视为 builtin，第二参数是类型名。
@@ -9839,6 +9907,27 @@ export function createTypeEvaluator(
                 } else {
                     typeResult.type = getViperSizeTType(node) ?? getBuiltInObject(node, 'int');
                 }
+            } else if (
+                // Viper 扩展：拦截内置 enumerate 调用。
+                // Python 声明 `enumerate(iterable: Iterable[_T]) -> enumerate[_T]`，
+                // 但 str/bytes（i8*）实参无法满足 Iterable[_T] 协议匹配，
+                // 导致 _T 求解为 Unknown（`for i, ch in enumerate(str)` 中 i/ch 均变 Unknown）。
+                // 此处按 for 原迭代逻辑（getTypeOfIterator）计算元素类型并直接特化 enumerate：
+                // str/bytes → t.CChar、CPtr[T] → T 等。索引类型由 for 语句特判
+                //（getViperEnumerateIteratedType）提供 t.CSizeT。
+                IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                isViperEnumerateCall(node, baseTypeResult)
+            ) {
+                const argExpr = node.d.args.length >= 1 ? node.d.args[0].d.valueExpr : undefined;
+                const argTypeResult = argExpr ? getTypeOfExpression(argExpr) : undefined;
+                const elementType = argTypeResult
+                    ? getTypeOfIterator(argTypeResult, /* isAsync */ false, argExpr!)?.type ?? UnknownType.create()
+                    : UnknownType.create();
+                const enumerateType = getBuiltInType(node, 'enumerate');
+                typeResult.type =
+                    isInstantiableClass(enumerateType) && elementType
+                        ? ClassType.cloneAsInstance(ClassType.specialize(enumerateType, [elementType]))
+                        : UnknownType.create();
             } else {
                 const callResult = validateCallArgs(
                     node,
@@ -9900,6 +9989,40 @@ export function createTypeEvaluator(
             addDiagnostic(DiagnosticRule.reportInvalidTypeForm, LocMessage.typeAnnotationCall(), node);
 
             typeResult = { type: UnknownType.create() };
+        }
+
+        // Viper 扩展：返回类型为 t.State 的函数是 C 风格 noreturn（仅声明不定义，
+        // 如 sys.exit / stdlib.exit 的 `-> t.State`）。调用此类函数后流程终止（Never），
+        // 使 `if x is None: fatal_error(...)` 模式能正确窄化——fatal_error 内部调用
+        // sys.exit(1) 返回 Never 后，fatal_error 被推断为 NoReturn，if 的 true 分支
+        // 终止流程，后续代码不会错误地保留 None 分支（否则 `x.Ty.Pointee` 会把
+        // x.Ty 解析为 `None | CPtr[LLVMType]` 并误报 "None 没有属性 Pointee"）。
+        if (
+            IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+            !typeResult.typeErrors &&
+            !isNever(typeResult.type) &&
+            isFunctionOrOverloaded(baseTypeResult.type)
+        ) {
+            let hasViperStateReturn = false;
+            doForEachSubtype(baseTypeResult.type, (subtype) => {
+                if (isFunction(subtype)) {
+                    const declaredReturn = subtype.shared.declaredReturnType;
+                    if (declaredReturn) {
+                        doForEachSubtype(declaredReturn, (retSubtype) => {
+                            if (
+                                isClass(retSubtype) &&
+                                isCTypeSubclassType(retSubtype) &&
+                                retSubtype.shared.name === 'State'
+                            ) {
+                                hasViperStateReturn = true;
+                            }
+                        });
+                    }
+                }
+            });
+            if (hasViperStateReturn) {
+                typeResult.type = NeverType.createNever();
+            }
         }
 
         return typeResult;
@@ -18366,6 +18489,17 @@ export function createTypeEvaluator(
                     EvalFlags.NoTypeVarTuple |
                     EvalFlags.NoClassVar;
 
+                // Viper 扩展：保留上方"裸类引用 RHS 不专用化"的 NoSpecialize 标志。
+                // 否则 `rowptr: t.CTypedef = t.CPtr` 的 RHS 会被 reportMissingTypeArgs
+                // 预填成 CPtr[Unknown]，导致 `rowptr[int]` 无法再特化
+                // （下标处报"类型 CPtr[Unknown] 已专用化"）。
+                if (
+                    node.d.rightExpr.nodeType === ParseNodeType.Name ||
+                    node.d.rightExpr.nodeType === ParseNodeType.MemberAccess
+                ) {
+                    flags |= EvalFlags.NoSpecialize;
+                }
+
                 typeAliasNameNode = (node.d.leftExpr as TypeAnnotationNode).d.valueExpr as NameNode;
 
                 if (!isLegalTypeAliasExpressionForm(node.d.rightExpr, /* allowStrLiteral */ true)) {
@@ -21337,8 +21471,18 @@ export function createTypeEvaluator(
         }
 
         const iteratorTypeResult = getTypeOfExpression(node.d.iterableExpr);
-        const iteratedType =
-            getTypeOfIterator(iteratorTypeResult, !!node.d.isAsync, node.d.iterableExpr)?.type ?? UnknownType.create();
+        let iteratedType: Type;
+        // Viper 扩展：`for i, ch in enumerate(x)` 中 enumerate 迭代产生
+        // tuple[t.CSizeT, 元素类型] —— 索引为 size_t（C 语义数组下标），
+        // 元素类型按 for 原迭代逻辑计算（str/bytes → t.CChar、CPtr[T] → T）。
+        const enumerateIteratedType = getViperEnumerateIteratedType(node.d.iterableExpr);
+        if (enumerateIteratedType) {
+            iteratedType = enumerateIteratedType;
+        } else {
+            iteratedType =
+                getTypeOfIterator(iteratorTypeResult, !!node.d.isAsync, node.d.iterableExpr)?.type ??
+                UnknownType.create();
+        }
 
         assignTypeToExpression(
             node.d.targetExpr,
@@ -26422,15 +26566,25 @@ export function createTypeEvaluator(
             }
         }
 
-        // Viper 扩展：整数 ↔ 指针隐式转换语义。
-        // 在 C/Viper 语义中，整数（地址值）与指针类型可相互转换：
-        //  - 整数地址 → CPtr/CVoid（如 framebuffer_addr: CUnsignedLong 赋值给 CVoid | CPtr）
-        //  - 指针 → 整数（如 uintptr_t = (uintptr_t)ptr）
-        // 这模拟 C 语言的整数-指针转换规则。
+        // Viper 扩展：整数 ↔ 指针隐式转换语义（C 空指针常量规则）。
+        // C 语言中只有"值为 0 的整型常量表达式"（null pointer constant）可以
+        // 隐式转换为任意指针类型（NULL）；其他整数值（如地址值）必须显式转换。
+        //  - 整数字面量 0 → CPtr/CVoid：允许（NULL 空指针）
+        //  - 其他整数 → 指针：不允许，需显式转换（如 t.CUInt32T(addr, t.CPtr)）
+        //  - 指针 → 整数：允许（如 uintptr_t = (uintptr_t)ptr）
         const destIsPtrLike = isCPtrType(destType) || isCVoidType(destType);
         const srcIsPtrLike = isCPtrType(srcType) || isCVoidType(srcType);
         if (destIsPtrLike && isViperIntegerType(srcType)) {
-            return true;
+            // 仅整数字面量 0（null pointer constant）可隐式转换为指针；
+            // 变量/常量即使值为 0 也不是字面量（C 语义同样拒绝）。
+            if (isClassInstance(srcType) && srcType.priv.literalValue === 0) {
+                return true;
+            }
+            diag?.addMessage(
+                `仅允许整数字面量 0 隐式转换为指针（NULL 空指针），` +
+                    `其他整数值需显式转换（如 t.CInt(值, t.CPtr)）`
+            );
+            return false;
         }
         if (srcIsPtrLike && isViperIntegerType(destType)) {
             return true;

@@ -18,12 +18,16 @@ import * as path from 'path';
 
 import { ImportResolver } from '../analyzer/importResolver';
 import { Program } from '../analyzer/program';
+import { ParseTreeWalker } from '../analyzer/parseTreeWalker';
+import { TypeEvaluator } from '../analyzer/typeEvaluatorTypes';
 import { ConfigOptions, ExecutionEnvironment } from '../common/configOptions';
 import { NullConsole } from '../common/console';
 import { RealTempFile, createFromRealFileSystem } from '../common/realFileSystem';
 import { createServiceProvider } from '../common/serviceProviderExtensions';
 import { UriEx } from '../common/uri/uriUtils';
 import { FullAccessHost } from '../common/fullAccessHost';
+import { convertOffsetToPosition } from '../common/positionUtils';
+import { MemberAccessNode } from '../parser/parseNodes';
 
 // 允许 vipershed-fallback（t.vpi/c.vpi 存根）被定位。
 (global as any).__rootDirectory = path.resolve();
@@ -66,9 +70,10 @@ function buildProgram(targetPath: string) {
 function getDiagnostics(program: Program, configOptions: ConfigOptions, uri: any): string[] {
     const sourceFile = program.getSourceFile(uri);
     assert(sourceFile, 'source file not found');
-    return (sourceFile.getDiagnostics(configOptions) || []).map(
-        (diag) => `[category=${diag.category}] ${diag.message}`
-    );
+    return (sourceFile.getDiagnostics(configOptions) || []).map((diag) => {
+        const line = diag.range ? diag.range.start.line + 1 : -1;
+        return `[category=${diag.category}][line=${line}] ${diag.message}`;
+    });
 }
 
 test('GenericTest 泛型类 Box 中 T(v) 类型变量调用不报 not callable', () => {
@@ -154,12 +159,12 @@ def make_box():
             `unexpected not-callable errors: ${JSON.stringify(diagnostics)}`
         );
 
-        program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
     serviceProvider.dispose();
 });
+
 
 
 
@@ -219,12 +224,12 @@ def test_explicit_type_arg():
             `unexpected subscriptable errors: ${JSON.stringify(diagnostics)}`
         );
 
-        program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
     serviceProvider.dispose();
 });
+
 
 
 test('c.Deref 对 IntPair | t.CPtr 联合返回结构体，成员访问解析为 CInt', () => {
@@ -296,12 +301,12 @@ def generic_swap[T](p: IntPair | t.CPtr):
         );
         assert.ok(noAttr[0].includes('zzz'), `expected zzz error: ${JSON.stringify(diagnostics)}`);
 
-        program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
     serviceProvider.dispose();
 });
+
 
 
 test('Viper 关键字 inline/export/extern/state/enum/rnum/struct 解析与语义', () => {
@@ -410,12 +415,12 @@ def test_usage():
             `unexpected error diagnostics: ${JSON.stringify(errors)}`
         );
 
-        program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
     serviceProvider.dispose();
 });
+
 
 test('Viper 修饰关键字 inline/export/extern 单独使用报错', () => {
     const tempFile = new RealTempFile();
@@ -476,12 +481,12 @@ inline def ok(x: t.CInt) -> t.CInt:
             `expected 3 modifier errors, got: ${JSON.stringify(diagnostics)}`
         );
 
-        program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
     serviceProvider.dispose();
 });
+
 
 test('Viper def 别名 fn/fun/func/function 与 extern 函数体校验', () => {
     const tempFile = new RealTempFile();
@@ -567,12 +572,12 @@ def use():
             `expected 1 extern body error, got: ${JSON.stringify(diagnostics)}`
         );
 
-        program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
     serviceProvider.dispose();
 });
+
 
 test('Viper fn/fun/func/function 单独使用报错，后跟 :/=/ 保持标识符', () => {
     const tempFile = new RealTempFile();
@@ -644,12 +649,12 @@ fn ok(x: t.CInt) -> t.CInt:
             `expected missing-function-name error: ${JSON.stringify(errors)}`
         );
 
-        program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
     serviceProvider.dispose();
 });
+
 
 test('builtins.vp 中 Asm/LLVMIR/AsmInp/AsmOut/LInp/LOut 签名可用且不报未定义', () => {
     const tempFile = new RealTempFile();
@@ -710,12 +715,12 @@ def test_builtins_asm_llvmir():
             `unexpected error diagnostics: ${JSON.stringify(diagnostics)}`
         );
 
-        program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
     serviceProvider.dispose();
 });
+
 
 test('Viper len 接受任意值并返回 t.SizeT', () => {
     const tempFile = new RealTempFile();
@@ -800,12 +805,12 @@ def test_len_any():
             `expected __len__ error message: ${JSON.stringify(errors)}`
         );
 
-        program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
     serviceProvider.dispose();
 });
+
 
 test('extern/export 支持直接声明形式 extern A(...)（无 def）', () => {
     const tempFile = new RealTempFile();
@@ -870,12 +875,12 @@ def use():
             `unexpected error diagnostics: ${JSON.stringify(diagnostics)}`
         );
 
-        program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
     serviceProvider.dispose();
 });
+
 
 test('Viper 内置 double 类型（复刻 float，64 位）可用', () => {
     const tempFile = new RealTempFile();
@@ -938,9 +943,252 @@ def test_double():
             `unexpected error diagnostics: ${JSON.stringify(diagnostics)}`
         );
 
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});
+
+
+test('Viper 构造：__new__ 返回 实例|CPtr 联合时按 __init__ 校验参数（如 FunctionDef 7 参构造）', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t
+
+class Foo:
+    x: t.CInt
+
+    def __new__(self, pool, a: t.CInt, b: t.CInt):
+        ptr: Foo | t.CPtr = None
+        return ptr
+
+    def __init__(self, pool, a: t.CInt, b: t.CInt, c: t.CInt = None):
+        self.x = a
+
+def test():
+    f: Foo | t.CPtr = Foo(None, 1, 2, 3)
+`;
+    const testDir = path.join(__dirname, '__viper_ctor_repro__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'ctor_repro.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== ctor_repro.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        const errors = diagnostics.filter((d) => d.startsWith('[category=0]'));
+        assert.strictEqual(
+            errors.length,
+            0,
+            `unexpected error diagnostics: ${JSON.stringify(diagnostics)}`
+        );
+
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});
+
+
+test('llvmlite 链式：Value.Ty.Pointee 嵌套成员访问可解析（AssignGenMixin.vp:874）', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const code = `import t, c
+import llvmlite
+
+def test(target_alloca: llvmlite.Value | t.CPtr):
+    target_ty: llvmlite.LLVMType | t.CPtr = target_alloca.Ty.Pointee
+    elem_ptr: llvmlite.Value | t.CPtr = None
+    elem_ty: llvmlite.LLVMType | t.CPtr = elem_ptr.Ty.Pointee
+
+def test_narrow(target_alloca: llvmlite.Value | t.CPtr = None):
+    if target_alloca is not None:
+        t1: llvmlite.LLVMType | t.CPtr = target_alloca.Ty.Pointee
+        if target_alloca.Ty is not None:
+            t2: llvmlite.LLVMType | t.CPtr = target_alloca.Ty.Pointee
+
+# Viper fail-fast 报错函数：-> t.State 表示 C 风格 noreturn（不返回，终止流程）。
+def fatal_error(node: t.CInt, msg: str) -> t.State:
+    pass
+
+def test_ty_narrow(target_alloca: llvmlite.Value | t.CPtr):
+    if target_alloca.Ty is None:
+        fatal_error(0, "变量类型信息缺失")
+    t5: llvmlite.LLVMType | t.CPtr = target_alloca.Ty.Pointee
+`;
+    const testDir = path.join(__dirname, '__llvmlite_chain__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'chain_repro.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== chain_repro.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        const errors = diagnostics.filter(
+            (d) => d.startsWith('[category=0]') || d.startsWith('[category=1]')
+        );
+        assert.strictEqual(
+            errors.length,
+            0,
+            `unexpected error diagnostics: ${JSON.stringify(diagnostics)}`
+        );
+
+        // 防回归断言：`if target_alloca.Ty is None: fatal_error(...)` 后，
+        // `target_alloca.Ty` 的 hover 类型必须是 CPtr[LLVMType]（fatal_error 的
+        // t.State/无注解 sys.exit 结尾语义被识别为 NoReturn，None 不泄漏），
+        // 而非 CPtr[None]。
+        const sourceFile = program.getSourceFile(uri);
+        assert(sourceFile, 'source file not found');
+        const parseResults = sourceFile.getParseResults();
+        assert(parseResults, 'parse results not found');
+        const evaluator = program.evaluator as TypeEvaluator | undefined;
+        assert(evaluator, 'evaluator not available');
+        const ev = evaluator;
+        const lines = parseResults.parserOutput.lines;
+        const tyTypes: string[] = [];
+        let memberAccessCount = 0;
+        class TyCollector extends ParseTreeWalker {
+            override visitMemberAccess(node: MemberAccessNode) {
+                memberAccessCount++;
+                const memberName = (node.d.member as any)?.d?.value ?? '';
+                const pos = convertOffsetToPosition(node.start, lines);
+                if (memberName !== 'Ty') {
+                    return true;
+                }
+                const exprType = ev.getType(node as any);
+                tyTypes.push(
+                    `L${pos.line + 1} .Ty: ${exprType ? program.printType(exprType) : '(undefined)'}`
+                );
+                return true;
+            }
+        }
+        new TyCollector().walk(parseResults.parserOutput.parseTree);
+        console.log(`=== .Ty hover 类型 (memberAccess=${memberAccessCount}) ===`);
+        tyTypes.forEach((t) => console.log(`  ${t}`));
+        for (const t of tyTypes) {
+            // 仅断言 test_ty_narrow（fatal_error NoReturn 场景，L19-22）内的 .Ty 非 None。
+            // 其他场景（elem_ptr = None 等）的 None 联合属正常语义，不受此断言约束。
+            const lineMatch = /L(\d+)/.exec(t);
+            const line = lineMatch ? parseInt(lineMatch[1], 10) : 0;
+            if (line >= 19 && line <= 22) {
+                assert(
+                    !t.includes('None'),
+                    `Ty should not be None-typed (fatal_error must terminate flow): ${t}`
+                );
+            }
+        }
+
         program.dispose();
     } finally {
         fs.rmSync(testDir, { recursive: true, force: true });
     }
+    serviceProvider.dispose();
+});
+
+
+test('真实文件 AssignGenMixin.vp 分析（target_alloca.Ty.Pointee 链式）', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const targetPath = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\TransPyV\\App\\lib\\core\\Gen\\AssignGenMixin.vp';
+    const projectRoot = UriEx.file(path.dirname(targetPath));
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot, UriEx.file(TRANSPYC_INCLUDES)],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+    const program = new Program(importResolver, configOptions, serviceProvider);
+    const uri = UriEx.file(targetPath);
+    program.setTrackedFiles([uri]);
+    while (program.analyze()) {
+        // 循环
+    }
+
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    console.log('=== AssignGenMixin.vp errors (line 840-930) ===');
+    const errors = diagnostics.filter(
+        (d) =>
+            (d.startsWith('[category=0]') || d.startsWith('[category=1]')) &&
+            d.includes('line=84') ||
+            d.includes('line=85') ||
+            d.includes('line=86') ||
+            d.includes('line=87') ||
+            d.includes('line=88') ||
+            d.includes('line=89') ||
+            d.includes('line=90') ||
+            d.includes('line=91') ||
+            d.includes('line=92')
+    );
+    errors.forEach((d) => console.log(`  ${d}`));
+    console.log(`errors in range: ${errors.length}`);
+
+    program.dispose();
     serviceProvider.dispose();
 });

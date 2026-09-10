@@ -15,6 +15,7 @@ import { OperationCanceledException, throwIfCancellationRequested } from '../com
 import { ConfigOptions, ExecutionEnvironment, matchFileSpecs } from '../common/configOptions';
 import { ConsoleInterface, StandardConsole } from '../common/console';
 import { isThenable } from '../common/core';
+import { appendArray } from '../common/collectionUtils';
 import * as debug from '../common/debug';
 import { assert } from '../common/debug';
 import { Diagnostic, DiagnosticCategory } from '../common/diagnostic';
@@ -30,6 +31,8 @@ import { Range, TextRange, doRangesIntersect } from '../common/textRange';
 import { Duration, timingStats } from '../common/timing';
 import { Uri } from '../common/uri/uri';
 import { ParseFileResults, ParserOutput } from '../parser/parser';
+import { MemberAccessNode, ParseNodeType } from '../parser/parseNodes';
+import { DeclarationType } from './declaration';
 import { RequiringAnalysisCount } from './analysis';
 import { AbsoluteModuleDescriptor, ImportLookupResult, LookupImportOptions } from './analyzerFileInfo';
 import { CellChainIndex, CellChainIndexProvider } from './cellChainIndex';
@@ -156,6 +159,10 @@ export class Program {
     private _preCheckCallback: PreCheckCallback | undefined;
     private _editModeTracker = new EditModeTracker();
     private _sourceFileFactory: ISourceFileFactory;
+
+    // Viper 扩展：includes/builtins.vp（真实源码，非 .vpi 存根）的 typedef 符号
+    // 合并状态。key = builtinsImport.uri.key，避免对每个文件重复扫描/合并。
+    private _viperBuiltinsVpMergedKeys = new Set<string>();
 
     constructor(
         initialImportResolver: ImportResolver,
@@ -286,6 +293,9 @@ export class Program {
     setConfigOptions(configOptions: ConfigOptions) {
         this._configOptions = configOptions;
         this._importResolver.setConfigOptions(configOptions);
+
+        // Viper 扩展：配置变化（includes 等搜索路径调整）后重置 builtins.vp 合并状态。
+        this._viperBuiltinsVpMergedKeys.clear();
 
         // Create a new evaluator with the updated config options.
         this._createNewEvaluator();
@@ -1879,6 +1889,13 @@ export class Program {
             // the builtin module.
             builtinsScope =
                 getScopeIfAvailable(fileToBind.chainedSourceFile) ?? getScopeIfAvailable(fileToBind.builtinsImport);
+
+            // Viper 扩展：将项目 includes 中 builtins.vp（真实源码，非 .vpi 存根）
+            // 的 t.CTypedef 类型别名（rowptr/size_t 等）合并进 builtin 作用域。
+            // 对齐 TransPyC TypeAnnotationResolver / TPV _lookup_builtins_typedef 的
+            // "builtins 最后匹配"语义：builtins 始终纳入编译链但不在用户文件的
+            // import 闭包内，其 typedef 声明需作为注解名解析的兜底。
+            this._mergeViperBuiltinsVpSymbols(fileToBind, builtinsScope);
         }
 
         if (fileToBind.sourceFile.isParseRequired()) {
@@ -1900,6 +1917,125 @@ export class Program {
             fileToBind.ipythonMode === IPythonMode.CellDocs ? this._cellChainIndex : undefined
         );
         return true;
+    }
+
+    // Viper 扩展：将项目 includes 中 builtins.vp（真实源码，非 .vpi 存根）的
+    // t.CTypedef 类型别名（rowptr/size_t 等）合并进 builtin 作用域。
+    //
+    // 背景：TransPyC/TPV 的"builtins 最后匹配"——builtins 模块始终纳入编译链，
+    // 但不在用户文件的 import 闭包内，其 `NAME: t.CTypedef = TYPE` 声明（如
+    // builtins.vp 中的 rowptr = t.CPtr、size_t = __stdint.size_t）不随
+    // from_imports 注入，编译器按源文件扫描 builtins.vp 作为注解名解析兜底
+    // （见 TransPyC lib/core/TypeAnnotationResolver.py）。
+    //
+    // LSP 侧 builtin 作用域仍以 builtins.vpi（typeshed 存根，提供 int/str/Asm 等）
+    // 为基准，这里仅补充 builtins.vp 中 builtin 作用域缺失的 typedef 符号，
+    // 不覆盖既有内建语义。
+    private _mergeViperBuiltinsVpSymbols(fileToBind: SourceFileInfo, builtinsScope: Scope | undefined) {
+        if (!builtinsScope || !fileToBind.builtinsImport) {
+            return;
+        }
+
+        const key = fileToBind.builtinsImport.uri.key;
+        if (this._viperBuiltinsVpMergedKeys.has(key)) {
+            return;
+        }
+
+        // 先标记（防止绑定 builtins.vp 时递归进入本方法），成功后保留该标记。
+        this._viperBuiltinsVpMergedKeys.add(key);
+
+        // 在 workspace root / 项目 includes（extraPaths）中定位 builtins.vp。
+        // 注意：用 fileToBind.uri 而非 builtinsImport.uri（后者位于 typeshed，
+        // findExecEnvironment 会落到默认环境而丢失 extraPaths）。
+        const execEnv = this._configOptions.findExecEnvironment(fileToBind.uri);
+        const candidates: Uri[] = [];
+        if (execEnv?.root) {
+            candidates.push(execEnv.root);
+        }
+        if (execEnv) {
+            appendArray(candidates, execEnv.extraPaths);
+        }
+
+        // Viper 扩展：真实编译器始终把 stdlib 的 includes 目录纳入编译链，
+        // 与工程是否在 .vpj / viperconfig 中声明 includes 无关。这里额外沿
+        // "被分析文件" 与 "执行环境根" 的祖先目录上溯（最多 6 层），把每个
+        // 祖先目录自身及其 includes/ 子目录也纳入 builtins.vp 的候选位置，
+        // 使 `<root>/includes/builtins.vp` 对 `<root>/Test/.../App/main.vp`
+        // 这类未显式配置 includes 的工程同样可用（对齐编译器行为）。
+        const ancestorKeys = new Set<string>(candidates.map((c) => c.key));
+        const seeds: Uri[] = [];
+        if (fileToBind.uri && !fileToBind.uri.isEmpty()) {
+            seeds.push(fileToBind.uri.getDirectory());
+        }
+        if (execEnv?.root) {
+            seeds.push(execEnv.root);
+        }
+        for (const seed of seeds) {
+            let dir: Uri | undefined = seed;
+            for (let depth = 0; depth < 6 && dir && !dir.isEmpty(); depth++) {
+                for (const candidateDir of [dir, dir.combinePathsUnsafe('includes')]) {
+                    if (ancestorKeys.has(candidateDir.key)) {
+                        continue;
+                    }
+                    ancestorKeys.add(candidateDir.key);
+                    candidates.push(candidateDir);
+                }
+                const parent = dir.getDirectory();
+                if (parent.equals(dir)) {
+                    break;
+                }
+                dir = parent;
+            }
+        }
+
+        let builtinsVpUri: Uri | undefined;
+        for (const dir of candidates) {
+            const candidate = dir.combinePathsUnsafe('builtins').addExtension('.vp');
+            if (this.fileSystem.existsSync(candidate)) {
+                builtinsVpUri = candidate;
+                break;
+            }
+        }
+
+        if (!builtinsVpUri) {
+            return;
+        }
+
+        // 加载并绑定 builtins.vp（_lookUpImport 会按需绑定，递归安全）。
+        this.addTrackedFile(builtinsVpUri);
+        this._lookUpImport(builtinsVpUri);
+
+        const builtinsVpInfo = this.getSourceFileInfo(builtinsVpUri);
+        const parseResults = builtinsVpInfo?.sourceFile.getParserOutput();
+        if (!builtinsVpInfo || !parseResults) {
+            return;
+        }
+
+        const builtinsVpScope = AnalyzerNodeInfo.getScope(parseResults.parseTree);
+        if (!builtinsVpScope) {
+            return;
+        }
+
+        // 合并：builtins.vp 的声明优先覆盖 builtin 作用域（完全对齐真实编译器，
+        // 如 ord/chr 的 t.CChar 签名、min/max 的 double 签名、rowptr/size_t 等 typedef）。
+        // 覆盖范围：t.CTypedef 类型别名声明 + 函数声明；跳过模块别名（__stdint/t）
+        // 与隐式 dunder 符号，避免引入不必要的隐式全局。
+        for (const [name, symbol] of builtinsVpScope.symbolTable) {
+            const decls = symbol.getDeclarations();
+            const isViperDecl = decls.some(
+                (decl) =>
+                    (decl.type === DeclarationType.Variable &&
+                        !!decl.typeAnnotationNode &&
+                        decl.typeAnnotationNode.nodeType === ParseNodeType.MemberAccess &&
+                        (decl.typeAnnotationNode as MemberAccessNode).d.member.d.value === 'CTypedef') ||
+                    decl.type === DeclarationType.Function
+            );
+            if (!isViperDecl) {
+                continue;
+            }
+
+            builtinsScope.symbolTable.set(name, symbol);
+        }
     }
 
     private _getEffectiveFutureImports(futureImports: Set<string>, chainedSourceFile: SourceFileInfo): Set<string> {

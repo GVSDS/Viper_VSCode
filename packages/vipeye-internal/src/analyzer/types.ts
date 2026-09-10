@@ -4153,7 +4153,8 @@ export function combineTypes(subtypes: Type[], options?: CombineTypesOptions): T
     // Viper 扩展：将 Struct | CPtr 自动映射为 CPtr[Struct]。
     // 模拟 C 语言指针语义：结构体与指针的联合类型自动转换为指向该结构体的指针类型。
     // 例如：Scheduler | t.CPtr → CPtr[Scheduler]，bootinfo.bootinfo | t.CPtr → CPtr[bootinfo.bootinfo]。
-    // 识别条件：联合类型中同时存在 CPtr 子类型和"结构体"子类型（非 CPtr/CVoid/CArray/CConst/CDefine/整数/str/bytes）。
+    // 识别条件：联合类型中同时存在 CPtr 子类型和"结构体"子类型（非 CPtr/CVoid/CArray/CConst/CDefine/str/bytes）。
+    // int 允许作为结构体候选：`int | t.CPtr` → CPtr[int]（C 的 int*），与 `t.CInt | t.CPtr` 一致。
     if (subtypes.length > 1) {
         let cptrSubtype: ClassType | undefined;
         const structSubtypes: ClassType[] = [];
@@ -4167,12 +4168,13 @@ export function combineTypes(subtypes: Type[], options?: CombineTypesOptions): T
                 }
             } else if (
                 isClass(subtype) &&
+                // None 是空指针取值而非结构体，不能作为 CPtr 的类型参数（否则 None | CPtr[T] 会误折叠成 CPtr[None]）
+                !ClassType.isBuiltIn(subtype, 'NoneType') &&
                 !isCVoidType(subtype) &&
                 !isCArrayType(subtype) &&
                 !isCConstType(subtype) &&
                 !isCStaticType(subtype) &&
                 !isCDefineType(subtype) &&
-                !ClassType.isBuiltIn(subtype, 'int') &&
                 !ClassType.isBuiltIn(subtype, 'str') &&
                 !ClassType.isBuiltIn(subtype, 'bytes') &&
                 !ClassType.isBuiltIn(subtype, 'object')

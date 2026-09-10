@@ -1,10 +1,74 @@
+import w32.win32console as w32cmd
 import stdio
 import t, c
 
 
-def add(a: int, b: int) -> int:
-    return a + b
+pagecode: t.CDefine = 65001
 
-def main() -> int:
-    stdio.printf("Hello, World!")
+
+class TestStruct():
+    a: t.CInt
+    b: t.CInt
+
+
+class Obj():
+    val: t.CInt
+
+
+export def main() -> int:
+    w32cmd.SetConsoleOutputCP(pagecode)
+    w32cmd.SetConsoleCP(pagecode)
+    print("=== Unary * / & (Deref/AddrOf) Test ===")
+
+    # --- Test 1: 标量 & 取地址 + * 解引用 ---
+    x: int = 42
+    px: int | t.CPtr = &x
+    d: int = *px
+    print(f"T1: x={x}  *(&x)={d}  (expect 42, 42)")
+    if d == 42:
+        print("T1 OK")
+    else:
+        print("T1 FAIL")
+
+    # --- Test 2: 通过指针写回（c.DerefAs 兼容形式） ---
+    c.DerefAs(px, 100)
+    print(f"T2: after c.DerefAs(px, 100) x={x}  (expect 100)")
+    if x == 100:
+        print("T2 OK")
+    else:
+        print("T2 FAIL")
+
+    # --- Test 3: 数组元素地址 &arr[i] + * 解引用 ---
+    a: t.CArray[t.CInt, 4]
+    a[0] = 7
+    pa: t.CInt | t.CPtr = &a[0]
+    v3: int = *pa
+    print(f"T3: a[0]={a[0]}  *&a[0]={v3}  (expect 7, 7)")
+    if v3 == 7:
+        print("T3 OK")
+    else:
+        print("T3 FAIL")
+
+    # --- Test 4: 结构体字段地址 &s.f + * 解引用 ---
+    s: TestStruct
+    s.a = 10
+    pf: t.CInt | t.CPtr = &s.a
+    v4: int = *pf
+    print(f"T4: s.a={s.a}  *&s.a={v4}  (expect 10, 10)")
+    if v4 == 10:
+        print("T4 OK")
+    else:
+        print("T4 FAIL")
+
+    # --- Test 5: &obj 对象指针（对象变量即指针） ---
+    o: Obj
+    o.val = 99
+    po: Obj | t.CPtr = &o
+    print(f"T5: o.val={o.val}  &o->val={po.val}  (expect 99, 99)")
+    if po.val == 99:
+        print("T5 OK")
+    else:
+        print("T5 FAIL")
+
+    print("=== Unary * / & Test Done ===")
     return 0

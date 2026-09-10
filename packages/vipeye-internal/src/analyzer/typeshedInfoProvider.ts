@@ -118,7 +118,7 @@ class DefaultTypeshedInfoProvider implements TypeshedInfoProvider {
                             typeshedThirdPartyPackagePaths.set(innerEntry.name, [innerDirPath]);
                         }
                     } else if (innerEntry.isFile()) {
-                        if (innerEntry.name.endsWith('.vpi')) {
+                        if (innerEntry.name.endsWith('.vpi') || innerEntry.name.endsWith('.vpnci')) {
                             const strippedFileName = stripFileExtension(innerEntry.name);
                             const pathList = typeshedThirdPartyPackagePaths.get(strippedFileName);
                             if (pathList) {

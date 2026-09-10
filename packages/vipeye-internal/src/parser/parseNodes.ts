@@ -473,6 +473,8 @@ export interface FunctionNode extends ParseNodeBase<ParseNodeType.Function> {
         suite: SuiteNode;
         // Viper 扩展：函数声明前的 C 修饰关键字（inline/export/extern），用于语义校验。
         viperModifier: string | undefined;
+        // Viper 扩展：define 宏函数标记（语法与 def 完全一致，语义为编译期宏展开）。
+        isDefine: boolean;
     };
 }
 
@@ -482,7 +484,8 @@ export namespace FunctionNode {
         name: NameNode,
         suite: SuiteNode,
         typeParams?: TypeParameterListNode,
-        viperModifier?: string
+        viperModifier?: string,
+        isDefine?: boolean
     ) {
         const node: FunctionNode = {
             start: defToken.start,
@@ -502,6 +505,7 @@ export namespace FunctionNode {
                 funcAnnotationComment: undefined,
                 suite: suite,
                 viperModifier,
+                isDefine: isDefine ?? false,
             },
         };
 

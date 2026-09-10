@@ -432,10 +432,25 @@ export class Binder extends ParseTreeWalker {
         // 仅当导入的最终目标是目录（而非具体文件）时才标黄。
         const lastResolvedUri = importResult.resolvedUris[importResult.resolvedUris.length - 1];
         const isFinalTargetDirectory = !lastResolvedUri || lastResolvedUri.isEmpty();
+        // Viper 扩展：`from . import X` 的请求符号（X）能在目录中经隐式导入解析
+        //（存在同名 X.vp 文件）时，说明目录作为包已可正常使用，不再报"命名空间包不完整"。
+        const importFromNode =
+            node.parent?.nodeType === ParseNodeType.ImportFrom ? (node.parent as ImportFromNode) : undefined;
+        const allSymbolsResolvable =
+            importFromNode !== undefined &&
+            importFromNode.d.imports.length > 0 &&
+            importFromNode.d.imports.every((importSymbolNode) => {
+                const importedName = importSymbolNode.d.name.d.value;
+                return (
+                    importResult.implicitImports?.has(importedName) ||
+                    importResult.filteredImplicitImports?.has(importedName)
+                );
+            });
         if (
             importResult.isImportFound &&
             importResult.isNamespacePackage &&
             isFinalTargetDirectory &&
+            !allSymbolsResolvable &&
             IsViperDialect(this._fileInfo.executionEnvironment.dialect)
         ) {
             this._fileInfo.diagnosticSink.addDiagnosticWithTextRange(
@@ -1319,7 +1334,11 @@ export class Binder extends ParseTreeWalker {
         const postForLabel = this._createBranchLabel();
 
         // Determine if this loop is guaranteed to execute at least once
-        const isGuaranteedToExecute = this._isNonEmptyListOrTupleLiteral(node.d.iterableExpr);
+        // Viper 方言（C 风格）：for 循环变量在循环后仍视为已定义（保留迭代类型），
+        // 不产生 Unbound 分支——与 Python 语义（循环可能零次执行 → Unbound）不同。
+        const isGuaranteedToExecute = IsViperDialect(this._fileInfo.executionEnvironment.dialect)
+            ? true
+            : this._isNonEmptyListOrTupleLiteral(node.d.iterableExpr);
 
         this._addAntecedent(preForLabel, this._currentFlowNode!);
         this._currentFlowNode = preForLabel;

@@ -122,7 +122,10 @@ export class PartialStubService implements SupportPartialStubs {
                             this._realFs.mapDirectory(
                                 packagePath,
                                 partialStubPackagePath,
-                                (u, fs) => u.hasExtension('.vpi') || (fs.existsSync(u) && fs.statSync(u).isDirectory())
+                                (u, fs) =>
+                                    u.hasExtension('.vpi') ||
+                                    u.hasExtension('.vpnci') ||
+                                    (fs.existsSync(u) && fs.statSync(u).isDirectory())
                             )
                         );
                     } catch {

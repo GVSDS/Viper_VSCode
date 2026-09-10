@@ -334,7 +334,7 @@ export function getWildcardRoot(root: Uri, fileSpec: string): Uri {
 }
 
 export function hasPythonExtension(uri: Uri) {
-    return uri.hasExtension('.vp') || uri.hasExtension('.vpi');
+    return uri.hasExtension('.vp') || uri.hasExtension('.vpi') || uri.hasExtension('.vpnci');
 }
 
 export function getFileSpec(root: Uri, fileSpec: string): FileSpec {

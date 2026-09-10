@@ -10,6 +10,7 @@
  */
 
 import { assert } from '../common/debug';
+import { IsViperDialect } from '../common/dialect';
 import {
     ArgCategory,
     AssignmentExpressionNode,
@@ -45,6 +46,7 @@ import {
     isAnyOrUnknown,
     isClass,
     isClassInstance,
+    isCPtrType,
     isFunction,
     isFunctionOrOverloaded,
     isInstantiableClass,
@@ -175,7 +177,11 @@ export function getTypeNarrowingCallback(
                     )
                 ) {
                     return (type: Type) => {
-                        return { type: narrowTypeForIsNone(evaluator, type, adjIsPositiveTest), isIncomplete: false };
+                        const isViperDialect = IsViperDialect(getFileInfo(testExpression).executionEnvironment?.dialect);
+                        return {
+                            type: narrowTypeForIsNone(evaluator, type, adjIsPositiveTest, isViperDialect),
+                            isIncomplete: false,
+                        };
                     };
                 }
 
@@ -1108,7 +1114,12 @@ function getInnermostNewTypeBaseInstance(subtype: Type): Type | undefined {
 }
 
 // Handle type narrowing for expressions of the form "x is None" and "x is not None".
-function narrowTypeForIsNone(evaluator: TypeEvaluator, type: Type, isPositiveTest: boolean) {
+function narrowTypeForIsNone(
+    evaluator: TypeEvaluator,
+    type: Type,
+    isPositiveTest: boolean,
+    isViperDialect = false
+) {
     const expandedType = mapSubtypes(type, (subtype) => {
         return transformPossibleRecursiveTypeAlias(subtype);
     });
@@ -1170,6 +1181,15 @@ function narrowTypeForIsNone(evaluator: TypeEvaluator, type: Type, isPositiveTes
             if (isNoneInstance(subtype)) {
                 resultIncludesNoneSubtype = true;
                 return isPositiveTest ? adjustedSubtype : undefined;
+            }
+
+            // Viper 扩展：None 即 C 空指针 NULL，是 CPtr 指针类型的一个取值，而非独立类型。
+            // `p is None` 的正测试只是空指针判断，不改变指针类型本身（与 C 语义一致）。
+            // 若不拦截，正分支会把 CPtr[T] 窄化为 NoneType，随后与负分支合并时
+            // combineTypes 会把 None 误当作结构体候选折叠成 CPtr[None]，
+            // 导致 `if p is None: fatal_error(...)` 守卫之后 `.Pointee` 等成员访问误报。
+            if (isViperDialect && isClassInstance(subtype) && isCPtrType(subtype)) {
+                return adjustedSubtype;
             }
 
             // Is it potentially None?

@@ -1229,6 +1229,8 @@ function getKeywordTypeString(type: KeywordType) {
             return 'Debug';
         case KeywordType.Def:
             return 'Def';
+        case KeywordType.Define:
+            return 'Define';
         case KeywordType.Del:
             return 'Del';
         case KeywordType.Elif:

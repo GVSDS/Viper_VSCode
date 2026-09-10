@@ -1128,7 +1128,7 @@ export class SourceMapper {
 }
 
 export function isStubFile(uri: Uri): boolean {
-    return uri.lastExtension === '.vpi';
+    return uri.lastExtension === '.vpi' || uri.lastExtension === '.vpnci';
 }
 
 export function isAliasFactoryCallee(callTarget: ExpressionNode, allowMemberAccess = false): boolean {

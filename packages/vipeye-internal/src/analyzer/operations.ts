@@ -30,6 +30,7 @@ import { EvalFlags, MagicMethodDeprecationInfo, TypeEvaluator, TypeResult } from
 import {
     InferenceContext,
     convertToInstantiable,
+    convertToInstance,
     getLiteralTypeClassName,
     getTypeCondition,
     getUnionSubtypeCount,
@@ -50,6 +51,7 @@ import {
 } from './typeUtils';
 import {
     ClassType,
+    ModuleType,
     NeverType,
     Type,
     TypeBase,
@@ -67,6 +69,7 @@ import {
     isFunctionOrOverloaded,
     isViperIntegerType,
     isInstantiableClass,
+    isModule,
     isNever,
     isUnion,
 } from './types';
@@ -578,12 +581,11 @@ export function getTypeOfAugmentedAssignment(
                         // Viper 扩展：str/bytes 指针增强赋值（C 指针算术）。
                         // Viper 中 str/bytes 是 i8* 指针，`dest += 1`（指针递增）是合法的
                         // C 指针算术，结果类型保持 str/bytes。Python 中 str 不可变故无此语义。
-                        // 仅当运算符为 + 且右操作数是整数时生效。
+                        // 仅当运算符为 + 且右操作数是整数（含 C 整数类型）时生效。
                         if (IsViperDialect(getFileInfo(node).executionEnvironment.dialect)) {
                             const leftIsStrBytes = isClassInstance(leftSubtypeUnexpanded) &&
                                 ClassType.isBuiltIn(leftSubtypeUnexpanded, ['str', 'bytes']);
-                            const rightIsInt = isClassInstance(rightSubtypeUnexpanded) &&
-                                ClassType.isBuiltIn(rightSubtypeUnexpanded, 'int');
+                            const rightIsInt = isViperIntegerType(rightSubtypeUnexpanded);
                             if (leftIsStrBytes && rightIsInt) {
                                 return leftSubtypeUnexpanded;
                             }
@@ -689,6 +691,19 @@ export function getTypeOfUnaryOperation(
     flags: EvalFlags,
     inferenceContext: InferenceContext | undefined
 ): TypeResult {
+    const isViperDialect = IsViperDialect(getFileInfo(node).executionEnvironment.dialect);
+
+    // Viper 扩展：类型注解上下文中的一元 '*' 表示 C 指针类型（T* = CPtr[T]）。
+    // parser 将 `T*`/`T**`/`T***` 后缀解析为 UnaryOperationNode(Multiply) 嵌套，
+    // 此处须在 TypeExpression 守卫（unaryOperationNotAllowed）之前处理。
+    if (
+        isViperDialect &&
+        node.d.operator === OperatorType.Multiply &&
+        (flags & EvalFlags.TypeExpression) !== 0
+    ) {
+        return getTypeOfViperPointerAnnotation(evaluator, node);
+    }
+
     if ((flags & EvalFlags.TypeExpression) !== 0) {
         evaluator.addDiagnostic(DiagnosticRule.reportInvalidTypeForm, LocMessage.unaryOperationNotAllowed(), node);
         return { type: UnknownType.create() };
@@ -701,6 +716,19 @@ export function getTypeOfUnaryOperation(
 
     if (isNever(exprType)) {
         return { type: NeverType.createNever(), isIncomplete };
+    }
+
+    // Viper 扩展：一元 '*'（解引用）与 '&'（取地址），与 C 语义一致。
+    // 在 Viper 方言下，前缀 '*'/'&' 被 parser 解析为 UnaryOperation
+    // （operator = Multiply / BitwiseAnd），此处直接按 C 语义求值，
+    // 不走魔法方法路径（指针没有 __pos__ 等）。
+    if (isViperDialect) {
+        if (node.d.operator === OperatorType.Multiply) {
+            return getTypeOfViperDeref(evaluator, node, exprType, isIncomplete);
+        }
+        if (node.d.operator === OperatorType.BitwiseAnd) {
+            return getTypeOfViperAddrOf(evaluator, node, exprType, isIncomplete);
+        }
     }
 
     // Map unary operators to magic functions. Note that the bitwise
@@ -818,6 +846,159 @@ export function getTypeOfUnaryOperation(
     }
 
     return { type, isIncomplete, magicMethodDeprecationInfo: deprecatedInfo };
+}
+
+// Viper 扩展：一元 '*'（解引用）类型求值，与 C 语义一致。
+//   - CPtr[X]（含 `X | t.CPtr` 化简形式）→ 返回目标类型 X（类对象转为实例）
+//   - Unknown/Any → 透传
+//   - 非指针类型 → 报错（C 语义：invalid type argument of unary '*'）
+function getTypeOfViperDeref(
+    evaluator: TypeEvaluator,
+    node: UnaryOperationNode,
+    exprType: Type,
+    isIncomplete: boolean | undefined
+): TypeResult {
+    const resultTypes: Type[] = [];
+    let sawNonPointer = false;
+
+    mapSubtypes(exprType, (subtype) => {
+        if (isAnyOrUnknown(subtype)) {
+            resultTypes.push(subtype);
+            return subtype;
+        }
+
+        if (isClassInstance(subtype) && isCPtrType(subtype)) {
+            const typeArgs = subtype.priv.typeArgs;
+            if (typeArgs && typeArgs.length > 0) {
+                const pointee = typeArgs[0];
+                resultTypes.push(
+                    isClass(pointee) && !isClassInstance(pointee) ? convertToInstance(pointee) : pointee
+                );
+            } else {
+                // 裸 CPtr（无类型参数）无法确定目标类型。
+                resultTypes.push(UnknownType.create());
+            }
+            return subtype;
+        }
+
+        // 非指针类型：C 语义报错。
+        sawNonPointer = true;
+        return subtype;
+    });
+
+    if (sawNonPointer) {
+        evaluator.addDiagnostic(
+            DiagnosticRule.reportOperatorIssue,
+            LocMessage.typeNotSupportUnaryOperator().format({
+                operator: printOperator(node.d.operator),
+                type: evaluator.printType(exprType),
+            }),
+            node
+        );
+    }
+
+    if (resultTypes.length === 0) {
+        return { type: UnknownType.create(isIncomplete), isIncomplete };
+    }
+
+    return { type: combineTypes(resultTypes), isIncomplete };
+}
+
+// Viper 扩展：类型注解上下文的一元 '*' → C 指针类型 CPtr[T]（即 `T*` 后缀语法）。
+// 与 `T | t.CPtr` 联合化简（combineTypes → CPtr[T]）的表示一致：
+// 类对象（instantiable）先转为实例再作为 CPtr 的类型参数；TypeVar 直接作为类型参数
+// （泛型中的 `T*` → CPtr[T]）。每个嵌套层递归求值，`T**` 自然得到 CPtr[CPtr[T]]。
+function getTypeOfViperPointerAnnotation(evaluator: TypeEvaluator, node: UnaryOperationNode): TypeResult {
+    const innerResult = evaluator.getTypeOfExpression(node.d.expr, EvalFlags.TypeExpression);
+    const innerType = innerResult.type;
+    const resultTypes: Type[] = [];
+    let sawInvalidType = false;
+
+    mapSubtypes(innerType, (subtype) => {
+        if (isAnyOrUnknown(subtype)) {
+            resultTypes.push(subtype);
+            return subtype;
+        }
+
+        const typeArg = isClass(subtype) && !isClassInstance(subtype) ? convertToInstance(subtype) : subtype;
+        const cptrType = getViperCPtrTypeForTypeArg(evaluator, node, typeArg);
+        if (cptrType) {
+            resultTypes.push(cptrType);
+            return subtype;
+        }
+
+        sawInvalidType = true;
+        return subtype;
+    });
+
+    if (sawInvalidType) {
+        evaluator.addDiagnostic(
+            DiagnosticRule.reportInvalidTypeForm,
+            LocMessage.typeNotSupportUnaryOperator().format({
+                operator: printOperator(node.d.operator),
+                type: evaluator.printType(innerType),
+            }),
+            node
+        );
+    }
+
+    if (resultTypes.length === 0) {
+        return { type: UnknownType.create(innerResult.isIncomplete), isIncomplete: innerResult.isIncomplete };
+    }
+
+    return { type: combineTypes(resultTypes), isIncomplete: innerResult.isIncomplete };
+}
+
+// Viper 扩展：一元 '&'（取地址）类型求值，与 C 语义一致。
+//   - x 类型为 X → 返回 CPtr[X]（即 `X | t.CPtr` 的 Viper 指针表示）
+function getTypeOfViperAddrOf(
+    evaluator: TypeEvaluator,
+    node: UnaryOperationNode,
+    exprType: Type,
+    isIncomplete: boolean | undefined
+): TypeResult {
+    const cptrType = getViperCPtrTypeForTypeArg(evaluator, node, exprType);
+    if (!cptrType) {
+        return { type: UnknownType.create(isIncomplete), isIncomplete };
+    }
+    return { type: cptrType, isIncomplete };
+}
+
+// 构造 CPtr[typeArg]（Viper 指针类型），通过 t 模块的 CPtr 泛型类特化。
+function getViperCPtrTypeForTypeArg(
+    evaluator: TypeEvaluator,
+    node: UnaryOperationNode,
+    typeArg: Type
+): Type | undefined {
+    const tSymbolWithScope = evaluator.lookUpSymbolRecursive(node, 't', /* honorCodeFlow */ true);
+    if (!tSymbolWithScope) {
+        return undefined;
+    }
+
+    const tEffectiveType = evaluator.getEffectiveTypeOfSymbolForUsage(
+        tSymbolWithScope.symbol,
+        /* usageNode */ undefined,
+        /* useLastDecl */ true
+    ).type;
+    if (!isModule(tEffectiveType)) {
+        return undefined;
+    }
+
+    const cptrSymbol = ModuleType.getField(tEffectiveType, 'CPtr');
+    if (!cptrSymbol) {
+        return undefined;
+    }
+
+    const cptrType = evaluator.getEffectiveTypeOfSymbolForUsage(
+        cptrSymbol,
+        /* usageNode */ undefined,
+        /* useLastDecl */ true
+    ).type;
+    if (isInstantiableClass(cptrType)) {
+        return convertToInstance(ClassType.specialize(cptrType, [typeArg]));
+    }
+
+    return undefined;
 }
 
 export function getTypeOfTernaryOperation(
@@ -1382,9 +1563,26 @@ function validateArithmeticOperation(
                             ClassType.isBuiltIn(leftSubtypeExpanded, ['int', 'float', 'bool', 'bytes', 'str']);
                         const rightIsBuiltinNum = isClassInstance(rightSubtypeExpanded) &&
                             ClassType.isBuiltIn(rightSubtypeExpanded, ['int', 'float', 'bool', 'bytes', 'str']);
+                        // str/bytes 指针算术优先：一方是 str/bytes（i8* 指针）、另一方是
+                        // 整数（含 C 整数类型）且运算符为 + 或 - 时，不走 CType 分支
+                        // （否则 `str + CInt` 会误返回 CInt），由下方指针算术分支处理。
+                        // 注意：`int - str` 不是指针算术（指针不能减整数的反向），
+                        // 如 `CChar - '0'` 数字字符转换仍走 CType 分支。
+                        const leftIsStrBytes = isClassInstance(leftSubtypeExpanded) &&
+                            ClassType.isBuiltIn(leftSubtypeExpanded, ['str', 'bytes']);
+                        const rightIsStrBytes = isClassInstance(rightSubtypeExpanded) &&
+                            ClassType.isBuiltIn(rightSubtypeExpanded, ['str', 'bytes']);
+                        const isPointerArith =
+                            (operator === OperatorType.Add &&
+                                ((leftIsStrBytes && isViperIntegerType(rightSubtypeExpanded)) ||
+                                    (rightIsStrBytes && isViperIntegerType(leftSubtypeExpanded)))) ||
+                            (operator === OperatorType.Subtract &&
+                                leftIsStrBytes &&
+                                (isViperIntegerType(rightSubtypeExpanded) || rightIsStrBytes));
                         // 任一方是 CType 子类，另一方是 CType 子类或 Python 内置数值/字符串类型
-                        if ((leftIsCType && (rightIsCType || rightIsBuiltinNum)) ||
-                            (rightIsCType && (leftIsCType || leftIsBuiltinNum))) {
+                        if (!isPointerArith &&
+                            ((leftIsCType && (rightIsCType || rightIsBuiltinNum)) ||
+                                (rightIsCType && (leftIsCType || leftIsBuiltinNum)))) {
                             // 算术/位运算结果类型：优先返回 CType 子类（保持类型语义）
                             if (leftIsCType) {
                                 return leftSubtypeExpanded;
@@ -1405,10 +1603,11 @@ function validateArithmeticOperation(
                             ClassType.isBuiltIn(leftSubtypeExpanded, ['str', 'bytes']);
                         const rightIsStrBytes = isClassInstance(rightSubtypeExpanded) &&
                             ClassType.isBuiltIn(rightSubtypeExpanded, ['str', 'bytes']);
-                        const leftIsInt = isClassInstance(leftSubtypeExpanded) &&
-                            ClassType.isBuiltIn(leftSubtypeExpanded, 'int');
-                        const rightIsInt = isClassInstance(rightSubtypeExpanded) &&
-                            ClassType.isBuiltIn(rightSubtypeExpanded, 'int');
+                        // 整数操作数须涵盖 Viper C 整数类型（CInt 等），否则
+                        // `str + CInt`（如 resp_buf + total）会落入下方 CType 算术分支
+                        // 误返回整数类型，而指针偏移应保持 str/bytes（i8*）指针类型。
+                        const leftIsInt = isViperIntegerType(leftSubtypeExpanded);
+                        const rightIsInt = isViperIntegerType(rightSubtypeExpanded);
                         if (operator === OperatorType.Add) {
                             if ((leftIsStrBytes && rightIsInt) || (leftIsInt && rightIsStrBytes)) {
                                 // 返回指针类型（str/bytes）

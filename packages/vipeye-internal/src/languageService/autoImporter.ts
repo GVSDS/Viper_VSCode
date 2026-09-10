@@ -479,8 +479,9 @@ export class AutoImporter {
         const fileDir = uri.getDirectory();
         const initPathPy = fileDir.initPyUri;
         const initPathPyi = fileDir.initPyiUri;
-        const isStub = uri.hasExtension('.vpi');
-        const hasInit = map.has(initPathPy.key) || map.has(initPathPyi.key);
+        const initPathVpnci = fileDir.combinePathsUnsafe('__init__.vpnci');
+        const isStub = uri.hasExtension('.vpi') || uri.hasExtension('.vpnci');
+        const hasInit = map.has(initPathPy.key) || map.has(initPathPyi.key) || map.has(initPathVpnci.key);
         const sourceFileInfo = this.program.getSourceFileInfo(uri);
         return { isStub, hasInit, isUserCode: isUserCode(sourceFileInfo) };
     }

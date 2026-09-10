@@ -2,6 +2,7 @@ import _ast
 import _sitebuiltins
 import _typeshed
 import sys
+import t
 import types
 from _collections_abc import dict_items, dict_keys, dict_values
 from _typeshed import (
@@ -2662,3 +2663,12 @@ def LInp(expr: Any, constraint: Any = None) -> Any:
 def LOut(expr: Any, constraint: Any = None) -> Any:
     """LLVM IR 输出操作数标记（等价 c.LOut）。"""
     ...
+
+# --- Viper 扩展：编译器内置裸指针类型 rowptr ---
+# rowptr 是编译器内置类型（TPC/TPV 双端，语法保留字，不可重定义）：
+#   rowptr[T] 固定表示"裸指针，指向原始类型 T"（等价 t.CPtr[T]），
+#   单独 rowptr 等价 t.CPtr（void*）。
+# 声明在 builtins stub 中使 LSP 对任意 Viper 工程均可解析 rowptr，不依赖
+# 项目 includes/builtins.vp 是否声明；编译器侧解析 rowptr 时优先走内置
+# 路径并忽略本声明（见 TransPyC TypeAnnotationResolver / SymbolExtractor）。
+rowptr: t.CTypedef = t.CPtr

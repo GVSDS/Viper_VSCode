@@ -258,32 +258,62 @@ function validateNewAndInitMethods(
     const overloadsUsedForCall: FunctionType[] = [];
     let newMethodReturnType: Type | undefined;
 
-    // Validate __new__ if it is present.
+    // Viper 扩展：`__new__` 作为分配器时（返回裸指针或实例|指针联合，如
+    // stmts.vp 中 FunctionDef 的 `__new__` 返回 `FunctionDef | t.CPtr`），其参数
+    // 不参与构造调用校验——Viper 中 `__new__` 由编译器按分配逻辑调用，构造调用
+    // 的用户参数只与 `__init__` 签名匹配（否则 7 参 `__init__` 配 6 参 `__new__`
+    // 会误报 "Expected 6 positional arguments"）。此时仅取 `__new__` 的返回类型
+    // 用于后续 `__init__` 绑定判断。
+    let isViperNewAllocator = false;
     if (newMethodTypeResult) {
-        // Use speculative mode for arg expressions because we don't know whether
-        // we'll need to re-evaluate these expressions later for __init__.
-        const newCallResult = validateNewMethod(
-            evaluator,
-            errorNode,
-            argList,
-            type,
-            skipUnknownArgCheck,
-            inferenceContext,
-            newMethodTypeResult,
-            /* useSpeculativeModeForArgs */ true
-        );
+        if (isFunctionOrOverloaded(newMethodTypeResult.type)) {
+            doForEachSignature(newMethodTypeResult.type, (signature) => {
+                const allocNewReturnType = FunctionType.getEffectiveReturnType(signature);
+                if (allocNewReturnType) {
+                    doForEachSubtype(allocNewReturnType, (subtype) => {
+                        if (isCPtrType(subtype)) {
+                            isViperNewAllocator = true;
+                        }
+                    });
+                }
+            });
+        }
 
-        if (newCallResult.argumentErrors) {
-            argumentErrors = true;
+        if (isViperNewAllocator) {
+            // 跳过 __new__ 参数校验，直接取其返回类型。
+            if (isFunctionOrOverloaded(newMethodTypeResult.type)) {
+                doForEachSignature(newMethodTypeResult.type, (signature) => {
+                    if (!newMethodReturnType) {
+                        newMethodReturnType = FunctionType.getEffectiveReturnType(signature);
+                    }
+                });
+            }
         } else {
-            appendArray(overloadsUsedForCall, newCallResult.overloadsUsedForCall ?? []);
-        }
+            // Use speculative mode for arg expressions because we don't know whether
+            // we'll need to re-evaluate these expressions later for __init__.
+            const newCallResult = validateNewMethod(
+                evaluator,
+                errorNode,
+                argList,
+                type,
+                skipUnknownArgCheck,
+                inferenceContext,
+                newMethodTypeResult,
+                /* useSpeculativeModeForArgs */ true
+            );
 
-        if (newCallResult.isTypeIncomplete) {
-            isTypeIncomplete = true;
-        }
+            if (newCallResult.argumentErrors) {
+                argumentErrors = true;
+            } else {
+                appendArray(overloadsUsedForCall, newCallResult.overloadsUsedForCall ?? []);
+            }
 
-        newMethodReturnType = newCallResult.returnType;
+            if (newCallResult.isTypeIncomplete) {
+                isTypeIncomplete = true;
+            }
+
+            newMethodReturnType = newCallResult.returnType;
+        }
     }
 
     if (
@@ -325,16 +355,33 @@ function validateNewAndInitMethods(
     }
 
     // Validate __init__ if it's present.
+    //
+    // Viper 扩展：`__new__` 返回联合类型（如 `FunctionDef | t.CPtr`，实例或裸
+    // 指针）时，`isClassInstance` 对整个联合返回 false，导致 `__init__` 校验被
+    // 跳过，构造调用只按 `__new__` 签名校验（误报：FunctionDef 的 6 参 `__new__`
+    // 报 "Expected 6 positional arguments"，而 `__init__` 实际有 7 参含
+    // type_params）。Viper 中 `__new__` 只负责分配内存，`__init__` 仍会被调用，
+    // 因此联合返回只要含 CPtr（Viper 分配语义）就继续校验 `__init__`。
+    let newMethodReturnTypeIsInstance = isClassInstance(newMethodReturnType);
+    if (!newMethodReturnTypeIsInstance) {
+        doForEachSubtype(newMethodReturnType, (subtype) => {
+            if (isCPtrType(subtype)) {
+                newMethodReturnTypeIsInstance = true;
+            }
+        });
+    }
+
     if (
         !isNever(newMethodReturnType) &&
         !shouldSkipInitEvaluation(evaluator, type, newMethodReturnType) &&
-        isClassInstance(newMethodReturnType)
+        newMethodReturnTypeIsInstance
     ) {
         // If the __new__ method returned the same type as the class it's constructing
         // but didn't supply solved type arguments, we'll ignore its specialized return
         // type and rely on the __init__ method to supply the type arguments instead.
         let initMethodBindToType = newMethodReturnType;
         if (
+            isClassInstance(initMethodBindToType) &&
             initMethodBindToType.priv.typeArgs &&
             initMethodBindToType.priv.typeArgs.some((typeArg) => isUnknown(typeArg))
         ) {
@@ -351,6 +398,12 @@ function validateNewAndInitMethods(
             }
         });
         if (isNewReturnPtr) {
+            initMethodBindToType = ClassType.cloneAsInstance(type);
+        }
+
+        // 纯类实例时保持原类型，联合/CPtr 时已替换为类实例；
+        // 保证传给 getBoundInitMethod / validateInitMethod 的一定是 ClassType。
+        if (!isClassInstance(initMethodBindToType)) {
             initMethodBindToType = ClassType.cloneAsInstance(type);
         }
 
@@ -389,7 +442,7 @@ function validateNewAndInitMethods(
         }
     }
 
-    if (!validatedArgExpressions && newMethodTypeResult) {
+    if (!validatedArgExpressions && newMethodTypeResult && !isViperNewAllocator) {
         // If we skipped the __init__ method and the __new__ method was evaluated only
         // speculatively, evaluate it non-speculatively now so we can report errors.
         if (!evaluator.isSpeculativeModeInUse(errorNode)) {
@@ -405,6 +458,13 @@ function validateNewAndInitMethods(
             );
         }
 
+        validatedArgExpressions = true;
+        returnType = newMethodReturnType;
+    }
+
+    // Viper 扩展：分配器 `__new__` 且无 `__init__` 时，参数不做构造校验，
+    // 返回类型沿用 `__new__` 的返回类型（实例|指针联合或裸指针）。
+    if (!validatedArgExpressions && isViperNewAllocator) {
         validatedArgExpressions = true;
         returnType = newMethodReturnType;
     }

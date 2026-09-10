@@ -1,0 +1,7 @@
+import t, c
+
+export def add[T](a: t.CInt, b: t.CInt = 10) -> t.CInt:
+    return a + b
+
+def use():
+    add(1, 2)

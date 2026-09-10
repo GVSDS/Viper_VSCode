@@ -13,6 +13,7 @@
 
 import { ConsoleInterface } from '../common/console';
 import { assert, fail } from '../common/debug';
+import { IsViperDialect } from '../common/dialect';
 import { convertOffsetToPosition } from '../common/positionUtils';
 import { ArgCategory, ExpressionNode, ParseNode, ParseNodeType } from '../parser/parseNodes';
 import { getFileInfo, getImportInfo } from './analyzerNodeInfo';
@@ -50,6 +51,7 @@ import {
     FunctionType,
     isClass,
     isClassInstance,
+    isCTypeSubclassType,
     isFunction,
     isFunctionOrOverloaded,
     isInstantiableClass,
@@ -74,6 +76,7 @@ import {
     derivesFromStdlibClass,
     doForEachSubtype,
     isIncompleteUnknown,
+    isNoneInstance,
     isTypeAliasPlaceholder,
     mapSubtypes,
 } from './typeUtils';
@@ -1729,6 +1732,7 @@ export function getCodeFlowEngine(
     function isCallNoReturn(evaluator: TypeEvaluator, flowNode: FlowCall) {
         const node = flowNode.node;
         const fileInfo = getFileInfo(node);
+        const isViperDialect = IsViperDialect(fileInfo.executionEnvironment?.dialect);
 
         // Assume that calls within a pyi file are not "NoReturn" calls.
         if (fileInfo.isStubFile) {
@@ -1803,7 +1807,7 @@ export function getCodeFlowEngine(
 
                 const isCallAwaited = node.parent?.nodeType === ParseNodeType.Await;
                 if (isFunction(callSubtype)) {
-                    if (isFunctionNoReturn(callSubtype, isCallAwaited)) {
+                    if (isFunctionNoReturn(evaluator, callSubtype, isCallAwaited, isViperDialect)) {
                         noReturnTypeCount++;
                     }
                 } else if (isOverloaded(callSubtype)) {
@@ -1813,7 +1817,7 @@ export function getCodeFlowEngine(
                     OverloadedType.getOverloads(callSubtype).forEach((overload) => {
                         overloadCount++;
 
-                        if (isFunctionNoReturn(overload, isCallAwaited)) {
+                        if (isFunctionNoReturn(evaluator, overload, isCallAwaited, isViperDialect)) {
                             noReturnOverloadCount++;
                         }
                     });
@@ -1859,9 +1863,45 @@ export function getCodeFlowEngine(
         }
     }
 
-    function isFunctionNoReturn(functionType: FunctionType, isCallAwaited: boolean) {
+    function isFunctionNoReturn(
+        evaluator: TypeEvaluator,
+        functionType: FunctionType,
+        isCallAwaited: boolean,
+        isViperDialect: boolean
+    ) {
         const returnType = FunctionType.getEffectiveReturnType(functionType, /* includeInferred */ false);
         if (returnType) {
+            if (isViperDialect) {
+                // Viper 方言：函数声明返回 t.State（C 风格 noreturn 标记，仅声明不定义，
+                // 如 sys.exit / stdlib.exit 的 `-> t.State`）视为 NoReturn，调用后流程终止。
+                let hasStateReturn = false;
+                doForEachSubtype(returnType, (retSubtype) => {
+                    if (
+                        isClass(retSubtype) &&
+                        isCTypeSubclassType(retSubtype) &&
+                        retSubtype.shared.name === 'State'
+                    ) {
+                        hasStateReturn = true;
+                    }
+                });
+                if (hasStateReturn) {
+                    return true;
+                }
+
+                // Viper 无返回注解的函数被隐式声明为 `-> None`（C 语义 void），
+                // 掩盖了实际不返回的 fail-fast 函数（如函数体以 sys.exit(1) 结尾）。
+                // 惰性推断（inferredReturnType）可能尚未就绪，直接通过 flow 分析
+                // 函数体判定是否从不返回（isAfterNodeReachable 主动触发 flow）。
+                if (isNoneInstance(returnType)) {
+                    const inferred = functionType.shared.inferredReturnType?.type;
+                    if (inferred && isNever(inferred)) {
+                        return true;
+                    }
+                    if (!isAfterNodeReachable(evaluator, functionType)) {
+                        return true;
+                    }
+                }
+            }
             if (
                 isClassInstance(returnType) &&
                 ClassType.isBuiltIn(returnType, ['Coroutine', 'CoroutineType']) &&

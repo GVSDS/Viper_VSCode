@@ -121,6 +121,8 @@ export const enum KeywordType {
     Continue,
     Debug,
     Def,
+    // Viper 扩展：define 宏函数关键字（与 def 语义一致，语法完全相同）。
+    Define,
     Del,
     Elif,
     Else,

@@ -47,7 +47,16 @@ import { convertOffsetToPosition, convertPositionToOffset } from '../common/posi
 import { ServiceProvider } from '../common/serviceProvider';
 import { Position, Range, TextRange } from '../common/textRange';
 import { Uri } from '../common/uri/uri';
-import { ExpressionNode, FunctionNode, NameNode, ParseNode, ParseNodeType, StringNode } from '../parser/parseNodes';
+import {
+    ExpressionNode,
+    FunctionNode,
+    NameNode,
+    ParamCategory,
+    ParameterNode,
+    ParseNode,
+    ParseNodeType,
+    StringNode,
+} from '../parser/parseNodes';
 import { ParseFileResults } from '../parser/parser';
 import { TokenType } from '../parser/tokenizerTypes';
 import {
@@ -600,6 +609,10 @@ export class HoverProvider {
                 );
 
                 this._addResultsPart(parts, signatureString, /* python */ true);
+
+                // Viper 扩展：hover 函数时附加详尽调试信息（仅 Viper 方言）。
+                this._addViperFunctionDebugPart(parts, resolvedDecl);
+
                 this._addDocumentationPart(parts, node, resolvedDecl);
                 break;
             }
@@ -622,6 +635,120 @@ export class HoverProvider {
             default:
                 assertNever(resolvedDecl);
         }
+    }
+
+    // Viper 扩展：hover 函数时附加详尽调试信息（仅 Viper 方言）。
+    // 显示：定义位置、修饰符（extern/export/inline）、泛型参数、参数列表（类型/默认值）、返回类型。
+    private _addViperFunctionDebugPart(parts: HoverTextPart[], resolvedDecl: FunctionDeclaration): void {
+        const funcNode = resolvedDecl.node;
+        if (funcNode.nodeType !== ParseNodeType.Function) {
+            return;
+        }
+
+        const fileInfo = getFileInfo(funcNode);
+        if (!IsViperDialect(fileInfo.executionEnvironment.dialect)) {
+            return;
+        }
+        // 不对 stub 文件中的声明附加调试信息（如 stdlib .vpi / typeshed .pyi 类型定义），
+        // 避免对纯声明函数产生噪声。
+        const declPathLower = fileInfo.fileUri.getPath().toLowerCase();
+        if (declPathLower.endsWith('.pyi') || declPathLower.endsWith('.vpi') || declPathLower.endsWith('.vpnci')) {
+            return;
+        }
+
+        const declUri = fileInfo.fileUri;
+        const declParseResults = this._program.getParseResults(declUri);
+        if (!declParseResults) {
+            return;
+        }
+        const declText = declParseResults.text;
+        const declLines = declParseResults.parserOutput.lines;
+
+        const isMarkdown = this._format === MarkupKind.Markdown;
+        const code = (s: string) => (isMarkdown ? `\`${s}\`` : s);
+        const bold = (s: string) => (isMarkdown ? `**${s}**` : s);
+        const lines: string[] = [];
+
+        // 定义位置（文件:行:列）
+        const namePos = convertOffsetToPosition(funcNode.d.name.start, declLines);
+        const locDisplay = declUri.key === this._fileUri.key ? '此文件' : declUri.getPath();
+        lines.push(`${bold('位置')}: ${code(`${locDisplay}:${namePos.line + 1}:${namePos.character + 1}`)}`);
+
+        // 修饰符（extern/export/inline 等 C 修饰关键字）
+        if (funcNode.d.viperModifier) {
+            lines.push(`${bold('修饰符')}: ${code(funcNode.d.viperModifier)}`);
+        }
+
+        // 泛型参数（PEP 695 type 参数）
+        if (funcNode.d.typeParams && funcNode.d.typeParams.d.params.length > 0) {
+            const typeParamNames = funcNode.d.typeParams.d.params.map((p) => p.d.name.d.value).join(', ');
+            lines.push(`${bold('泛型参数')}: ${code(`[${typeParamNames}]`)}`);
+        }
+
+        // 参数列表（名称、类型、默认值、*args/**kwargs 类别）
+        if (funcNode.d.params.length > 0) {
+            lines.push(`${bold('参数')}:`);
+            for (const param of funcNode.d.params) {
+                const paramText = this._getViperParamDebugText(param, declText);
+                if (paramText) {
+                    lines.push(`  ${code(paramText)}`);
+                }
+            }
+        }
+
+        // 返回类型
+        const returnType = this._getViperFunctionReturnType(funcNode);
+        if (returnType) {
+            lines.push(`${bold('返回类型')}: ${code(this._evaluator.printType(convertToInstance(returnType)))}`);
+        }
+
+        if (lines.length === 0) {
+            return;
+        }
+
+        const heading = isMarkdown ? '**函数调试信息**' : '函数调试信息';
+        parts.push({ text: heading + '\n' + lines.join('\n'), python: false });
+    }
+
+    // 构造单个参数的调试文本：`*名称: 类型 = 默认值`。
+    private _getViperParamDebugText(param: ParameterNode, declText: string): string | undefined {
+        let text = '';
+        if (param.d.category === ParamCategory.ArgsList) {
+            text += '*';
+        } else if (param.d.category === ParamCategory.KwargsDict) {
+            text += '**';
+        }
+        text += param.d.name?.d.value ?? '(匿名)';
+
+        let paramType: Type | undefined;
+        if (param.d.annotation) {
+            paramType = this._evaluator.getTypeOfAnnotation(param.d.annotation);
+        } else if (param.d.name) {
+            paramType = this._evaluator.getTypeOfExpression(param.d.name).type;
+        }
+        if (paramType) {
+            text += ': ' + this._evaluator.printType(convertToInstance(paramType));
+        }
+
+        if (param.d.defaultValue) {
+            const defaultText = declText.slice(param.d.defaultValue.start, TextRange.getEnd(param.d.defaultValue));
+            text += ` = ${defaultText}`;
+        }
+
+        return text;
+    }
+
+    // 返回类型：优先取注解类型，无注解时从函数类型的声明/推断返回类型提取。
+    private _getViperFunctionReturnType(funcNode: FunctionNode): Type | undefined {
+        if (funcNode.d.returnAnnotation) {
+            return this._evaluator.getTypeOfAnnotation(funcNode.d.returnAnnotation);
+        }
+
+        const fnType = this._getType(funcNode.d.name);
+        if (isFunction(fnType)) {
+            return fnType.shared.declaredReturnType ?? fnType.shared.inferredReturnType?.type;
+        }
+        return undefined;
     }
 
     private _addResultsForSynthesizedType(parts: HoverTextPart[], typeInfo: SynthesizedTypeInfo, hoverNode: NameNode) {

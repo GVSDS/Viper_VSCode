@@ -488,6 +488,10 @@ export class Parser {
             case KeywordType.Def:
                 return this._parseFunctionDef();
 
+            case KeywordType.Define:
+                // Viper 扩展：define 宏函数（与 def 语法一致，语义为编译期宏展开）。
+                return this._parseFunctionDef();
+
             case KeywordType.Class:
                 return this._parseClassDef();
 
@@ -615,7 +619,9 @@ export class Parser {
 
         const wasParsingTypeAnnotation = this._isParsingTypeAnnotation;
         this._isParsingTypeAnnotation = true;
-        const expression = this._parseTestExpression(/* allowAssignmentExpression */ false);
+        let expression = this._parseTestExpression(/* allowAssignmentExpression */ false);
+        // Viper 扩展：类型别名同样支持 C 指针类型后缀（type P = T*）。
+        expression = this._parseViperPointerTypeSuffix(expression);
         this._isParsingTypeAnnotation = wasParsingTypeAnnotation;
 
         return TypeAliasNode.create(typeToken, name, expression, typeParameters);
@@ -2075,7 +2081,23 @@ export class Parser {
     ): FunctionNode | ErrorNode {
         // Viper 扩展：extern/export 直接声明形式（`extern A(...)`）没有 def 关键字，
         // 用修饰关键字 token 作为范围起点；否则正常消费 Def 关键字 token。
-        const defToken = defTokenOverride ?? this._getKeywordToken(KeywordType.Def);
+        // define 宏函数关键字与 def 语义一致，语法完全相同，仅标记 isDefine。
+        let defToken: Token;
+        let isDefine = false;
+        if (defTokenOverride) {
+            defToken = defTokenOverride;
+        } else {
+            const curToken = this._peekToken();
+            if (
+                curToken.type === TokenType.Keyword &&
+                (curToken as KeywordToken).keywordType === KeywordType.Define
+            ) {
+                isDefine = true;
+                defToken = this._getNextToken() as KeywordToken;
+            } else {
+                defToken = this._getKeywordToken(KeywordType.Def);
+            }
+        }
 
         const nameToken = this._getTokenIfIdentifier();
         if (!nameToken) {
@@ -2156,7 +2178,7 @@ export class Parser {
         this._isInFinallyBlock = wasInFinallyBlock;
         this._isInFinallyLoop = wasInFinallyLoop;
 
-        const functionNode = FunctionNode.create(defToken, NameNode.create(nameToken), suite, typeParameters);
+        const functionNode = FunctionNode.create(defToken, NameNode.create(nameToken), suite, typeParameters, viperModifier, isDefine);
         functionNode.d.viperModifier = viperModifier;
         if (asyncToken) {
             functionNode.d.isAsync = true;
@@ -2537,6 +2559,9 @@ export class Parser {
                     return this._parseFunctionDef(nextToken, decoratorList);
                 }
             } else if (nextToken.keywordType === KeywordType.Def) {
+                return this._parseFunctionDef(undefined, decoratorList);
+            } else if (nextToken.keywordType === KeywordType.Define) {
+                // Viper 扩展：装饰的 define 宏函数。
                 return this._parseFunctionDef(undefined, decoratorList);
             } else if (nextToken.keywordType === KeywordType.Class) {
                 return this._parseClassDef(decoratorList);
@@ -3388,10 +3413,38 @@ export class Parser {
     // test_or_star: test | star_expr
     private _parseTestOrStarExpression(allowAssignmentExpression: boolean): ExpressionNode {
         if (this._peekOperatorType() === OperatorType.Multiply) {
+            // Viper 扩展：前缀 '*' 在表达式位置可能是 C 风格一元解引用（`*p`），
+            // 也可能是解包元素（`[*a]`、`(*p, q)` 中的 `*a`/`*p`）。
+            // 先按一元解引用解析，若后随逗号/闭括号等分隔符（解包元素上下文）则改判为 Unpack。
+            if (this._parseOptions.dialect === 'viper') {
+                return this._parseViperStarExprOrDeref();
+            }
             return this._parseExpression(/* allowUnpack */ true);
         }
 
         return this._parseTestExpression(allowAssignmentExpression);
+    }
+
+    // Viper 扩展：解析前缀 '*'。先消费 '*' 并以非解包模式解析其操作数，
+    // 若操作数后紧跟逗号/闭括号等（表示它是解包元素），改判为 Unpack 节点；
+    // 否则构造一元 '*'（解引用）节点，与 C 语义一致。
+    // 注意：`)` 不触发改判——`(*p)` 是单元素括号（解引用），而 `(*p,)`/`(*p, q)`
+    // 的 `*p` 后是逗号（解包元素）。
+    private _parseViperStarExprOrDeref(): ExpressionNode {
+        const startToken = this._peekToken();
+        this._getNextToken(); // 消费 '*'
+        const expression = this._parseExpression(/* allowUnpack */ false);
+
+        const nextType = this._peekToken().type;
+        if (
+            nextType === TokenType.Comma ||
+            nextType === TokenType.CloseBracket ||
+            nextType === TokenType.CloseCurlyBrace
+        ) {
+            return UnpackNode.create(startToken, expression);
+        }
+
+        return this._createUnaryOperationNode(startToken, expression, OperatorType.Multiply);
     }
 
     // test: or_test ['if' or_test 'else' test] | lambdef
@@ -3672,6 +3725,17 @@ export class Parser {
             nextOperator === OperatorType.Mod ||
             nextOperator === OperatorType.FloorDivide
         ) {
+            // Viper 扩展：类型注解上下文中的后缀 '*' 是 C 指针类型（T* = CPtr[T]），
+            // 不是二元乘法。停止解析，交由 _parseTypeAnnotation/_parseTypeAliasStatement
+            // 的后缀处理消费，避免 `p: T*` 被解析成 `T * <缺失操作数>` 报错。
+            if (
+                this._parseOptions.dialect === 'viper' &&
+                this._isParsingTypeAnnotation &&
+                nextOperator === OperatorType.Multiply
+            ) {
+                break;
+            }
+
             this._getNextToken();
             const rightExpr = this._parseArithmeticFactor();
             leftExpr = this._createBinaryOperationNode(leftExpr, rightExpr, peekToken, nextOperator);
@@ -3682,15 +3746,21 @@ export class Parser {
         return leftExpr;
     }
 
-    // factor: ('+'|'-'|'~') factor | power
+    // factor: ('+'|'-'|'~'|'*'|'&') factor | power
     // power: atom_expr ['**' factor]
+    // Viper 扩展：一元 '*'（解引用）与 '&'（取地址）与 C 语义一致，
+    // 仅在 Viper 方言下将前缀 '*'/'&' 解析为一元运算。
     private _parseArithmeticFactor(): ExpressionNode {
         const nextToken = this._peekToken();
         const nextOperator = this._peekOperatorType();
+        const isViperUnaryOp =
+            this._parseOptions.dialect === 'viper' &&
+            (nextOperator === OperatorType.Multiply || nextOperator === OperatorType.BitwiseAnd);
         if (
             nextOperator === OperatorType.Add ||
             nextOperator === OperatorType.Subtract ||
-            nextOperator === OperatorType.BitwiseInvert
+            nextOperator === OperatorType.BitwiseInvert ||
+            isViperUnaryOp
         ) {
             this._getNextToken();
             const expression = this._parseArithmeticFactor();
@@ -3703,7 +3773,15 @@ export class Parser {
         }
 
         const peekToken = this._peekToken();
-        if (this._consumeTokenIfOperator(OperatorType.Power)) {
+        const nextPowerOperator = this._peekOperatorType();
+        // Viper 扩展：类型注解上下文中的 '**' 是二级指针类型后缀（T** = CPtr[CPtr[T]]），
+        // 词法化为 Power 算子（'**'），不是幂运算。跳过幂运算分支，
+        // 交由 _parseTypeAnnotation/_parseTypeAliasStatement 的后缀处理消费。
+        if (
+            nextPowerOperator === OperatorType.Power &&
+            !(this._parseOptions.dialect === 'viper' && this._isParsingTypeAnnotation)
+        ) {
+            this._getNextToken();
             const rightExpr = this._parseArithmeticFactor();
             return this._createBinaryOperationNode(leftExpr, rightExpr, peekToken, OperatorType.Power);
         }
@@ -4643,8 +4721,10 @@ export class Parser {
 
         // Is this a type annotation assignment?
         if (this._consumeTokenIfType(TokenType.Colon)) {
+            // 保留原始赋值目标（NameNode），后续 `*=` 拆分重包装时避免嵌套 TypeAnnotationNode。
+            const targetExpr = leftExpr;
             annotationExpr = this._parseTypeAnnotation();
-            leftExpr = TypeAnnotationNode.create(leftExpr, annotationExpr);
+            leftExpr = TypeAnnotationNode.create(targetExpr, annotationExpr);
 
             if (
                 !this._parseOptions.isStubFile &&
@@ -4653,7 +4733,31 @@ export class Parser {
                 this._addSyntaxError(LocMessage.varAnnotationIllegal(), annotationExpr);
             }
 
-            if (!this._consumeTokenIfOperator(OperatorType.Assign)) {
+            // Viper 扩展：`px: T* = &x` 无空格时，词法将 `*` 与 `=` 合并为 `*=`（同理 `**=`）。
+            // 此时 `*`/`**` 是指针类型后缀、`=` 是赋值号，需拆开处理：
+            // 消费 `*=` 作为一层指针（`**=` 两层），并视为已消费赋值号 `=`。
+            let isViperStarEqualAssign = false;
+            if (this._parseOptions.dialect === 'viper') {
+                const starAssignOperator = this._peekOperatorType();
+                if (
+                    starAssignOperator === OperatorType.MultiplyEqual ||
+                    starAssignOperator === OperatorType.PowerEqual
+                ) {
+                    const starToken = this._getNextToken();
+                    annotationExpr = this._createUnaryOperationNode(starToken, annotationExpr, OperatorType.Multiply);
+                    if (starAssignOperator === OperatorType.PowerEqual) {
+                        annotationExpr = this._createUnaryOperationNode(
+                            starToken,
+                            annotationExpr,
+                            OperatorType.Multiply
+                        );
+                    }
+                    leftExpr = TypeAnnotationNode.create(targetExpr, annotationExpr);
+                    isViperStarEqualAssign = true;
+                }
+            }
+
+            if (!isViperStarEqualAssign && !this._consumeTokenIfOperator(OperatorType.Assign)) {
                 return leftExpr;
             }
 
@@ -4839,6 +4943,11 @@ export class Parser {
         }
 
         let result = this._parseTestExpression(/* allowAssignmentExpression */ false);
+
+        // Viper 扩展：C 指针类型后缀 T* / T** / T***（须在还原 _isParsingTypeAnnotation 之前，
+        // 使 _parseArithmeticTerm/_parseArithmeticFactor 的星号守卫仍生效）。
+        result = this._parseViperPointerTypeSuffix(result);
+
         if (isUnpack) {
             result = UnpackNode.create(startToken, result);
         }
@@ -4846,6 +4955,34 @@ export class Parser {
         this._isParsingTypeAnnotation = wasParsingTypeAnnotation;
         this._hasTypeAnnotations = true;
 
+        return result;
+    }
+
+    // Viper 扩展：解析 C 指针类型后缀 `T*` / `T**` / `T***`。
+    // 每个 '*' 对应一层指针；'**' 词法化为单个 Power 算子、等价两层指针。
+    // 结果用 UnaryOperationNode(operator=Multiply) 嵌套表示：
+    //   T*   → *(T)    → CPtr[T]
+    //   T**  → *(*T)   → CPtr[CPtr[T]]
+    // 仅 Viper 方言生效（Python 方言中 '*'/'**' 是二元乘法/幂运算）。
+    private _parseViperPointerTypeSuffix(baseExpr: ExpressionNode): ExpressionNode {
+        if (this._parseOptions.dialect !== 'viper') {
+            return baseExpr;
+        }
+
+        let result = baseExpr;
+        while (true) {
+            const nextOperator = this._peekOperatorType();
+            if (nextOperator === OperatorType.Multiply) {
+                const starToken = this._getNextToken();
+                result = this._createUnaryOperationNode(starToken, result, OperatorType.Multiply);
+            } else if (nextOperator === OperatorType.Power) {
+                const starToken = this._getNextToken();
+                result = this._createUnaryOperationNode(starToken, result, OperatorType.Multiply);
+                result = this._createUnaryOperationNode(starToken, result, OperatorType.Multiply);
+            } else {
+                break;
+            }
+        }
         return result;
     }
 

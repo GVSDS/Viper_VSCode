@@ -455,6 +455,7 @@
         "returnTypeMismatch": "类型“{exprType}”不可分配给返回类型“{returnType}”",
         "returnTypePartiallyUnknown": "返回类型“{returnType}”部分未知",
         "returnTypeUnknown": "返回类型未知",
+        "viperReturnExprInNoneFunction": "返回 None（无返回值）的函数不能用 return 返回值为 None 的表达式，只有裸 return 和 return None 合法",
         "revealLocalsArgs": "“reveal_locals”调用应没有参数",
         "revealLocalsNone": "此范围内没有 locals 变量",
         "revealTypeArgs": "“reveal_type”调用应为单个位置参数",

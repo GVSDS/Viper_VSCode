@@ -462,7 +462,11 @@ export class PackageTypeVerifier {
             if (isFile) {
                 const fileExtension = getFileExtension(entry.name);
 
-                if (fileExtension === '.vp' || fileExtension === '.vpi') {
+                if (
+                    fileExtension === '.vp' ||
+                    fileExtension === '.vpi' ||
+                    fileExtension === '.vpnci'
+                ) {
                     const nameWithoutExtension = stripFileExtension(entry.name);
 
                     if (nameWithoutExtension === '__init__') {

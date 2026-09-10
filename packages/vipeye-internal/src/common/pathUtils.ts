@@ -606,7 +606,7 @@ export function getWildcardRoot(rootPath: string, fileSpec: string): string {
 }
 
 export function hasPythonExtension(path: string) {
-    return path.endsWith('.vp') || path.endsWith('.vpi');
+    return path.endsWith('.vp') || path.endsWith('.vpi') || path.endsWith('.vpnci');
 }
 
 export function getRegexEscapedSeparator(pathSep: string = path.sep) {

@@ -1,0 +1,19 @@
+import t, c
+
+class MyEnum(t.REnum):
+    class Int:
+        Bits: t.CInt
+
+    class Ptr:
+        Pointee: MyEnum | t.CPtr
+
+def test_enum(e: MyEnum | t.CPtr) -> int:
+    k: t.CInt = e.kind()
+    k2: t.CInt = e.kind
+    return k + k2
+
+def test_assign() -> int:
+    e: MyEnum | t.CPtr = MyEnum.Int(32)
+    if e.kind() == 1:
+        return 1
+    return 0

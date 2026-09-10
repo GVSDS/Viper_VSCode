@@ -914,6 +914,7 @@ export namespace Localizer {
         export const returnTypeUnknown = () => getRawString('Diagnostic.returnTypeUnknown');
         export const returnTypePartiallyUnknown = () =>
             new ParameterizedString<{ returnType: string }>(getRawString('Diagnostic.returnTypePartiallyUnknown'));
+        export const viperReturnExprInNoneFunction = () => getRawString('Diagnostic.viperReturnExprInNoneFunction');
         export const revealLocalsArgs = () => getRawString('Diagnostic.revealLocalsArgs');
         export const revealLocalsNone = () => getRawString('Diagnostic.revealLocalsNone');
         export const revealTypeArgs = () => getRawString('Diagnostic.revealTypeArgs');

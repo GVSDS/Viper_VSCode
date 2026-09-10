@@ -38,7 +38,8 @@
                 ],
                 "extensions": [
                     ".vp",
-                    ".vpi"
+                    ".vpi",
+                    ".vpnci"
                 ],
                 "configuration": "./language-configuration.json",
                 "icon": {
@@ -151,6 +152,9 @@
                     "function": [
                         "entity.name.function.viper",
                         "entity.name.function"
+                    ],
+                    "macro": [
+                        "storage.type.function.viper"
                     ],
                     "class": [
                         "entity.name.class",

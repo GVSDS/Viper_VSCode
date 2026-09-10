@@ -82,10 +82,11 @@ export function createImportedModuleDescriptor(moduleName: string): ImportedModu
 type CachedImportResults = Map<string, ImportResult>;
 
 const supportedNativeLibExtensions = ['.pyd', '.so', '.dylib'];
-// Viper 模式下同时支持 .vp/.vpi（主）和 .py/.pyi（兼容回退）。
+// Viper 模式下同时支持 .vp/.vpi/.vpnci（主）和 .py/.pyi（兼容回退）。
+// .vpi 为可编译注解，.vpnci 为不可编译注解（配置与 .vpi 一致）。
 // .py/.pyi 支持用于 TransPyC 源码（TPC/TPV 编译器源码仍是 .py 扩展名），
 // 以及用户未迁移到 .vp 的旧代码。
-export const supportedSourceFileExtensions = ['.vp', '.vpi', '.py', '.pyi'];
+export const supportedSourceFileExtensions = ['.vp', '.vpi', '.vpnci', '.py', '.pyi'];
 export const supportedFileExtensions = [...supportedSourceFileExtensions, ...supportedNativeLibExtensions];
 
 // Should we allow partial resolution for third-party packages? Some use tricks
@@ -223,7 +224,11 @@ export class ImportResolver {
                                     result.nonStubImportResult.resolvedUris.length - 1
                                 ];
 
-                            if (nonEmptyUri.hasExtension('.vp') || nonEmptyUri.hasExtension('.vpi')) {
+                            if (
+                                nonEmptyUri.hasExtension('.vp') ||
+                                nonEmptyUri.hasExtension('.vpi') ||
+                                nonEmptyUri.hasExtension('.vpnci')
+                            ) {
                                 // We allow pyi in case there are multiple pyi for a compiled module such as
                                 // numpy.random.mtrand
                                 sourceFileUris.push(nonEmptyUri);
@@ -821,7 +826,13 @@ export class ImportResolver {
             let strippedFileName: string;
             let isNativeLib = false;
 
-            if (fileExt === '.vp' || fileExt === '.vpi' || fileExt === '.py' || fileExt === '.pyi') {
+            if (
+                fileExt === '.vp' ||
+                fileExt === '.vpi' ||
+                fileExt === '.vpnci' ||
+                fileExt === '.py' ||
+                fileExt === '.pyi'
+            ) {
                 strippedFileName = stripFileExtension(filePath.fileName);
             } else if (
                 _isNativeModuleFileExtension(fileExt) &&
@@ -1402,6 +1413,8 @@ export class ImportResolver {
                     // Viper 模式下同时支持 .vp/.vpi（主）和 .py/.pyi（兼容回退）。
                     const pyFilePath = dirPath.initPyUri;
                     const pyiFilePath = dirPath.initPyiUri;
+                    // .vpnci 不可编译注解（与 .vpi 同级）
+                    const vpnciInitFilePath = dirPath.combinePathsUnsafe('__init__.vpnci');
                     // .py/.pyi 兼容回退路径
                     const compatPyFilePath = dirPath.combinePathsUnsafe('__init__.py');
                     const compatPyiFilePath = dirPath.combinePathsUnsafe('__init__.pyi');
@@ -1410,6 +1423,13 @@ export class ImportResolver {
                     if (allowPyi && this.fileExistsCached(pyiFilePath)) {
                         importLogger?.log(`Resolved import with file '${pyiFilePath}'`);
                         resolvedPaths.push(pyiFilePath);
+                        if (isLastPart) {
+                            isStubFile = true;
+                        }
+                        isInitFilePresent = true;
+                    } else if (allowPyi && this.fileExistsCached(vpnciInitFilePath)) {
+                        importLogger?.log(`Resolved import with file '${vpnciInitFilePath}'`);
+                        resolvedPaths.push(vpnciInitFilePath);
                         if (isLastPart) {
                             isStubFile = true;
                         }
@@ -1440,9 +1460,17 @@ export class ImportResolver {
                         if (dirName) {
                             const sameNameVpPath = dirPath.combinePathsUnsafe(dirName).addExtension('.vp');
                             const sameNameVpiPath = dirPath.combinePathsUnsafe(dirName).addExtension('.vpi');
+                            const sameNameVpnciPath = dirPath.combinePathsUnsafe(dirName).addExtension('.vpnci');
                             if (allowPyi && this.fileExistsCached(sameNameVpiPath)) {
                                 importLogger?.log(`Resolved import with Viper same-name file '${sameNameVpiPath}'`);
                                 resolvedPaths.push(sameNameVpiPath);
+                                if (isLastPart) {
+                                    isStubFile = true;
+                                }
+                                isInitFilePresent = true;
+                            } else if (allowPyi && this.fileExistsCached(sameNameVpnciPath)) {
+                                importLogger?.log(`Resolved import with Viper same-name file '${sameNameVpnciPath}'`);
+                                resolvedPaths.push(sameNameVpnciPath);
                                 if (isLastPart) {
                                     isStubFile = true;
                                 }
@@ -1469,6 +1497,7 @@ export class ImportResolver {
                         implicitImports = this.findImplicitImports(moduleDescriptor.nameParts.join('.'), dirPath, [
                             pyFilePath,
                             pyiFilePath,
+                            vpnciInitFilePath,
                         ]);
                         break;
                     }
@@ -1481,6 +1510,8 @@ export class ImportResolver {
                 // 用于 TransPyC 源码（仍是 .py 扩展名）。
                 const pyFilePath = dirPath.packageUri;
                 const pyiFilePath = dirPath.packageStubUri;
+                // .vpnci 不可编译注解（与 .vpi 同级）
+                const vpnciFilePath = dirPath.addExtension('.vpnci');
                 // .py/.pyi 兼容回退路径
                 const compatPyFilePath = dirPath.addExtension('.py');
                 const compatPyiFilePath = dirPath.addExtension('.pyi');
@@ -1489,6 +1520,12 @@ export class ImportResolver {
                 if (allowPyi && this.fileExistsCached(pyiFilePath)) {
                     importLogger?.log(`Resolved import with file '${pyiFilePath}'`);
                     resolvedPaths.push(pyiFilePath);
+                    if (isLastPart) {
+                        isStubFile = true;
+                    }
+                } else if (allowPyi && this.fileExistsCached(vpnciFilePath)) {
+                    importLogger?.log(`Resolved import with file '${vpnciFilePath}'`);
+                    resolvedPaths.push(vpnciFilePath);
                     if (isLastPart) {
                         isStubFile = true;
                     }
@@ -2117,7 +2154,11 @@ export class ImportResolver {
 
                         if (!entry.name.startsWith('_')) {
                             const packageInit = dirRoot.combinePaths('__init__.vpi');
-                            if (this._fileSystemCache.existsSync(packageInit)) {
+                            const packageInitVpnci = dirRoot.combinePaths('__init__.vpnci');
+                            if (
+                                this._fileSystemCache.existsSync(packageInit) ||
+                                this._fileSystemCache.existsSync(packageInitVpnci)
+                            ) {
                                 addDirectoryStdlibModule(moduleName);
                             }
                         }

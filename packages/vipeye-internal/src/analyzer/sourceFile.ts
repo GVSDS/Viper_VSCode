@@ -284,7 +284,7 @@ export class SourceFile {
         this._uri = uri;
         this._fileId = this._makeFileId(uri);
         this._moduleNameGetter = moduleNameGetter;
-        this._isStubFile = uri.hasExtension('.vpi');
+        this._isStubFile = uri.hasExtension('.vpi') || uri.hasExtension('.vpnci');
         this._isThirdPartyImport = isThirdPartyImport;
         this._isThirdPartyPyTypedPresent = isThirdPartyPyTypedPresent;
         const fileName = uri.fileName;

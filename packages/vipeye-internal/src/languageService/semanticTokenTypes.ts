@@ -38,6 +38,8 @@ export const enum SemanticTokenTypes {
     decorator = 12,
     /** 属性 */
     property = 13,
+    /** 宏函数（define 定义的编译期宏，显示为深蓝色） */
+    macro = 14,
 }
 
 /** 语义 token 修饰符（位掩码） */
@@ -70,6 +72,7 @@ export const semanticTokenTypesLegend: string[] = [
     'undefined',
     'decorator',
     'property',
+    'macro',
 ];
 
 /** LSP legend 中的 tokenModifiers 字符串列表（顺序与 bit 位对应） */

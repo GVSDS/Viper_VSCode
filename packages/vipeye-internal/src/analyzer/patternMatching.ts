@@ -12,6 +12,7 @@
 import { appendArray } from '../common/collectionUtils';
 import { assert } from '../common/debug';
 import { DiagnosticAddendum } from '../common/diagnostic';
+import { IsViperDialect } from '../common/dialect';
 import { DiagnosticRule } from '../common/diagnosticRules';
 import { LocAddendum, LocMessage } from '../localization/localize';
 import {
@@ -29,6 +30,7 @@ import {
     PatternValueNode,
 } from '../parser/parseNodes';
 import { CodeFlowReferenceExpressionNode } from './codeFlowTypes';
+import { getFileInfo } from './analyzerNodeInfo';
 import { addConstraintsForExpectedType } from './constraintSolver';
 import { ConstraintTracker } from './constraintTracker';
 import { DeclarationType } from './declaration';
@@ -833,6 +835,7 @@ function narrowTypeBasedOnClassPattern(
     pattern: PatternClassNode,
     isPositiveTest: boolean
 ): Type {
+    const isViperDialect = IsViperDialect(getFileInfo(pattern).executionEnvironment?.dialect);
     let exprType = evaluator.getTypeOfExpression(pattern.d.className, EvalFlags.CallBaseDefaults).type;
 
     // If this is a class (but not a type alias that refers to a class),
@@ -1058,6 +1061,33 @@ function narrowTypeBasedOnClassPattern(
                     }
 
                     if (isClassInstance(subjectSubtypeExpanded)) {
+                        // Viper 扩展：指针 subject 的变体模式收窄。
+                        // `match x: case LLVMType.Struct(...)` 中 subject 为 CPtr[LLVMType]（指针）时，
+                        // 收窄结果应是 CPtr[LLVMType.Struct]（指向变体的指针），而非普通变体值 Struct。
+                        // 否则 case 体内继续把 x 传给 CPtr 参数（如 build_alloca(builder, x)）会误报
+                        // "Struct 不可分配给 CPtr[LLVMType]"。
+                        // 判定用 fullName 前缀（LLVMType.Struct ⊂ LLVMType）：REnum 变体类与
+                        // 基类之间 assignType 不一定成立（变体不直接继承基类），故不能用 assignType。
+                        if (
+                            isViperDialect &&
+                            isCPtrType(subjectSubtypeExpanded) &&
+                            isInstantiableClass(expandedSubtype)
+                        ) {
+                            const subjectTypeArgs = subjectSubtypeExpanded.priv.typeArgs;
+                            const subjectPointee =
+                                subjectTypeArgs && subjectTypeArgs.length > 0 ? subjectTypeArgs[0] : undefined;
+                            if (
+                                subjectPointee &&
+                                isClassInstance(subjectPointee) &&
+                                !isAnyOrUnknown(subjectPointee) &&
+                                expandedSubtype.shared.fullName.startsWith(subjectPointee.shared.fullName + '.')
+                            ) {
+                                const patternInstance = ClassType.cloneAsInstance(expandedSubtype);
+                                const cptrResult = ClassType.specialize(subjectSubtypeExpanded, [patternInstance]);
+                                return addConditionToType(cptrResult, getTypeCondition(subjectSubtypeExpanded));
+                            }
+                        }
+
                         let resultType: Type;
 
                         if (evaluator.assignType(ClassType.cloneAsInstance(expandedSubtype), subjectSubtypeExpanded)) {

@@ -1,0 +1,19 @@
+import t, c
+
+def takes_ptr(p: t.CInt | t.CPtr) -> t.CInt | t.CPtr:
+    return p
+
+def test_zero_cast():
+    p: t.CInt | t.CPtr = None
+    q: t.CInt | t.CPtr = None
+    p = 0
+    p = 1
+    x: t.CInt = 0
+    p = x
+    takes_ptr(0)
+    takes_ptr(1)
+    addr: t.CUnsignedLong = 0x1234
+    p = addr
+    p = t.CInt(addr, t.CPtr)
+    takes_ptr(p)
+    takes_ptr(q)

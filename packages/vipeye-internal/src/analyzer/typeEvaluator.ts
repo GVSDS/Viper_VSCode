@@ -18490,8 +18490,8 @@ export function createTypeEvaluator(
                     EvalFlags.NoClassVar;
 
                 // Viper 扩展：保留上方"裸类引用 RHS 不专用化"的 NoSpecialize 标志。
-                // 否则 `rowptr: t.CTypedef = t.CPtr` 的 RHS 会被 reportMissingTypeArgs
-                // 预填成 CPtr[Unknown]，导致 `rowptr[int]` 无法再特化
+                // 否则 `rawptr: t.CTypedef = t.CPtr` 的 RHS 会被 reportMissingTypeArgs
+                // 预填成 CPtr[Unknown]，导致 `rawptr[int]` 无法再特化
                 // （下标处报"类型 CPtr[Unknown] 已专用化"）。
                 if (
                     node.d.rightExpr.nodeType === ParseNodeType.Name ||
@@ -26733,12 +26733,12 @@ export function createTypeEvaluator(
             }
         }
 
-        // Viper 扩展：字符串字面量 → int（CChar）转换语义。
+        // Viper 扩展：字符串字面量 → int（CChar）/ char 转换语义。
         // C 语言中 char c = '_' 合法（字符字面量是整数）。Viper 中 CChar 是 int 别名，
-        // 但 '_' 是字符串字面量。允许字符串字面量赋值给 int，模拟 C 的字符赋值。
+        // 但 '_' 是字符串字面量。允许字符串字面量赋值给 int / 内置 char，模拟 C 的字符赋值。
         // Python 中 str 永远不能赋值给 int，所以此扩展只在 Viper 场景生效。
         if (
-            isClassInstance(destType) && ClassType.isBuiltIn(destType, 'int') &&
+            isClassInstance(destType) && ClassType.isBuiltIn(destType, ['int', 'char']) &&
             isClassInstance(srcType) && ClassType.isBuiltIn(srcType, 'str') &&
             srcType.priv.literalValue !== undefined &&
             typeof srcType.priv.literalValue === 'string'
@@ -26770,6 +26770,28 @@ export function createTypeEvaluator(
             return true;
         }
 
+        // Viper 扩展：内置 char（8 位字符/整型，C 的 char）隐式转换。
+        // char 与 int 同为整数类型，按 C 整数隐式转换规则互转（所有方向）；
+        // char → float/double 无损（8 位 → 32/64 位浮点）；浮点 → char 不允许（有损）。
+        if (
+            isClassInstance(destType) && ClassType.isBuiltIn(destType, 'char') &&
+            isClassInstance(srcType) && ClassType.isBuiltIn(srcType, 'int')
+        ) {
+            return true;
+        }
+        if (
+            isClassInstance(destType) && ClassType.isBuiltIn(destType, 'int') &&
+            isClassInstance(srcType) && ClassType.isBuiltIn(srcType, 'char')
+        ) {
+            return true;
+        }
+        if (
+            isClassInstance(destType) && ClassType.isBuiltIn(destType, ['float', 'double']) &&
+            isClassInstance(srcType) && ClassType.isBuiltIn(srcType, 'char')
+        ) {
+            return true;
+        }
+
         // Viper 扩展：CEnum 子类 → int 隐式转换语义。
         // C 语言中 enum 值可以隐式转换为 int（如 int x = FR_OK）。
         // Viper 的 CEnum 子类（如 FRESULT）的成员（如 FRESULT.FR_OK）
@@ -26785,20 +26807,21 @@ export function createTypeEvaluator(
         // Viper 中所有 C 类型（CInt, CFloat, CChar 等）都是 CType 的子类，
         // 在底层等价于 Python 内置类型（int, float, str 等）。
         // 允许 `k: t.CInt = 1`（int → CInt）、`k: t.CFloat = 1.0`（float → CFloat）等赋值。
-        // double 为 Viper 内置 64 位浮点，可赋给 t.CDouble。
+        // double 为 Viper 内置 64 位浮点，可赋给 t.CDouble；char 为内置 8 位字符，可赋给 t.CChar。
         if (
             isClassInstance(destType) && isCTypeSubclassType(destType) &&
-            isClassInstance(srcType) && ClassType.isBuiltIn(srcType, ['int', 'float', 'double', 'str', 'bool', 'bytes'])
+            isClassInstance(srcType) && ClassType.isBuiltIn(srcType, ['int', 'float', 'double', 'char', 'str', 'bool', 'bytes'])
         ) {
             return true;
         }
 
         // Viper 扩展：CType 子类 -> Python 内置类型隐式转换（反向）。
         // CInt/CFloat/CChar 等 CType 子类在底层等价于 Python 内置类型，
-        // 可隐式转换回 int/float/str/bool/bytes（含 t.CDouble → 内置 double）。
+        // 可隐式转换回 int/float/double/char/str/bool/bytes（含 t.CDouble → 内置 double、
+        // t.CChar → 内置 char）。
         // 覆盖场景：CInt 值传给 int 形参（如 def __init__(self, w: int) 接收 CInt 实参）。
         if (
-            isClassInstance(destType) && ClassType.isBuiltIn(destType, ['int', 'float', 'double', 'str', 'bool', 'bytes']) &&
+            isClassInstance(destType) && ClassType.isBuiltIn(destType, ['int', 'float', 'double', 'char', 'str', 'bool', 'bytes']) &&
             isClassInstance(srcType) && isCTypeSubclassType(srcType)
         ) {
             return true;

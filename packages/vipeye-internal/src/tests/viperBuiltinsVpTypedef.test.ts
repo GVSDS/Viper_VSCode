@@ -1,14 +1,12 @@
 /*
  * viperBuiltinsVpTypedef.test.ts
  *
- * 验证 Viper 方言下注解名解析对 includes/builtins.vp（真实源码，非 .vpi 存根）
- * 中 t.CTypedef 类型别名的兜底搜索（"builtins 最后匹配"，对齐 TransPyC
- * TypeAnnotationResolver / TPV _lookup_builtins_typedef）：
- *   - `rowptr[int]` 注解 → rowptr 为 builtins.vp 中的 typedef，可解析为 CPtr[int]
- *   - `size_t` 注解 → 解析为 t.CSizeT
- *   - `int8` 注解 → 解析为 t.CInt8T
+ * 验证 Viper 方言下注解名解析对内置 typedef 的兜底搜索：
+ *   - `rawptr[int]` 注解 → rawptr 为 builtins.vpi 中的编译器内置 typedef，可解析为 CPtr[int]
+ *   - `size_t` 注解 → 解析为 t.CSizeT（来自 includes/builtins.vp 的 t.CTypedef 别名）
+ *   - `int8` 注解 → 解析为 t.CInt8T（来自 includes/builtins.vp 的 t.CTypedef 别名）
  *   - 均无需显式 import builtins（builtins 不在用户文件 import 闭包内）
- *   - 不报"未定义 rowptr/size_t/int8"
+ *   - 不报"未定义 rawptr/size_t/int8"
  *
  * 运行：npx jest src/tests/viperBuiltinsVpTypedef.test.ts --runInBand
  */
@@ -106,7 +104,7 @@ function collectParamAnnotationTypes(
 test('builtins.vp（includes 版本）typedef 在注解中可直接解析', () => {
     const source = `import t
 
-def f(x: rowptr[int]) -> int:
+def f(x: rawptr[int]) -> int:
     return 0
 
 def g() -> size_t:
@@ -128,7 +126,7 @@ def h(a: int8) -> int:
         `builtins.vp typedef 不应报未定义，实际: ${JSON.stringify(undefinedDiags)}`
     );
 
-    // 2. 参数注解类型解析：rowptr[int] → CPtr[int]
+    // 2. 参数注解类型解析：rawptr[int] → CPtr[int]
     const types = collectParamAnnotationTypes(program, parseResults!);
     const fTypes = types.get('f');
     assert(fTypes && fTypes.some((t) => t.includes('CPtr') && t.includes('int')), `f(x) 应为 CPtr[int]，实际: ${JSON.stringify(fTypes)}`);
@@ -168,7 +166,7 @@ def h(a: int8) -> int:
 test('builtins.vp typedef 与 builtins.vpi 内建并存（int/str 等不被破坏）', () => {
     const source = `import t
 
-def f(x: rowptr[int]) -> str:
+def f(x: rawptr[int]) -> str:
     s: str = "ok"
     return s
 `;

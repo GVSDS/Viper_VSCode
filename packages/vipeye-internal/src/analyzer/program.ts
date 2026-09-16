@@ -1891,7 +1891,7 @@ export class Program {
                 getScopeIfAvailable(fileToBind.chainedSourceFile) ?? getScopeIfAvailable(fileToBind.builtinsImport);
 
             // Viper 扩展：将项目 includes 中 builtins.vp（真实源码，非 .vpi 存根）
-            // 的 t.CTypedef 类型别名（rowptr/size_t 等）合并进 builtin 作用域。
+            // 的 t.CTypedef 类型别名（rawptr/size_t 等）合并进 builtin 作用域。
             // 对齐 TransPyC TypeAnnotationResolver / TPV _lookup_builtins_typedef 的
             // "builtins 最后匹配"语义：builtins 始终纳入编译链但不在用户文件的
             // import 闭包内，其 typedef 声明需作为注解名解析的兜底。
@@ -1920,11 +1920,11 @@ export class Program {
     }
 
     // Viper 扩展：将项目 includes 中 builtins.vp（真实源码，非 .vpi 存根）的
-    // t.CTypedef 类型别名（rowptr/size_t 等）合并进 builtin 作用域。
+    // t.CTypedef 类型别名（rawptr/size_t 等）合并进 builtin 作用域。
     //
     // 背景：TransPyC/TPV 的"builtins 最后匹配"——builtins 模块始终纳入编译链，
     // 但不在用户文件的 import 闭包内，其 `NAME: t.CTypedef = TYPE` 声明（如
-    // builtins.vp 中的 rowptr = t.CPtr、size_t = __stdint.size_t）不随
+    // builtins.vp 中的 rawptr = t.CPtr、size_t = __stdint.size_t）不随
     // from_imports 注入，编译器按源文件扫描 builtins.vp 作为注解名解析兜底
     // （见 TransPyC lib/core/TypeAnnotationResolver.py）。
     //
@@ -2017,7 +2017,7 @@ export class Program {
         }
 
         // 合并：builtins.vp 的声明优先覆盖 builtin 作用域（完全对齐真实编译器，
-        // 如 ord/chr 的 t.CChar 签名、min/max 的 double 签名、rowptr/size_t 等 typedef）。
+        // 如 ord/chr 的 t.CChar 签名、min/max 的 double 签名、rawptr/size_t 等 typedef）。
         // 覆盖范围：t.CTypedef 类型别名声明 + 函数声明；跳过模块别名（__stdint/t）
         // 与隐式 dunder 符号，避免引入不必要的隐式全局。
         for (const [name, symbol] of builtinsVpScope.symbolTable) {

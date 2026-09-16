@@ -1,5 +1,12 @@
 # Change Log
 
+## 1.1.413
+
+- **内置 char 类型**：复刻 int 定义（8 位字符/整型），与 `t.CChar`、`int` 双向隐式转换，`char → float/double` 无损
+- **内置 rawptr**：编译器内置裸指针 typedef（`rawptr: t.CTypedef = t.CPtr`），任意工程可直接用 `rawptr[T]`，不依赖项目 includes 配置
+- 类型检查：`-> None` 函数只允许裸 `return` / `return None`，`return` 值为 None 的表达式（如调用返回 None 的函数）报错
+- 导入解析：builtins.vp 发现扩展到被分析文件祖先目录与 `includes/` 子目录，修复未显式配置 includes 时 `uint64` 等 typedef 报"未定义"
+
 ## 1.1.412
 
 - **整合 Viper 核心扩展**：侧边栏活动栏（Project/Toolchain/Settings 视图）、.vpj 项目管理、工具链选择与状态栏并入本扩展，一个包即可使用全部 Viper 功能

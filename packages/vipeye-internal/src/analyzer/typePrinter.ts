@@ -323,9 +323,19 @@ function printTypeInternal(
                     }
                 }
 
+                // Viper 扩展：别名自身没有类型参数（如 `rawptr: t.CTypedef = t.CPtr`），
+                // 但类型被下标特化（`rawptr[T]` → 底层 `CPtr[T]`）。这种别名不能只显示
+                // 别名本身，否则会丢掉类型实参（`rawptr[T]` 会显示成裸 `rawptr`）。
+                // 跳过别名显示，交给常规路径输出 `rawptr[T]`。
+                const isSpecializedNonGenericViperAlias =
+                    (printTypeFlags & PrintTypeFlags.ViperDialect) !== 0 &&
+                    type.category === TypeCategory.Class &&
+                    (type.priv.typeArgs?.length ?? 0) > 0 &&
+                    (!typeParams || typeParams.length === 0);
+
                 // If it's a TypeVar, don't use the alias name. Instead, use the full
                 // name, which may have a scope associated with it.
-                if (type.category !== TypeCategory.TypeVar) {
+                if (!isSpecializedNonGenericViperAlias && type.category !== TypeCategory.TypeVar) {
                     return aliasName;
                 }
             } finally {
@@ -1007,6 +1017,17 @@ function printObjectTypeForClassInternal(
     // Special-case NoneType to convert it to None.
     if (ClassType.isBuiltIn(type, 'NoneType')) {
         objName = 'None';
+    }
+
+    // Viper 方言：t.CPtr 等价编译器内置裸指针 rawptr，统一显示为 rawptr
+    // （如 `elts: CPtr[list[CPtr[AST]]]` → `rawptr[list[rawptr[AST]]]`）。
+    // 类型实参照常展开，仅替换指针类型的显示名。
+    if (
+        (printTypeFlags & PrintTypeFlags.ViperDialect) !== 0 &&
+        type.shared.name === 'CPtr' &&
+        (type.shared.fullName === 't.CPtr' || type.shared.moduleName === 't')
+    ) {
+        objName = 'rawptr';
     }
 
     // Use the fully-qualified name if the name isn't unique.

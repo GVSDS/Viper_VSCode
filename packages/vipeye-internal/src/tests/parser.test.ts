@@ -197,7 +197,8 @@ test('TrailingBackslashCRAtEOF', () => {
     TestUtils.parseText(code, diagSink);
     const errors = diagSink.getErrors();
     assert.strictEqual(errors.length > 0, true);
-    assert.ok(errors.some((e) => e.message.includes('Unexpected EOF')));
+    // 消息已本地化（默认 zh-cn），断言用当前 locale 的实际文案，避免写死英文。
+    assert.ok(errors.some((e) => e.message.includes(LocMessage.unexpectedEof())));
 });
 
 test('LazyImport - Python 3.15', () => {

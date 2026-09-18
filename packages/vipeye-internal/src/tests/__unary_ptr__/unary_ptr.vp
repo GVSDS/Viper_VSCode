@@ -1,10 +1,6 @@
 import t, c
+import ast
 
-def main() -> int:
-    x: int = 42
-    px: int | t.CPtr = &x
-    *px = 100
-    y: int = *px
-    pz: int* = &x
-    *pz = 7
-    return 0
+class Holder:
+    ch_r: list[ast.AST*]*
+    direct: rawptr[ast.AST]

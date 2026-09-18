@@ -30,7 +30,7 @@ import { FullAccessHost } from '../common/fullAccessHost';
 
 const VIPERLIB_PATH = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes\\viperlib.vp';
 const MEMHUB_PATH = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes\\memhub.vp';
-const REQUESTS_PATH = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes\\requests.vp';
+const REQUESTS_PATH = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes\\requests\\__init__.vp';
 const ARGPARSE_PATH = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes\\argparse.vp';
 const TYPES_PATH = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes\\llvmlite\\__types.vp';
 const OS_INIT_PATH = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes\\os\\__init__.vp';
@@ -250,7 +250,7 @@ test('requests.vp 中 str = None 默认值不展开为 str | None，无 Optional
 
     const diagnostics = getDiagnostics(program, configOptions, uri);
 
-    // 命中场景：requests.vp L258 `def post(url: str, data: str = None, ...)`。
+    // 命中场景：requests/__init__.vp L679 `def post(url: str, data: str = None, ...)`。
     // Viper 下 str 是 i8*（可空指针），None 是空指针，不应展开为 str | None，
     // 否则 data[0] 等下标访问会误报 reportOptionalSubscript。
     const optionalErrors = diagnostics.filter(
@@ -283,9 +283,9 @@ test('__sha256.vp 中 CArray 传给 CPtr 参数（数组名退化）不报类型
         (d) =>
             d.message.includes('cannot be assigned to parameter "block"') ||
             d.message.includes('参数 "block"') ||
-            (d.message.includes('CArray') && d.message.includes('CPtr'))
+            (d.message.includes('CArray') && (d.message.includes('rawptr') || d.message.includes('CPtr')))
     );
-    assert.strictEqual(cptrErrors.length, 0, `unexpected CArray->CPtr errors: ${JSON.stringify(cptrErrors)}`);
+    assert.strictEqual(cptrErrors.length, 0, `unexpected CArray->rawptr errors: ${JSON.stringify(cptrErrors)}`);
 
     program.dispose();
     serviceProvider.dispose();
@@ -305,9 +305,9 @@ test('__sha512.vp 中 CPtr 传给 CArray 参数（形参调整）不报类型错
         (d) =>
             d.message.includes('cannot be assigned to parameter "block"') ||
             d.message.includes('参数 "block"') ||
-            (d.message.includes('CArray') && d.message.includes('CPtr'))
+            (d.message.includes('CArray') && (d.message.includes('rawptr') || d.message.includes('CPtr')))
     );
-    assert.strictEqual(cptrErrors.length, 0, `unexpected CPtr->CArray errors: ${JSON.stringify(cptrErrors)}`);
+    assert.strictEqual(cptrErrors.length, 0, `unexpected rawptr->CArray errors: ${JSON.stringify(cptrErrors)}`);
 
     program.dispose();
     serviceProvider.dispose();
@@ -366,28 +366,38 @@ function getSemanticTokens(program: Program, uri: any): Map<number, any[]> {
     return map;
 }
 
-test('ast/__init__.vp 中不存在的 from .visitor import ASTVisitor 标黄且标白（undefined）', () => {
-    const { program, serviceProvider, uri, configOptions } = buildProgram(AST_INIT_PATH);
+test('不存在的相对导入 from .visitor import ASTVisitor 标黄且标白（undefined）', () => {
+    // 自包含用例：临时包 pkg/__init__.vp 中写 `from .visitor import ASTVisitor`。
+    // （原用例指向 ast/__init__.vp，但该 import 已被源码注释掉，断言随之过期。）
+    const fs = require('fs');
+    const testRoot = path.join(__dirname, '__visitor_undef__');
+    fs.rmSync(testRoot, { recursive: true, force: true });
+    const pkgDir = path.join(testRoot, 'pkg');
+    fs.mkdirSync(pkgDir, { recursive: true });
+    const filePath = path.join(pkgDir, '__init__.vp');
+    fs.writeFileSync(filePath, 'from .visitor import ASTVisitor\n', 'utf8');
+
+    const { program, serviceProvider, uri, configOptions } = buildProgram(filePath, testRoot, [TRANSPYC_INCLUDES]);
 
     // 1. 诊断：不存在的模块 `.visitor` 应标黄（warning，cat=1=Warning）
     const diagnostics = getDiagnostics(program, configOptions, uri);
     const visitorDiag = diagnostics.find(
-        (d) => d.range === 'L51' && d.message.includes('visitor')
+        (d) => d.range === 'L1' && d.message.includes('visitor')
     );
     assert(visitorDiag, `expected unresolved '.visitor' diagnostic, got: ${JSON.stringify(diagnostics)}`);
     assert.strictEqual(visitorDiag.category, 1, `expected warning(1) for .visitor, got cat=${visitorDiag.category}`);
 
     // 2. 语义 token：`visitor` 和 `ASTVisitor` 都应为 undefined（白色，type=11）
     const tokensByLine = getSemanticTokens(program, uri);
-    const line51 = tokensByLine.get(50); // L51 → 行索引 50
-    assert(line51, 'expected tokens on line 51');
+    const line1 = tokensByLine.get(0);
+    assert(line1, 'expected tokens on line 1');
 
-    const visitorToken = line51.find((t) => t.text === 'visitor');
-    assert(visitorToken, 'expected "visitor" token on line 51');
+    const visitorToken = line1.find((t) => t.text === 'visitor');
+    assert(visitorToken, 'expected "visitor" token on line 1');
     assert.strictEqual(visitorToken.tokenType, 11, `"visitor" should be undefined(11), got ${visitorToken.tokenType}`);
 
-    const astVisitorToken = line51.find((t) => t.text === 'ASTVisitor');
-    assert(astVisitorToken, 'expected "ASTVisitor" token on line 51');
+    const astVisitorToken = line1.find((t) => t.text === 'ASTVisitor');
+    assert(astVisitorToken, 'expected "ASTVisitor" token on line 1');
     assert.strictEqual(
         astVisitorToken.tokenType,
         11,
@@ -396,6 +406,7 @@ test('ast/__init__.vp 中不存在的 from .visitor import ASTVisitor 标黄且�
 
     program.dispose();
     serviceProvider.dispose();
+    fs.rmSync(testRoot, { recursive: true, force: true });
 });
 
 /**

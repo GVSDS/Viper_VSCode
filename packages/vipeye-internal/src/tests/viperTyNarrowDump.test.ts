@@ -74,7 +74,7 @@ test('AssignGenMixin.vp 守卫后 .Ty/.Pointee 不误收窄为 CPtr[None]', () =
         class TyCollector extends ParseTreeWalker {
             override visitMemberAccess(node: MemberAccessNode) {
                 const pos = convertOffsetToPosition(node.start, lines);
-                if (pos.line < 795 || pos.line > 830) {
+                if (pos.line < 943 || pos.line > 967) {
                     return true;
                 }
                 const memberName = (node.d.member as any)?.d?.value ?? '?';
@@ -94,18 +94,18 @@ test('AssignGenMixin.vp 守卫后 .Ty/.Pointee 不误收窄为 CPtr[None]', () =
         // 核心断言 1：`if target_alloca.Ty is None:` 守卫之后，.Ty 不再被误窄化为 CPtr[None]
         //（None 是空指针取值，is None 正测试不改变 CPtr 指针类型本身）
         expect(tyTypes.some((s) => s.includes('[None]'))).toBe(false);
-        expect(tyTypes.every((s) => s === 'CPtr[LLVMType]')).toBe(true);
+        expect(tyTypes.every((s) => s === 'rawptr[LLVMType]')).toBe(true);
 
         // 核心断言 2：守卫之后 .Pointee 可正常解析（原报"无法访问类'None'的属性'Pointee'"）
         expect(pointeeTypes.some((s) => s === 'Unknown')).toBe(false);
-        expect(pointeeTypes.every((s) => s === 'CPtr[LLVMType]')).toBe(true);
+        expect(pointeeTypes.every((s) => s === 'rawptr[LLVMType]')).toBe(true);
 
-        // 核心断言 3：L795-830 范围内不应再出现"无法访问/未定义"诊断
+        // 核心断言 3：L944-968 范围内不应再出现"无法访问/未定义"诊断
         const sourceFile = program.getSourceFile(uri);
         const diags = sourceFile!.getDiagnostics(configOptions) || [];
         const rangeDiags = diags.filter((d: any) => {
             const line = d.range ? d.range.start.line + 1 : -1;
-            return line >= 795 && line <= 830;
+            return line >= 944 && line <= 968;
         });
         expect(rangeDiags.length).toBe(0);
         rangeDiags.forEach((d: any) => {
@@ -133,34 +133,42 @@ test('AssignGenMixin.vp match 变体模式内 rhs_val.Ty 保持指针形态 CPtr
         class TyCollector extends ParseTreeWalker {
             override visitMemberAccess(node: MemberAccessNode) {
                 const pos = convertOffsetToPosition(node.start, lines);
-                if (pos.line < 1525 || pos.line > 1560) {
+                if (pos.line < 2012 || pos.line > 2051) {
                     return true;
                 }
                 const memberName = (node.d.member as any)?.d?.value ?? '?';
-                const t = ev.getType(node as any);
-                if (memberName === 'Ty') {
-                    tyByLine.push({ line: pos.line + 1, type: t ? program.printType(t) : '(undefined)' });
+                const baseName = (node.d.leftExpr as any)?.d?.value;
+                // 只关注 `rhs_val.Ty`；同范围内还有 `tgt_alloca.Ty`（另一个变量）不属于本用例。
+                if (memberName !== 'Ty' || baseName !== 'rhs_val') {
+                    return true;
                 }
+                const t = ev.getType(node as any);
+                tyByLine.push({ line: pos.line + 1, type: t ? program.printType(t) : '(undefined)' });
                 out.push(`  L${pos.line + 1} .${memberName}: ${t ? program.printType(t) : '(undefined)'}`);
                 return true;
             }
         }
         new TyCollector().walk(parseResults.parserOutput.parseTree);
 
-        // 核心断言 1：Struct case 体内（L1537/L1540/L1559）的 .Ty 保持指针形态 CPtr[Struct]，
-        // 而非误收窄为值类型 Struct（原导致 build_alloca 等报"Struct 不可分配给 CPtr[LLVMType]"）
-        const caseBodyTy = tyByLine.filter((e) => e.line >= 1537);
+        // 核心断言 1：Struct case 体内（L2017/L2020/L2039）的 rhs_val.Ty 保持指针形态
+        // rawptr[Struct]，而非误收窄为值类型 Struct（原导致 build_alloca 等报
+        // "Struct 不可分配给 rawptr[LLVMType]"）
+        const caseBodyTy = tyByLine.filter((e) => e.line >= 2016 && e.line <= 2055);
         expect(caseBodyTy.length).toBeGreaterThan(0);
-        expect(caseBodyTy.every((e) => e.type === 'CPtr[Struct]')).toBe(true);
-        // 全范围不允许出现纯值类型 Struct
+        expect(caseBodyTy.every((e) => e.type === 'rawptr[Struct]')).toBe(true);
+        // case 之外（守卫 L2013 与 match 主语 L2015）的 rhs_val.Ty 仍是声明类型
+        // rawptr[LLVMType]（或其变体联合），不得退化为纯值类型 Struct
+        const outsideCaseTy = tyByLine.filter((e) => e.line < 2016);
+        expect(outsideCaseTy.length).toBeGreaterThan(0);
+        expect(outsideCaseTy.every((e) => e.type.includes('rawptr['))).toBe(true);
         expect(tyByLine.some((e) => e.type === 'Struct')).toBe(false);
 
-        // 核心断言 2：L1525-1560 范围内不应再出现"不可分配给"诊断
+        // 核心断言 2：L2013-2052 范围内不应再出现"不可分配给"诊断
         const sourceFile = program.getSourceFile(uri);
         const diags = sourceFile!.getDiagnostics(configOptions) || [];
         const rangeDiags = diags.filter((d: any) => {
             const line = d.range ? d.range.start.line + 1 : -1;
-            return line >= 1525 && line <= 1560;
+            return line >= 2013 && line <= 2052;
         });
         expect(rangeDiags.length).toBe(0);
         rangeDiags.forEach((d: any) => {

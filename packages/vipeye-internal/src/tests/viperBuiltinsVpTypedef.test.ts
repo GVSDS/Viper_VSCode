@@ -129,7 +129,7 @@ def h(a: int8) -> int:
     // 2. 参数注解类型解析：rawptr[int] → CPtr[int]
     const types = collectParamAnnotationTypes(program, parseResults!);
     const fTypes = types.get('f');
-    assert(fTypes && fTypes.some((t) => t.includes('CPtr') && t.includes('int')), `f(x) 应为 CPtr[int]，实际: ${JSON.stringify(fTypes)}`);
+    assert(fTypes && fTypes.some((t) => t.includes('rawptr') && t.includes('int')), `f(x) 应为 rawptr[int]，实际: ${JSON.stringify(fTypes)}`);
 
     // 3. 返回注解 size_t → CSizeT
     const gReturn = (() => {

@@ -228,37 +228,37 @@ def make_ptr(x: t.CInt) -> t.CInt*:
     // T* → CPtr[CInt]（L7）
     const p1 = anns.find((a) => a.line === 7);
     assert(p1, 'p1 annotation not found (L7)');
-    assert(p1.type.includes('CPtr[CInt]'), `p1 should be CPtr[CInt]: ${p1.type}`);
+    assert(p1.type.includes('rawptr[CInt]'), `p1 should be rawptr[CInt]: ${p1.type}`);
 
-    // T** → CPtr[CPtr[CInt]]（L8）
+    // T** → rawptr[rawptr[CInt]]（L8）
     const p2 = anns.find((a) => a.line === 8);
     assert(p2, 'p2 annotation not found (L8)');
-    assert(p2.type.includes('CPtr[CPtr[CInt]]'), `p2 should be CPtr[CPtr[CInt]]: ${p2.type}`);
+    assert(p2.type.includes('rawptr[rawptr[CInt]]'), `p2 should be rawptr[rawptr[CInt]]: ${p2.type}`);
 
-    // T*** → CPtr[CPtr[CPtr[CInt]]]（L9）
+    // T*** → rawptr[rawptr[rawptr[CInt]]]（L9）
     const p3 = anns.find((a) => a.line === 9);
     assert(p3, 'p3 annotation not found (L9)');
-    assert(p3.type.includes('CPtr[CPtr[CPtr[CInt]]]'), `p3 should be CPtr[CPtr[CPtr[CInt]]]: ${p3.type}`);
+    assert(p3.type.includes('rawptr[rawptr[rawptr[CInt]]]'), `p3 should be rawptr[rawptr[rawptr[CInt]]]: ${p3.type}`);
 
-    // 结构体指针 MyStruct* → CPtr[MyStruct]（L11）
+    // 结构体指针 MyStruct* → rawptr[MyStruct]（L11）
     const sp = anns.find((a) => a.line === 11);
     assert(sp, 'sp annotation not found (L11)');
-    assert(sp.type.includes('CPtr[MyStruct]'), `sp should be CPtr[MyStruct]: ${sp.type}`);
+    assert(sp.type.includes('rawptr[MyStruct]'), `sp should be rawptr[MyStruct]: ${sp.type}`);
 
     // 参数 q: t.CInt*（L15）
     const q = anns.find((a) => a.line === 15);
     assert(q, 'q annotation not found (L15)');
-    assert(q.type.includes('CPtr[CInt]'), `q should be CPtr[CInt]: ${q.type}`);
+    assert(q.type.includes('rawptr[CInt]'), `q should be rawptr[CInt]: ${q.type}`);
 
     // 参数 pp: t.CInt**（L18）
     const pp = anns.find((a) => a.line === 18);
     assert(pp, 'pp annotation not found (L18)');
-    assert(pp.type.includes('CPtr[CPtr[CInt]]'), `pp should be CPtr[CPtr[CInt]]: ${pp.type}`);
+    assert(pp.type.includes('rawptr[rawptr[CInt]]'), `pp should be rawptr[rawptr[CInt]]: ${pp.type}`);
 
     // 返回类型 -> t.CInt*（L21）
     const ret = anns.find((a) => a.line === 21);
     assert(ret, 'return annotation not found (L21)');
-    assert(ret.type.includes('CPtr[CInt]'), `return should be CPtr[CInt]: ${ret.type}`);
+    assert(ret.type.includes('rawptr[CInt]'), `return should be rawptr[CInt]: ${ret.type}`);
 
     // 不得有任何 Error 类别诊断（指针类型注解不应产生错误）
     const diagnostics = getDiagnostics(program, configOptions, uri);
@@ -303,13 +303,13 @@ def main() -> int:
     console.log('=== 无空格 *=/ **= 注解类型 ===');
     anns.forEach((a) => console.log(`  L${a.line}: ${a.type}`));
 
-    // L5: px: int*=&x → CPtr[int]；L6: ppx: int**=&px → CPtr[CPtr[int]]
+    // L5: px: int*=&x → rawptr[int]；L6: ppx: int**=&px → rawptr[rawptr[int]]
     const px = anns.find((a) => a.line === 5);
     assert(px, 'px annotation not found (L5)');
-    assert(px.type.includes('CPtr[int]'), `px should be CPtr[int]: ${px.type}`);
+    assert(px.type.includes('rawptr[int]'), `px should be rawptr[int]: ${px.type}`);
     const ppx = anns.find((a) => a.line === 6);
     assert(ppx, 'ppx annotation not found (L6)');
-    assert(ppx.type.includes('CPtr[CPtr[int]]'), `ppx should be CPtr[CPtr[int]]: ${ppx.type}`);
+    assert(ppx.type.includes('rawptr[rawptr[int]]'), `ppx should be rawptr[rawptr[int]]: ${ppx.type}`);
 
     // 不得有 Error 类别诊断（含内部错误）
     const diagnostics = getDiagnostics(program, configOptions, uri);
@@ -317,6 +317,60 @@ def main() -> int:
     console.log('=== 错误诊断 ===');
     errors.forEach((d) => console.log(`  ${d}`));
     assert(errors.length === 0, `no-space star-assign should produce no errors: ${JSON.stringify(errors)}`);
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
+test('Viper 下标实参内指针后缀 + 外层指针：list[ast.AST*]* 不误报「[ 未关闭」', () => {
+    const code = `import t, c
+import ast
+
+class Holder:
+    ch_r: list[ast.AST*]*
+    direct: rawptr[ast.AST]
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgramForCode(code);
+
+    const evaluator = program.evaluator as TypeEvaluator | undefined;
+    assert(evaluator, 'evaluator not available');
+    const ev = evaluator;
+
+    const anns: { line: number; type: string }[] = [];
+    class AnnCollector extends ParseTreeWalker {
+        override visitTypeAnnotation(node: TypeAnnotationNode) {
+            const t = ev.getTypeOfAnnotation(node.d.annotation);
+            anns.push({
+                line: convertOffsetToPosition(node.d.annotation.start, parseResults.parserOutput.lines).line + 1,
+                type: t ? program.printType(t) : '(undefined)',
+            });
+            return true;
+        }
+    }
+    new AnnCollector().walk(parseResults.parserOutput.parseTree);
+
+    // L5: ch_r: list[ast.AST*]* → rawptr[list[rawptr[AST]]]
+    const chR = anns.find((a) => a.line === 5);
+    assert(chR, 'ch_r annotation not found (L5)');
+    assert(
+        chR.type.includes('rawptr[list[rawptr['),
+        `ch_r should be rawptr[list[rawptr[AST]]]: ${chR.type}`
+    );
+
+    // L6: direct: rawptr[ast.AST] → rawptr[AST]（rawptr 由 builtins.vpi 存根声明，
+    // 不得报「"rawptr" 未定义」）
+    const direct = anns.find((a) => a.line === 6);
+    assert(direct, 'direct annotation not found (L6)');
+    assert(direct.type.includes('rawptr[AST]'), `direct should be rawptr[AST]: ${direct.type}`);
+
+    // 不得出现「"[" 未关闭」「rawptr 未定义」等错误（category=0 = Error）
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    const errors = diagnostics.filter((d) => d.includes('category=0'));
+    assert(errors.length === 0, `list[ast.AST*]* should parse without errors: ${JSON.stringify(errors)}`);
+    assert(
+        !diagnostics.some((d) => d.includes('rawptr') && d.includes('未定义')),
+        `rawptr should resolve from builtins.vpi: ${JSON.stringify(diagnostics)}`
+    );
 
     program.dispose();
     serviceProvider.dispose();
@@ -356,13 +410,13 @@ def main() -> int:
     console.log('=== 解引用赋值 注解类型 ===');
     anns.forEach((a) => console.log(`  L${a.line}: ${a.type}`));
 
-    // L5: px: int | t.CPtr → CPtr[int]（联合折叠）；L8: pz: int* → CPtr[int]
+    // L5: px: int | t.CPtr → rawptr[int]（联合折叠）；L8: pz: int* → rawptr[int]
     const px = anns.find((a) => a.line === 5);
     assert(px, 'px annotation not found (L5)');
-    assert(px.type.includes('CPtr[int]'), `px should fold to CPtr[int]: ${px.type}`);
+    assert(px.type.includes('rawptr[int]'), `px should fold to rawptr[int]: ${px.type}`);
     const pz = anns.find((a) => a.line === 8);
     assert(pz, 'pz annotation not found (L8)');
-    assert(pz.type.includes('CPtr[int]'), `pz should be CPtr[int]: ${pz.type}`);
+    assert(pz.type.includes('rawptr[int]'), `pz should be rawptr[int]: ${pz.type}`);
 
     // *px = 100（L6）与 *pz = 7（L8）不得报"表达式不能是赋值目标"；
     // y: int = *px 解引用右值赋值兼容。

@@ -3726,13 +3726,21 @@ export class Parser {
             nextOperator === OperatorType.FloorDivide
         ) {
             // Viper 扩展：类型注解上下文中的后缀 '*' 是 C 指针类型（T* = CPtr[T]），
-            // 不是二元乘法。停止解析，交由 _parseTypeAnnotation/_parseTypeAliasStatement
-            // 的后缀处理消费，避免 `p: T*` 被解析成 `T * <缺失操作数>` 报错。
+            // 不是二元乘法。若该星号串后紧跟"无右操作数"位置（']' / ',' / ')' / ':' /
+            // '=' / 换行 / ';' / 文件结束），就地按指针后缀消费（覆盖 `list[ast.AST*]`
+            // 这类下标实参内的后缀）；否则停止解析，交由
+            // _parseTypeAnnotation/_parseTypeAliasStatement 的后缀处理消费。
             if (
                 this._parseOptions.dialect === 'viper' &&
                 this._isParsingTypeAnnotation &&
                 nextOperator === OperatorType.Multiply
             ) {
+                if (this._isAtViperPointerTypeSuffix()) {
+                    leftExpr = this._parseViperPointerTypeSuffix(leftExpr);
+                    peekToken = this._peekToken();
+                    nextOperator = this._peekOperatorType();
+                    continue;
+                }
                 break;
             }
 
@@ -3775,12 +3783,14 @@ export class Parser {
         const peekToken = this._peekToken();
         const nextPowerOperator = this._peekOperatorType();
         // Viper 扩展：类型注解上下文中的 '**' 是二级指针类型后缀（T** = CPtr[CPtr[T]]），
-        // 词法化为 Power 算子（'**'），不是幂运算。跳过幂运算分支，
-        // 交由 _parseTypeAnnotation/_parseTypeAliasStatement 的后缀处理消费。
-        if (
-            nextPowerOperator === OperatorType.Power &&
-            !(this._parseOptions.dialect === 'viper' && this._isParsingTypeAnnotation)
-        ) {
+        // 词法化为 Power 算子（'**'），不是幂运算。若其后紧跟"无右操作数"位置
+        // （如 `list[ast.AST**]`、`x: int**`），就地按指针后缀消费；
+        // 否则跳过幂运算分支，交由 _parseTypeAnnotation/_parseTypeAliasStatement
+        // 的后缀处理消费。
+        if (nextPowerOperator === OperatorType.Power && this._parseOptions.dialect === 'viper' && this._isParsingTypeAnnotation) {
+            return this._isAtViperPointerTypeSuffix() ? this._parseViperPointerTypeSuffix(leftExpr) : leftExpr;
+        }
+        if (nextPowerOperator === OperatorType.Power) {
             this._getNextToken();
             const rightExpr = this._parseArithmeticFactor();
             return this._createBinaryOperationNode(leftExpr, rightExpr, peekToken, OperatorType.Power);
@@ -4956,6 +4966,55 @@ export class Parser {
         this._hasTypeAnnotations = true;
 
         return result;
+    }
+
+    // Viper 扩展：判定当前 '*'/'**' 串是否为类型注解内的 C 指针后缀。
+    // 判据：星号串（'*' 一层 / '**' 两层，可含换行）之后紧跟"无右操作数"位置，
+    // 即 ']' / ',' / ')' / ':' / '=' / 换行 / ';' / 文件结束。
+    // 因此 `t.CArray[X, N * 2]`、`a ** b` 这类'*'后有操作数的真实运算不会被误判。
+    private _isAtViperPointerTypeSuffix(): boolean {
+        let offset = 0;
+        let starCount = 0;
+        while (true) {
+            const token = this._peekToken(offset);
+            if (token.type === TokenType.Operator) {
+                const operatorType = (token as OperatorToken).operatorType;
+                if (operatorType === OperatorType.Multiply) {
+                    starCount += 1;
+                    offset += 1;
+                    continue;
+                }
+                if (operatorType === OperatorType.Power) {
+                    starCount += 2;
+                    offset += 1;
+                    continue;
+                }
+            }
+            if (token.type === TokenType.NewLine) {
+                offset += 1;
+                continue;
+            }
+            break;
+        }
+
+        if (starCount === 0) {
+            return false;
+        }
+
+        const nextToken = this._peekToken(offset);
+        switch (nextToken.type) {
+            case TokenType.CloseBracket:
+            case TokenType.Comma:
+            case TokenType.CloseParenthesis:
+            case TokenType.Colon:
+            case TokenType.Semicolon:
+            case TokenType.NewLine:
+            case TokenType.EndOfStream:
+                return true;
+            case TokenType.Operator:
+                return (nextToken as OperatorToken).operatorType === OperatorType.Assign;
+        }
+        return false;
     }
 
     // Viper 扩展：解析 C 指针类型后缀 `T*` / `T**` / `T***`。

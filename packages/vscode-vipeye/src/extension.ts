@@ -14,6 +14,7 @@ import {
     commands,
     ExtensionContext,
     ExtensionMode,
+    extensions,
     Position,
     Range,
     TextEditor,
@@ -51,7 +52,37 @@ let languageClient: LanguageClient | undefined;
 // Request a heap size of 3GB. This is reasonable for modern systems.
 const defaultHeapSize = 3072;
 
+// 扩展宿主中是否已加载"贡献了 viper.* 命令的开发版"（即 --extensionDevelopmentPath 的调试副本）。
+// 判据用命令 ID 前缀而非扩展 ID：发布版与开发版的包名可能不同
+// （已安装的 TermiNexus.vipeye 与开发中的 TermiNexus.vscode-vipeye），
+// 但两者贡献的命令 ID 相同，这正是命令重复注册冲突的来源。
+function isDevelopmentCopyLoaded(): boolean {
+    return extensions.all.some((ext) => {
+        if (ext.extensionMode !== ExtensionMode.Development) {
+            return false;
+        }
+        const contributedCommands: unknown = ext.packageJSON?.contributes?.commands;
+        return (
+            Array.isArray(contributedCommands) &&
+            contributedCommands.some(
+                (command: any) => typeof command?.command === 'string' && command.command.startsWith('viper.')
+            )
+        );
+    });
+}
+
 export async function activate(context: ExtensionContext) {
+    // 调试宿主让路：launch.json 用 --extensionDevelopmentPath 加载开发版时，VS Code 不会
+    // 自动停用已安装的发布版，两者在同一扩展宿主内同时激活并注册同名 'viper.*' 命令，
+    // 后激活者会失败：
+    //   Activating extension ... failed: command 'viper.organizeimports' already exists.
+    // 因此发布版（ExtensionMode.Production）一旦发现宿主中存在"贡献了 viper.* 命令的开发版"
+    // （ExtensionMode.Development），就直接返回，不注册任何命令/视图/语言客户端，
+    // 把位置完整让给调试版。
+    if (context.extensionMode === ExtensionMode.Production && isDevelopmentCopyLoaded()) {
+        return;
+    }
+
     // Pylance detection disabled for Viper — this extension handles .vp/.vpi files,
     // which Pylance does not recognize, so there is no functional overlap.
 

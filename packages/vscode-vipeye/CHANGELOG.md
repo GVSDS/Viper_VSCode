@@ -6,6 +6,9 @@
 - **内置 rawptr**：编译器内置裸指针 typedef（`rawptr: t.CTypedef = t.CPtr`），任意工程可直接用 `rawptr[T]`，不依赖项目 includes 配置
 - 类型检查：`-> None` 函数只允许裸 `return` / `return None`，`return` 值为 None 的表达式（如调用返回 None 的函数）报错
 - 导入解析：builtins.vp 发现扩展到被分析文件祖先目录与 `includes/` 子目录，修复未显式配置 includes 时 `uint64` 等 typedef 报"未定义"
+- 语法：类型注解支持下标实参内的 C 指针后缀（如 `list[ast.AST*]*`、`Node**`、`t.CInt*`），不再误报"`[` 未关闭"
+- 类型显示：`t.CPtr` 统一显示为编译器内置 `rawptr`（如 `CPtr[list[CPtr[AST]]]` → `rawptr[list[rawptr[AST]]]`）
+- 类型显示：无类型参数的别名被下标特化时保留类型实参（如 `rawptr[T]` 不再显示成裸 `rawptr`），修复 `Ty: rawptr[LLVMType]` 的成员访问丢失 `[LLVMType]`
 
 ## 1.1.412
 

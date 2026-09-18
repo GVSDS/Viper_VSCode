@@ -1,10 +1,48 @@
-![Vipeye](docs/img/PyrightLarge.png)
+![Vipeye](Viper.png)
 
-# Static Type Checker for Viper
+# Vipeye — Static Type Checker and Language Server for Viper
 
-Vipeye is a full-featured, standards-based static type checker for Viper, written in TypeScript. It is designed for high performance and can be used with large Viper source bases.
+Vipeye is a full-featured, standards-based static type checker and language server for **Viper**, written in TypeScript. It is designed for high performance and can be used with large Viper source bases.
 
-Vipeye includes both a [command-line tool](docs/command-line.md) and an [extension for Visual Studio Code](packages/vscode-vipeye). It is built on the Pyright codebase, adapted from the ground up to Viper semantics (AOT compilation, C-style types, pointer and memory semantics), and no longer type-checks Python.
+Vipeye ships in three forms:
+
+- a **language server** (`vipeye-langserver`) speaking LSP over stdin/stdout;
+- a **command-line type checker** (`vipeye`);
+- an **extension for Visual Studio Code** (`vscode-vipeye`), which bundles both the LSP client and the Viper core UI (project / toolchain).
+
+It is built on the Pyright codebase, adapted from the ground up to Viper semantics (AOT compilation, C-style type system, pointer and memory semantics). Python analysis is no longer supported — only the Viper dialect is checked.
+
+## What is Viper
+
+Viper is an ahead-of-time (AOT) compiled language whose syntax is modeled on CPython but whose semantics are entirely different:
+
+- **TPC** — the seed compiler, itself based on CPython, used to bootstrap the toolchain.
+- **TPV** — the first self-hosted compiler, written in Viper. Once `tpv --lsp` lands, it will replace the Pyright-derived analyzer in this repository.
+
+Vipeye exists to provide type checking, diagnostics and editor intelligence for `.vp` / `.vpi` sources while TPV's own language server is under development.
+
+## Capabilities
+
+### Viper language semantics
+
+- C-style type system: `t.CPtr`, `t.CArray`, `t.CVoid`, `t.CTypedef`, `t.CDefine`, `t.CEnum`, `t.REnum`, plus the compiler built-ins `char`, `double` and `rawptr` (a raw-pointer typedef).
+- Pointer and memory semantics: `CPtr[T]` / `rawptr[T]`, `c.Deref`, address-of, pointer arithmetic and indexing; a `__new__` returning a raw pointer is auto-wrapped into `CPtr[T]`.
+- C declaration modifiers (`t.CInline`, `t.CStatic`, `t.CConst` …) are filtered out during type merging — only the underlying data type is kept.
+- Declaration modifiers on functions, with `fn` / `fun` / `func` / `function` as aliases of `def`.
+- `struct` / `union` / `enum` / `rnum`, including nested `t.REnum` variants destructured by field order.
+- Variadic `*args` bound as `va_list` in the function body (`va_arg`, and pointer passthrough such as `vsnprintf(buf, size, fmt, args)`).
+- Implicit conversion rules: integer/float convert in all directions (safe narrowing, lossless widening); integer → float requires float width ≥ integer width; float → integer is rejected; pointers of the same level may convert, different levels may not; explicit casts are always allowed.
+- Global/local variable rules: reading a global never errors; assigning an undeclared global without `global` does; a local redeclaration shadows the global; and so on.
+- Type representations: `bool` / `t.CBool` map to `i1`; `str` / `bytes` are `i8*`, while `str | t.CPtr` / `bytes | t.CPtr` are `i8**`.
+- PEP 695 syntax is pre-processed for Viper: type parameter lists are stripped and unknown `T | t.CPtr` unions are folded to `i8*`.
+- Fail-fast analysis: missing type information is reported as an error instead of silently degrading to `i8*` / `void` / `i32`.
+
+### Editor features
+
+- Diagnostics with human-readable messages, plus Viper-tuned semantic highlighting (keywords, decorators, `t.CDefine` constants, and undefined symbols rendered in white).
+- Completion, hover, go-to-definition, find references, rename, document symbols, and Organize Imports.
+- Activity-bar UI (Project / Toolchain / Settings), `.vpj` project files with a dedicated custom editor, and a status-bar compiler indicator.
+- Import resolution over `VIPER_HOME` (stdlib), `viperconfig.json` extra paths, the workspace root, and recursively discovered child project configurations.
 
 ## Packages
 
@@ -14,16 +52,34 @@ Vipeye includes both a [command-line tool](docs/command-line.md) and an [extensi
 - **`packages/vscode-vipeye`** — VS Code extension client (Vipeye LSP), with the Viper core source (`packages/viper`) bundled at build time.
 - **`packages/viper`** — Viper core source library: project (`.vpj`) management, toolchain, and the activity bar UI (Project / Toolchain / Settings).
 
-## Key Differences from Pyright
+## Relationship to Pyright
 
-- Viper dialect: `viperconfig.json` instead of `pyrightconfig.json`; config namespace `viper.*`.
-- Viper stdlib stubs bundled in `vipeye-internal/vipershed-fallback`.
-- Type semantics follow Viper rules: implicit conversions, pointer (`CPtr`/`CArray`), `t.CTypedef`/`t.CDefine`/`t.CEnum`, `T | t.CPtr` pointer folding, global-variable access rules, and more.
-- Semantic highlighting and diagnostics are tailored to Viper syntax.
+- Viper dialect: `viperconfig.json` instead of `pyrightconfig.json`; configuration namespace `viper.*` instead of `python.analysis.*` / `pyright.*`.
+- Viper stdlib stubs bundled in `packages/vipeye-internal/vipershed-fallback`.
+- Type semantics follow Viper rules: implicit conversions, pointer types (`CPtr` / `CArray`), `t.CTypedef` / `t.CDefine` / `t.CEnum` / `t.REnum`, `T | t.CPtr` pointer folding, global-variable access rules, and more.
+- Diagnostics and semantic highlighting are tailored to Viper syntax.
 
 ## Building and Testing
 
-See [docs/build-debug.md](docs/build-debug.md).
+```bash
+# Install all packages (from repo root)
+npm install
+
+# Build the core library
+cd packages/vipeye-internal && npm run build
+
+# Run all tests (rebuilds the test server first)
+cd packages/vipeye-internal && npm test
+
+# Run tests without rebuilding the test server (faster iteration)
+cd packages/vipeye-internal && npm run test:norebuild
+
+# Build the CLI / VS Code extension bundles (from repo root)
+npm run build:cli:dev
+npm run build:extension:dev
+```
+
+See [docs/build-debug.md](docs/build-debug.md) for details.
 
 ## Documentation
 

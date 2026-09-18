@@ -1,11 +1,11 @@
 {
     "include": [
-        "missingfile.py",
-        "presentfile.py",
+        "missingfile.vp",
+        "presentfile.vp",
         "missingdirectory",
         "subfolder"
     ],
     "exclude": [
-        "subfolder/presentfile2.py"
+        "subfolder/presentfile2.vp"
     ]
 }

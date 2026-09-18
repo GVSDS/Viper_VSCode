@@ -55,7 +55,7 @@ describe(`config test'}`, () => {
         const fileList = service.test_getFileNamesFromFileSpecs();
 
         // The config file specifies a subdirectory, so we should find
-        // only two of the three "*.py" files present in the project
+        // only two of the three "*.vp" files present in the project
         // directory.
         assert.strictEqual(fileList.length, 2);
     });
@@ -72,10 +72,10 @@ describe(`config test'}`, () => {
         // The myVenv directory is detected as a venv and will be automatically excluded
         const fileList = service.test_getFileNamesFromFileSpecs();
 
-        // There are 3 python files in the workspace, outside of myVenv
-        // There is 1 python file in myVenv, which should be excluded
+        // There are 3 Viper files in the workspace, outside of myVenv
+        // There is 1 Viper file in myVenv, which should be excluded
         const fileNames = fileList.map((p) => p.fileName).sort();
-        assert.deepStrictEqual(fileNames, ['sample1.py', 'sample2.py', 'sample3.py']);
+        assert.deepStrictEqual(fileNames, ['sample1.vp', 'sample2.vp', 'sample3.vp']);
     });
 
     test('FindFilesVirtualEnvAutoDetectInclude', () => {
@@ -89,11 +89,11 @@ describe(`config test'}`, () => {
         // Config file defines 'exclude' folder so virtual env will be included
         const fileList = service.test_getFileNamesFromFileSpecs();
 
-        // There are 3 python files in the workspace, outside of myVenv
-        // There is 1 more python file in excluded folder
-        // There is 1 python file in myVenv, which should be included
+        // There are 3 Viper files in the workspace, outside of myVenv
+        // There is 1 more Viper file in excluded folder
+        // There is 1 Viper file in myVenv, which should be included
         const fileNames = fileList.map((p) => p.fileName).sort();
-        assert.deepStrictEqual(fileNames, ['library1.py', 'sample1.py', 'sample2.py', 'sample3.py']);
+        assert.deepStrictEqual(fileNames, ['library1.vp', 'sample1.vp', 'sample2.vp', 'sample3.vp']);
     });
 
     test('FileSpecNotAnArray', () => {
@@ -416,7 +416,7 @@ describe(`config test'}`, () => {
 
         const fileList = service.test_getFileNamesFromFileSpecs();
         const fileNames = fileList.map((p) => p.fileName).sort();
-        assert.deepStrictEqual(fileNames, ['sample.pyi', 'test.py']);
+        assert.deepStrictEqual(fileNames, ['sample.vpi', 'test.vp']);
 
         const configOptions = service.test_getConfigOptions(commandLineOptions);
         assert.equal(configOptions.diagnosticRuleSet.strictListInference, true);
@@ -771,9 +771,9 @@ describe(`config test'}`, () => {
         const configWithoutOverride = service.test_getConfigOptions(commandLineOptions);
         assert.equal(configWithoutOverride.diagnosticRuleSet.reportPrivateImportUsage, 'none');
 
-        // The basic default would be 'error', verify our config overrides it.
+        // Viper 模式默认关闭 reportPrivateImportUsage（无 PEP 561 / py.typed 私有导入概念）。
         const basicDefaults = getBasicDiagnosticRuleSet();
-        assert.equal(basicDefaults.reportPrivateImportUsage, 'error');
+        assert.equal(basicDefaults.reportPrivateImportUsage, 'none');
 
         // Now simulate positional args overriding include (like `viper --project config.json subdir`).
         const commandLineOptionsWithOverride = new CommandLineOptions(cwd, /* fromLanguageServer */ false);

@@ -331,24 +331,24 @@ test('init and pytyped', () => {
     const uri2 = uri.pytypedUri;
     assert.equal(uri2.toString(), 'file:///a/b/c/py.typed');
     const uri3 = uri.initPyUri;
-    assert.equal(uri3.toString(), 'file:///a/b/c/__init__.py');
+    assert.equal(uri3.toString(), 'file:///a/b/c/__init__.vp');
     const uri4 = uri.initPyiUri;
-    assert.equal(uri4.toString(), 'file:///a/b/c/__init__.pyi');
+    assert.equal(uri4.toString(), 'file:///a/b/c/__init__.vpi');
     const uri5 = uri.packageUri;
-    assert.equal(uri5.toString(), 'file:///a/b/c.py');
+    assert.equal(uri5.toString(), 'file:///a/b/c.vp');
     const uri6 = uri.packageStubUri;
-    assert.equal(uri6.toString(), 'file:///a/b/c.pyi');
+    assert.equal(uri6.toString(), 'file:///a/b/c.vpi');
     const uri7 = Uri.parse('foo://microsoft.com/a/b/c.py', caseDetector);
     const uri8 = uri7.pytypedUri;
     assert.equal(uri8.toString(), 'foo://microsoft.com/a/b/c.py/py.typed');
     const uri9 = uri7.initPyUri;
-    assert.equal(uri9.toString(), 'foo://microsoft.com/a/b/c.py/__init__.py');
+    assert.equal(uri9.toString(), 'foo://microsoft.com/a/b/c.py/__init__.vp');
     const uri10 = uri7.initPyiUri;
-    assert.equal(uri10.toString(), 'foo://microsoft.com/a/b/c.py/__init__.pyi');
+    assert.equal(uri10.toString(), 'foo://microsoft.com/a/b/c.py/__init__.vpi');
     const uri11 = uri7.packageUri;
-    assert.equal(uri11.toString(), 'foo://microsoft.com/a/b/c.py.py');
+    assert.equal(uri11.toString(), 'foo://microsoft.com/a/b/c.py.vp');
     const uri12 = uri7.packageStubUri;
-    assert.equal(uri12.toString(), 'foo://microsoft.com/a/b/c.py.pyi');
+    assert.equal(uri12.toString(), 'foo://microsoft.com/a/b/c.py.vpi');
 });
 
 test('isChild', () => {

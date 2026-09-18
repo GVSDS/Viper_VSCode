@@ -55,6 +55,10 @@ test('Override a specific string', () => {
         }
         return originalRawString!(key);
     }
+
+    // 基线文案取当前 locale（本仓库默认 zh-cn），避免把英文文案写死导致与 locale 耦合。
+    const expectedAbstractMessage = LocMessage.abstractMethodInvocation().format({ method: 'foo' });
+
     originalRawString = setGetRawString(overrideImportResolve);
 
     const value = LocMessage.importResolveFailure().format({ importName: 'foo', venv: 'python' });
@@ -62,7 +66,7 @@ test('Override a specific string', () => {
     try {
         assert.equal(value, 'Import is foo');
         const nonMovedValue = LocMessage.abstractMethodInvocation().format({ method: 'foo' });
-        assert.equal(nonMovedValue, 'Method "foo" cannot be called because it is abstract and unimplemented');
+        assert.equal(nonMovedValue, expectedAbstractMessage);
     } finally {
         setGetRawString(originalRawString);
     }

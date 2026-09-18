@@ -243,7 +243,7 @@ test('Mounted directory traversal is lazy for statSync', () => {
     fs.mountSync(sourceRoot, normalizeSlashes('/mnt'), resolver);
 
     // Path traversal to a single child should not force a full directory enumeration.
-    const stats = fs.statSync(UriEx.file(normalizeSlashes('/mnt/a.pyi')));
+    const stats = fs.statSync(UriEx.file(normalizeSlashes('/mnt/a.vpi')));
     assert(stats.isFile());
     assert.equal(calls.readdirSync, 0);
     assert.equal(calls.statSync, 1);

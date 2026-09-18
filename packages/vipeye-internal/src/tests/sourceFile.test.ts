@@ -10,7 +10,7 @@ import * as assert from 'assert';
 
 import { ImportResolver } from '../analyzer/importResolver';
 import { SourceFile } from '../analyzer/sourceFile';
-import { ConfigOptions, getBasicDiagnosticRuleSet, getOffDiagnosticRuleSet } from '../common/configOptions';
+import { ConfigOptions, getBasicDiagnosticRuleSet } from '../common/configOptions';
 import { FullAccessHost } from '../common/fullAccessHost';
 import { combinePaths } from '../common/pathUtils';
 import { RealTempFile, createFromRealFileSystem } from '../common/realFileSystem';
@@ -40,20 +40,21 @@ test('SourceFile setInitialDiagnosticRuleSet overrides default', () => {
     const fs = createFromRealFileSystem(tempFile);
     const serviceProvider = createServiceProvider(tempFile, fs);
 
-    // Verify basic defaults have reportPrivateImportUsage as 'error'.
+    // Viper 模式默认关闭 reportPrivateImportUsage（无 PEP 561 / py.typed 私有导入概念）。
     const basicRuleSet = getBasicDiagnosticRuleSet();
-    assert.strictEqual(basicRuleSet.reportPrivateImportUsage, 'error');
+    assert.strictEqual(basicRuleSet.reportPrivateImportUsage, 'none');
 
-    // Create a rule set with reportPrivateImportUsage set to 'none'.
-    const offRuleSet = getOffDiagnosticRuleSet();
-    assert.strictEqual(offRuleSet.reportPrivateImportUsage, 'none');
+    // 用与默认不同的 level（'error'）验证 setInitialDiagnosticRuleSet 确实把规则集应用到了文件上。
+    const overriddenRuleSet = { ...basicRuleSet, reportPrivateImportUsage: 'error' as const };
 
     const sourceFile = new SourceFile(serviceProvider, Uri.file(filePath, serviceProvider), () => '', false, false, {
         isEditMode: false,
     });
 
     // Call setInitialDiagnosticRuleSet to apply config-level overrides.
-    sourceFile.setInitialDiagnosticRuleSet(offRuleSet);
+    sourceFile.setInitialDiagnosticRuleSet(overriddenRuleSet);
+
+    assert.strictEqual((sourceFile as any)._diagnosticRuleSet.reportPrivateImportUsage, 'error');
 
     assert.ok(sourceFile);
     serviceProvider.dispose();
@@ -84,7 +85,7 @@ test('No unexpected user files', () => {
 ////   "pythonVersion": "3.14"
 //// }
 
-// @filename: test.py
+// @filename: test.vp
 //// [|/*marker*/x: int = 1|]
     `;
 

@@ -41,7 +41,8 @@
                 // / "Cannot register 'viper.xxx' ... already registered" 激活失败。
                 "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-vipeye",
                 // 禁用已安装的发布版，避免与调试版同时加载冲突。
-                "--disable-extension=TermiNexus.vscode-vipeye"
+                "--disable-extension=TermiNexus.vscode-vipeye",
+                "--disable-extension=TermiNexus.vipeye",
             ],
             "smartStep": true,
             "sourceMaps": true,
@@ -59,7 +60,8 @@
                 "--extensionDevelopmentPath=${workspaceFolder}/packages/vscode-vipeye",
                 "--disable-extension=TermiNexus.vscode-vipeye",
                 "--disable-extension=be5invis.vscode-custom-css",
-                "--disable-extension=msgcenterext.msgcenter"
+                "--disable-extension=msgcenterext.msgcenter",
+                "--disable-extension=TermiNexus.vipeye",
             ],
             "smartStep": true,
             "sourceMaps": true,

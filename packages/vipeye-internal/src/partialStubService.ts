@@ -118,6 +118,9 @@ export class PartialStubService implements SupportPartialStubs {
                             continue;
                         }
                         // Merge partial stub packages to the library.
+                        // 只映射存根文件（.vpi/.vpnci 为 Viper 存根，.pyi 为 Python 兼容回退，
+                        // 见 importResolver.supportedSourceFileExtensions）与目录；
+                        // 其它文件（如 py.typed 标记）不进入映射视图。
                         this._movedDirectories.push(
                             this._realFs.mapDirectory(
                                 packagePath,
@@ -125,6 +128,7 @@ export class PartialStubService implements SupportPartialStubs {
                                 (u, fs) =>
                                     u.hasExtension('.vpi') ||
                                     u.hasExtension('.vpnci') ||
+                                    u.hasExtension('.pyi') ||
                                     (fs.existsSync(u) && fs.statSync(u).isDirectory())
                             )
                         );

@@ -8,7 +8,7 @@
  */
 
 import { FileSystem } from '../common/fileSystem';
-import { IsViperDialect, LanguageDialect } from '../common/dialect';
+import { LanguageDialect } from '../common/dialect';
 import { Uri } from '../common/uri/uri';
 import { isDirectory, isFile } from '../common/uri/uriUtils';
 
@@ -20,16 +20,16 @@ export interface PyTypedInfo {
 //
 // Retrieves information about a py.typed file, if it exists, under the given path.
 //
+// 注：本模块只做纯文件系统探测，不做方言分支。Viper 工程同样需要该探测：
+// `foo-stubs/` 存根包（PEP 561 式布局）的虚拟映射（PartialStubService）依据
+// py.typed 的 `partial` 标记决定是否把存根合并进已安装目录；此前按方言短路
+// 会让映射永不生效（viperFileSystem 用例全部失败）。
+// dialect 参数保留是为了兼容既有调用点，当前实现不依赖它。
 export function getPyTypedInfo(
     fileSystem: FileSystem,
     dirPath: Uri,
-    dialect?: LanguageDialect
+    _dialect?: LanguageDialect
 ): PyTypedInfo | undefined {
-    // Viper 模式短路：Viper 无 PEP 561 py.typed 标记机制，跳过探测。
-    if (IsViperDialect(dialect)) {
-        return undefined;
-    }
-
     if (!fileSystem.existsSync(dirPath) || !isDirectory(fileSystem, dirPath)) {
         return undefined;
     }
@@ -39,7 +39,7 @@ export function getPyTypedInfo(
         return undefined;
     }
 
-    return getPyTypedInfoForPyTypedFile(fileSystem, pyTypedPath, dialect);
+    return getPyTypedInfoForPyTypedFile(fileSystem, pyTypedPath, _dialect);
 }
 
 //
@@ -48,13 +48,8 @@ export function getPyTypedInfo(
 export function getPyTypedInfoForPyTypedFile(
     fileSystem: FileSystem,
     pyTypedPath: Uri,
-    dialect?: LanguageDialect
+    _dialect?: LanguageDialect
 ) {
-    // Viper 模式短路：Viper 无 PEP 561 py.typed 标记机制，跳过解析。
-    if (IsViperDialect(dialect)) {
-        return undefined;
-    }
-
     // This function intentionally doesn't check whether the given py.typed path exists or not,
     // as filesystem access is expensive if done repeatedly.
     // The caller should verify the file's validity before calling this method and use a cache if possible

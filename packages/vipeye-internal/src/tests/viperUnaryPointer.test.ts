@@ -29,6 +29,7 @@ import { UriEx } from '../common/uri/uriUtils';
 import { FullAccessHost } from '../common/fullAccessHost';
 import { convertOffsetToPosition } from '../common/positionUtils';
 import { FunctionNode, ParameterNode, TypeAnnotationNode, UnaryOperationNode } from '../parser/parseNodes';
+import { Type } from '../analyzer/types';
 import { OperatorType } from '../parser/tokenizerTypes';
 
 (global as any).__rootDirectory = path.resolve();
@@ -337,11 +338,19 @@ class Holder:
     const ev = evaluator;
 
     const anns: { line: number; type: string }[] = [];
+    let directType: Type | undefined;
+    let chRType: Type | undefined;
     class AnnCollector extends ParseTreeWalker {
         override visitTypeAnnotation(node: TypeAnnotationNode) {
+            const line = convertOffsetToPosition(node.d.annotation.start, parseResults.parserOutput.lines).line + 1;
             const t = ev.getTypeOfAnnotation(node.d.annotation);
+            if (line === 5) {
+                chRType = t;
+            } else if (line === 6) {
+                directType = t;
+            }
             anns.push({
-                line: convertOffsetToPosition(node.d.annotation.start, parseResults.parserOutput.lines).line + 1,
+                line,
                 type: t ? program.printType(t) : '(undefined)',
             });
             return true;
@@ -362,6 +371,22 @@ class Holder:
     const direct = anns.find((a) => a.line === 6);
     assert(direct, 'direct annotation not found (L6)');
     assert(direct.type.includes('rawptr[AST]'), `direct should be rawptr[AST]: ${direct.type}`);
+
+    // LSP 展示形态（hover）：sourceQualifiedNames → 按源码书写的完整 module 路径显示。
+    // 源码写 `rawptr[ast.AST]`，故展示 `rawptr[ast.AST]`；源码写裸名 `list`，故仍是 `list`。
+    assert(directType, 'direct type not captured (L6)');
+    const directDisplay = program.printType(directType!, { sourceQualifiedNames: true });
+    console.log(`=== LSP 展示形态 L6 direct: ${directDisplay}`);
+    assert.strictEqual(directDisplay, 'rawptr[ast.AST]', `direct 应保留源码 module 路径: ${directDisplay}`);
+
+    assert(chRType, 'ch_r type not captured (L5)');
+    const chRDisplay = program.printType(chRType!, { sourceQualifiedNames: true });
+    console.log(`=== LSP 展示形态 L5 ch_r: ${chRDisplay}`);
+    assert.strictEqual(
+        chRDisplay,
+        'rawptr[list[rawptr[ast.AST]]]',
+        `ch_r 应保留源码 module 路径且裸名 list 保持短名: ${chRDisplay}`
+    );
 
     // 不得出现「"[" 未关闭」「rawptr 未定义」等错误（category=0 = Error）
     const diagnostics = getDiagnostics(program, configOptions, uri);

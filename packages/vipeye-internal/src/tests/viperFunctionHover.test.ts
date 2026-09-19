@@ -87,7 +87,12 @@ def use():
     console.log('=== hover 内容 ===');
     console.log(contents);
 
-    // 签名部分（原有 python 代码块）
+    // 签名部分：代码围栏语言为 `python`。hover 代码块由宿主 markdown 渲染器用 TM 语法着色，
+    // `viper` 围栏虽能取到本扩展贡献的语法，但只有注释/字符串/控制流关键字/数字等通用 scope
+    // 能命中主题规则（`def`/`class` 的 storage.type.*.viper 与主题里按 Python 精调的规则不匹配，
+    // 裸类型名语法里没有规则），只部分着色；`python`（MagicPython）着色齐全，故用它。
+    assert(contents.includes('```python'), `should use python code fence: ${contents}`);
+    assert(!contents.includes('```viper'), `should not use viper code fence: ${contents}`);
     assert(contents.includes('(function)'), `should include signature: ${contents}`);
     // 调试信息标题
     assert(contents.includes('函数调试信息'), `should include debug heading: ${contents}`);
@@ -100,13 +105,13 @@ def use():
     // 泛型参数
     assert(contents.includes('泛型参数'), `should include 泛型参数: ${contents}`);
     assert(contents.includes('[T]'), `should include [T]: ${contents}`);
-    // 参数
+    // 参数（类型按源码书写的完整 module 路径展示：注解写的是 `t.CInt`）
     assert(contents.includes('参数'), `should include 参数: ${contents}`);
-    assert(contents.includes('a: CInt'), `should include param a: ${contents}`);
-    assert(contents.includes('b: CInt = 10'), `should include param b with default: ${contents}`);
+    assert(contents.includes('a: t.CInt'), `should include param a: ${contents}`);
+    assert(contents.includes('b: t.CInt = 10'), `should include param b with default: ${contents}`);
     // 返回类型
     assert(contents.includes('返回类型'), `should include 返回类型: ${contents}`);
-    assert(contents.includes('CInt'), `should include return type: ${contents}`);
+    assert(contents.includes('t.CInt'), `should include return type: ${contents}`);
 
     program.dispose();
     serviceProvider.dispose();

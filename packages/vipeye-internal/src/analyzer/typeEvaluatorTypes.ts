@@ -527,6 +527,11 @@ export enum Reachability {
 export interface PrintTypeOptions {
     expandTypeAlias?: boolean;
     enforcePythonSyntax?: boolean;
+    // Viper 方言：类名保留源码中书写时的完整 module 路径（如 `ast.AST`）。
+    // 与 useFullyQualifiedNames 不同：后者用类型声明所在的 fullName
+    // （如 `ast.base.AST`、容器 `_list.list`），这里用源码里实际书写的路径，
+    // 未写限定路径的裸名（`list`/`str`）保持短名。
+    sourceQualifiedNames?: boolean;
     useFullyQualifiedNames?: boolean;
     useTypingUnpack?: boolean;
     printUnknownWithAny?: boolean;
@@ -878,7 +883,11 @@ export interface TypeEvaluator {
 
     printType: (type: Type, options?: PrintTypeOptions) => string;
     printSrcDestTypes: (srcType: Type, destType: Type) => { sourceType: string; destType: string };
-    printFunctionParts: (type: FunctionType, extraFlags?: PrintTypeFlags) => [string[], string];
+    printFunctionParts: (
+        type: FunctionType,
+        extraFlags?: PrintTypeFlags,
+        options?: PrintTypeOptions
+    ) => [string[], string];
 
     getTypeCacheEntryCount: () => number;
     disposeEvaluator: () => void;

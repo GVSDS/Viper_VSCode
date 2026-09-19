@@ -160,6 +160,11 @@ export function getCompletionItemDocumentation(
     declaration: Declaration | undefined
 ): MarkupContent | undefined {
     if (markupKind === MarkupKind.Markdown) {
+        // 围栏语言保持 `python`：宿主渲染时按 languageService.getLanguageIdByLanguageName()
+        // 解析围栏语言并取该语言的 TM tokenization。本扩展的 `viper` 语法虽能被取到，
+        // 但只有注释/字符串/控制流关键字/数字等通用 scope 能命中主题规则
+        // （`def`/`class` 的 storage.type.*.viper 与按 Python 精调的主题规则不匹配，
+        // 裸类型名语法里没有规则），着色不完整；`python`（MagicPython）齐全，故用它。
         let markdownString = '```python\n' + typeDetail + '\n```\n';
 
         if (documentation) {

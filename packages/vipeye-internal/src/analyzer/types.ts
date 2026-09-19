@@ -810,6 +810,11 @@ export interface ClassDetailsPriv {
     // name.
     aliasName?: string | undefined;
 
+    // Viper 扩展：该类型在源码中被引用时书写的完整路径（如 `ast.AST`、`memhub.MemBuddy`）。
+    // Viper 源码注解习惯写完整 module 路径，类型展示需要保留它而不是退化为短名。
+    // 该字段**仅用于展示**（typePrinter 读取），不参与任何类型判定/兼容性比较。
+    displayName?: string | undefined;
+
     // Used for "narrowing" of typed dicts where some entries
     // that are not required have been confirmed to be present
     // through the use of a guard expression.
@@ -982,6 +987,17 @@ export namespace ClassType {
     export function cloneForTypingAlias(classType: ClassType, aliasName: string): ClassType {
         const newClassType = TypeBase.cloneType(classType);
         newClassType.priv.aliasName = aliasName;
+        return newClassType;
+    }
+
+    // Viper 扩展：把「源码中书写类型时使用的完整路径」记到类型上，仅供展示用。
+    // 已经记录过同一路径时直接返回原类型，避免无意义的克隆。
+    export function cloneForDisplayName(classType: ClassType, displayName: string): ClassType {
+        if (classType.priv.displayName === displayName) {
+            return classType;
+        }
+        const newClassType = TypeBase.cloneType(classType);
+        newClassType.priv.displayName = displayName;
         return newClassType;
     }
 

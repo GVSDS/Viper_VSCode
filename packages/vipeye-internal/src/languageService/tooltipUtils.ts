@@ -24,7 +24,7 @@ import {
     getPropertyDocStringInherited,
     getVariableDocString,
 } from '../analyzer/typeDocStringUtils';
-import { TypeEvaluator } from '../analyzer/typeEvaluatorTypes';
+import { PrintTypeOptions, TypeEvaluator } from '../analyzer/typeEvaluatorTypes';
 import { MemberAccessFlags, lookUpClassMember } from '../analyzer/typeUtils';
 import {
     ClassType,
@@ -67,7 +67,8 @@ export function getToolTipForType(
     isProperty: boolean,
     functionSignatureDisplay: SignatureDisplayType,
     typeNode?: ExpressionNode,
-    sourceMapper?: SourceMapper
+    sourceMapper?: SourceMapper,
+    printOptions?: PrintTypeOptions
 ): string {
     // Support __call__ method for class instances to show the signature of the method
     if (type.category === TypeCategory.Class && isClassInstance(type) && typeNode) {
@@ -91,7 +92,8 @@ export function getToolTipForType(
             evaluator,
             functionSignatureDisplay,
             /* columnThreshold */ 70,
-            sourceMapper
+            sourceMapper,
+            printOptions
         )}`;
     } else if (isFunction(type)) {
         signatureString = `${getFunctionTooltip(
@@ -101,11 +103,12 @@ export function getToolTipForType(
             evaluator,
             isProperty,
             functionSignatureDisplay,
-            sourceMapper
+            sourceMapper,
+            printOptions
         )}`;
     } else {
         signatureString = label.length > 0 ? `(${label}) ` : '';
-        signatureString += `${name}: ${evaluator.printType(type)}`;
+        signatureString += `${name}: ${evaluator.printType(type, printOptions)}`;
     }
 
     return signatureString;
@@ -117,7 +120,8 @@ export function getOverloadedTooltip(
     evaluator: TypeEvaluator,
     functionSignatureDisplay: SignatureDisplayType,
     columnThreshold = 70,
-    sourceMapper?: SourceMapper
+    sourceMapper?: SourceMapper,
+    printOptions?: PrintTypeOptions
 ) {
     let content = '';
     const overloads = OverloadedType.getOverloads(type).map((o) =>
@@ -128,7 +132,8 @@ export function getOverloadedTooltip(
             evaluator,
             /* isProperty */ false,
             functionSignatureDisplay,
-            sourceMapper
+            sourceMapper,
+            printOptions
         )
     );
 
@@ -157,12 +162,13 @@ export function getFunctionTooltip(
     evaluator: TypeEvaluator,
     isProperty = false,
     functionSignatureDisplay: SignatureDisplayType,
-    sourceMapper?: SourceMapper
+    sourceMapper?: SourceMapper,
+    printOptions?: PrintTypeOptions
 ) {
     const labelFormatted = label.length === 0 ? '' : `(${label}) `;
     const indentStr =
         functionSignatureDisplay === SignatureDisplayType.formatted ? '\n' + ' '.repeat(functionParamIndentOffset) : '';
-    let funcParts = evaluator.printFunctionParts(type);
+    let funcParts = evaluator.printFunctionParts(type, /* extraFlags */ undefined, printOptions);
     if (sourceMapper) {
         funcParts = replaceStubEllipsisDefaultValues(type, funcParts, sourceMapper);
     }
@@ -285,14 +291,15 @@ export function getConstructorTooltip(
     constructorName: string,
     type: Type,
     evaluator: TypeEvaluator,
-    functionSignatureDisplay: SignatureDisplayType
+    functionSignatureDisplay: SignatureDisplayType,
+    printOptions?: PrintTypeOptions
 ) {
     const classText = `class `;
     let signature = '';
 
     if (isOverloaded(type)) {
         const overloads = OverloadedType.getOverloads(type).map((overload) =>
-            getConstructorTooltip(constructorName, overload, evaluator, functionSignatureDisplay)
+            getConstructorTooltip(constructorName, overload, evaluator, functionSignatureDisplay, printOptions)
         );
         overloads.forEach((overload, index) => {
             signature += overload + ': ...' + '\n\n';
@@ -302,7 +309,7 @@ export function getConstructorTooltip(
             functionSignatureDisplay === SignatureDisplayType.formatted
                 ? '\n' + ' '.repeat(functionParamIndentOffset)
                 : ' ';
-        const funcParts = evaluator.printFunctionParts(type);
+        const funcParts = evaluator.printFunctionParts(type, /* extraFlags */ undefined, printOptions);
         const paramSignature = formatSignature(funcParts, indentStr, functionSignatureDisplay);
         signature += `${classText}${constructorName}${paramSignature}`;
     }

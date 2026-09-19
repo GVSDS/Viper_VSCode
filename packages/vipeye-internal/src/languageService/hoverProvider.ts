@@ -69,6 +69,7 @@ import {
 } from './tooltipUtils';
 
 export interface HoverTextPart {
+    // 该部分按代码块渲染（markdown 下加代码围栏，见 convertHoverResults）。
     python?: boolean;
     text: string;
 }
@@ -87,6 +88,16 @@ export function convertHoverResults(hoverResults: HoverResults | null, format: M
         .map((part) => {
             if (part.python) {
                 if (format === MarkupKind.Markdown) {
+                    // 围栏语言保持 `python`：hover 代码块由宿主 markdown 渲染器着色，它先用
+                    // languageService.getLanguageIdByLanguageName() 把围栏语言名解析成语言 id，
+                    // 再取该语言的 TM tokenization，取不到才整块退化为纯文本。
+                    // 本扩展贡献的 `viper` 语法在该路径下能取到 tokenization，但只有通用 scope
+                    // （comment/string/keyword.control.flow/constant.numeric）能命中主题规则；
+                    // `def`/`class` 用的 storage.type.*.viper 匹配不到主题里按 Python 精调的
+                    // 规则，裸类型名（int/str）语法里也没有规则 —— 实测 ```viper 只部分着色，
+                    // 而 ```python 走 MagicPython，关键字/类型/装饰器齐全，故用它。
+                    // Viper 语法本就是 CPython 派生，Python 语法对关键字/装饰器/字符串/数字的
+                    // 着色是正确的。
                     return '```python\n' + part.text + '\n```\n';
                 } else if (format === MarkupKind.PlainText) {
                     return part.text + '\n\n';
@@ -217,7 +228,8 @@ export function getVariableTypeText(
     type: Type,
     typeNode: ExpressionNode,
     functionSignatureDisplay: SignatureDisplayType,
-    sourceMapper?: SourceMapper
+    sourceMapper?: SourceMapper,
+    printOptions?: PrintTypeOptions
 ) {
     let label = 'variable';
     if (declaration) {
@@ -235,6 +247,7 @@ export function getVariableTypeText(
             } else {
                 // Handle type aliases specially.
                 const typeText = evaluator.printType(convertToInstance(getTypeForToolTip(evaluator, typeNode)), {
+                    ...printOptions,
                     expandTypeAlias: true,
                 });
 
@@ -254,6 +267,7 @@ export function getVariableTypeText(
         (declaration.typeAnnotationNode as any).d?.member?.d?.value === 'CTypedef'
     ) {
         const typeText = evaluator.printType(convertToInstance(getTypeForToolTip(evaluator, typeNode)), {
+            ...printOptions,
             expandTypeAlias: false,
         });
         return `(type) ${name} = ` + typeText;
@@ -272,11 +286,13 @@ export function getVariableTypeText(
             /* isProperty */ false,
             functionSignatureDisplay,
             typeNode,
-            sourceMapper
+            sourceMapper,
+            printOptions
         );
     }
 
-    const typeText = typeVarName ?? name + ': ' + evaluator.printType(getTypeForToolTip(evaluator, typeNode));
+    const typeText =
+        typeVarName ?? name + ': ' + evaluator.printType(getTypeForToolTip(evaluator, typeNode), printOptions);
 
     // Viper 扩展：变量类型是 typedef 别名时，附加 typedef 信息换行显示。
     // 例如 `k: UINT16PTR` 悬浮显示：
@@ -293,10 +309,10 @@ export function getVariableTypeText(
             const fileInfo = getFileInfo(typeNode);
             if (IsViperDialect(fileInfo.executionEnvironment.dialect)) {
                 const aliasName = aliasInfo.shared.name;
-                const actualType = evaluator.printType(
-                    convertToInstance(getTypeForToolTip(evaluator, typeNode)),
-                    { expandTypeAlias: false }
-                );
+                const actualType = evaluator.printType(convertToInstance(getTypeForToolTip(evaluator, typeNode)), {
+                    ...printOptions,
+                    expandTypeAlias: false,
+                });
                 return `(${label}) ` + typeText + `\n(typedef) ${aliasName} = ` + actualType;
             }
         }
@@ -354,6 +370,16 @@ export class HoverProvider {
 
     private get _functionSignatureDisplay() {
         return this._program.configOptions.functionSignatureDisplay;
+    }
+
+    // Viper 方言：hover 的类型展示保留源码中书写时的完整 module 路径（如 `ast.AST`）。
+    // 未写限定路径的裸名（`list`/`str`）仍显示短名，具体规则见 typePrinter。
+    private _getPrintTypeOptions(options?: PrintTypeOptions): PrintTypeOptions {
+        return { ...options, sourceQualifiedNames: true };
+    }
+
+    private _printType(type: Type, options?: PrintTypeOptions): string {
+        return this._evaluator.printType(type, this._getPrintTypeOptions(options));
     }
 
     private _getHoverResult(): HoverResults | null {
@@ -422,7 +448,10 @@ export class HoverProvider {
                             node.d.value,
                             this._evaluator,
                             isProperty,
-                            this._functionSignatureDisplay
+                            this._functionSignatureDisplay,
+                            /* typeNode */ undefined,
+                            /* sourceMapper */ undefined,
+                            this._getPrintTypeOptions()
                         );
                     }
 
@@ -515,7 +544,8 @@ export class HoverProvider {
                     type,
                     typeNode,
                     this._functionSignatureDisplay,
-                    this._sourceMapper
+                    this._sourceMapper,
+                    this._getPrintTypeOptions()
                 );
 
                 this._addResultsPart(parts, typeText, /* python */ true);
@@ -535,7 +565,7 @@ export class HoverProvider {
                     if (aliasInfo && aliasInfo.shared.name !== node.d.value) {
                         const fileInfo = getFileInfo(node);
                         if (IsViperDialect(fileInfo.executionEnvironment.dialect)) {
-                            const actualType = this._evaluator.printType(
+                            const actualType = this._printType(
                                 convertToInstance(getTypeForToolTip(this._evaluator, node)),
                                 { expandTypeAlias: false }
                             );
@@ -605,7 +635,8 @@ export class HoverProvider {
                     isProperty,
                     this._functionSignatureDisplay,
                     /* typeNode */ undefined,
-                    this._sourceMapper
+                    this._sourceMapper,
+                    this._getPrintTypeOptions()
                 );
 
                 this._addResultsPart(parts, signatureString, /* python */ true);
@@ -626,7 +657,7 @@ export class HoverProvider {
 
             case DeclarationType.TypeAlias: {
                 const type = convertToInstance(this._getType(node));
-                const typeText = this._evaluator.printType(type, { expandTypeAlias: true });
+                const typeText = this._printType(type, { expandTypeAlias: true });
                 this._addResultsPart(parts, `(type) ${node.d.value} = ${typeText}`, /* python */ true);
                 this._addDocumentationPart(parts, node, resolvedDecl);
                 break;
@@ -699,7 +730,7 @@ export class HoverProvider {
         // 返回类型
         const returnType = this._getViperFunctionReturnType(funcNode);
         if (returnType) {
-            lines.push(`${bold('返回类型')}: ${code(this._evaluator.printType(convertToInstance(returnType)))}`);
+            lines.push(`${bold('返回类型')}: ${code(this._printType(convertToInstance(returnType)))}`);
         }
 
         if (lines.length === 0) {
@@ -727,7 +758,7 @@ export class HoverProvider {
             paramType = this._evaluator.getTypeOfExpression(param.d.name).type;
         }
         if (paramType) {
-            text += ': ' + this._evaluator.printType(convertToInstance(paramType));
+            text += ': ' + this._printType(convertToInstance(paramType));
         }
 
         if (param.d.defaultValue) {
@@ -767,7 +798,8 @@ export class HoverProvider {
                 type,
                 node,
                 this._functionSignatureDisplay,
-                this._sourceMapper
+                this._sourceMapper,
+                this._getPrintTypeOptions()
             );
         }
 
@@ -785,7 +817,7 @@ export class HoverProvider {
                 const entry = subtype.shared.typedDictEntries?.knownItems.get(node.d.value);
                 if (entry) {
                     // e.g. (key) name: str
-                    const text = '(key) ' + node.d.value + ': ' + this._evaluator.printType(entry.valueType);
+                    const text = '(key) ' + node.d.value + ': ' + this._printType(entry.valueType);
 
                     const declarations = ClassType.getSymbolTable(subtype).get(node.d.value)?.getDeclarations();
                     let declarationWithDoc: Declaration | undefined;
@@ -833,7 +865,13 @@ export class HoverProvider {
         if (result.methodType && isFunctionOrOverloaded(result.methodType)) {
             this._addResultsPart(
                 parts,
-                getConstructorTooltip(node.d.value, result.methodType, this._evaluator, this._functionSignatureDisplay),
+                getConstructorTooltip(
+                    node.d.value,
+                    result.methodType,
+                    this._evaluator,
+                    this._functionSignatureDisplay,
+                    this._getPrintTypeOptions()
+                ),
                 /* python */ true
             );
 
@@ -855,7 +893,7 @@ export class HoverProvider {
 
     private _getTypeText(node: ExpressionNode, options?: PrintTypeOptions): string {
         const type = this._getType(node);
-        return ': ' + this._evaluator.printType(type, options);
+        return ': ' + this._printType(type, options);
     }
 
     private _addDocumentationPart(parts: HoverTextPart[], node: NameNode, resolvedDecl: Declaration | undefined) {

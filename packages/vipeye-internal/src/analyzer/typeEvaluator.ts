@@ -6186,10 +6186,56 @@ export function createTypeEvaluator(
             );
         }
 
+        // Viper 扩展：记录源码中书写的限定路径（如 `ast.AST`），供类型展示保留完整
+        // module 路径（见 typePrinter 的 ViperSourceQualifiedNames）。
+        typeResult.type = addViperDisplayName(node, typeResult.type);
+
         // Cache the type information in the member name node.
         writeTypeCache(node.d.member, typeResult, flags);
 
         return typeResult;
+    }
+
+    // Viper 扩展：把成员访问链在源码中书写的完整路径（如 `ast.AST`、`memhub.MemBuddy`）
+    // 记到类型上，仅供展示使用（ClassDetailsPriv.displayName，不参与任何类型判定）。
+    // 只处理纯点号路径（Name/MemberAccess 组成，不含调用/下标），且结果必须是类类型；
+    // 其它情况原样返回。
+    function addViperDisplayName(node: MemberAccessNode, type: Type): Type {
+        if (!isClassInstance(type) && !isInstantiableClass(type)) {
+            return type;
+        }
+
+        if (!IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect)) {
+            return type;
+        }
+
+        const path = getDottedNamePath(node);
+        if (!path) {
+            return type;
+        }
+
+        return ClassType.cloneForDisplayName(type, path);
+    }
+
+    // 把 `a.b.c` 形式的访问链还原为源码路径文本；链上出现非 Name/MemberAccess
+    // 节点（调用、下标等）时返回 undefined。
+    function getDottedNamePath(node: ExpressionNode): string | undefined {
+        const nameParts: string[] = [];
+        let curNode: ExpressionNode = node;
+
+        while (true) {
+            if (curNode.nodeType === ParseNodeType.MemberAccess) {
+                nameParts.push(curNode.d.member.d.value);
+                curNode = curNode.d.leftExpr;
+            } else if (curNode.nodeType === ParseNodeType.Name) {
+                nameParts.push(curNode.d.value);
+                break;
+            } else {
+                return undefined;
+            }
+        }
+
+        return nameParts.reverse().join('.');
     }
 
     function getTypeOfMemberAccessWithBaseType(
@@ -30865,8 +30911,15 @@ export function createTypeEvaluator(
         return TypePrinter.printObjectTypeForClass(type, evaluatorOptions.printTypeFlags, getEffectiveReturnType);
     }
 
-    function printFunctionParts(type: FunctionType, extraFlags?: TypePrinter.PrintTypeFlags): [string[], string] {
-        const flags = extraFlags ? evaluatorOptions.printTypeFlags | extraFlags : evaluatorOptions.printTypeFlags;
+    function printFunctionParts(
+        type: FunctionType,
+        extraFlags?: TypePrinter.PrintTypeFlags,
+        options?: PrintTypeOptions
+    ): [string[], string] {
+        let flags = extraFlags ? evaluatorOptions.printTypeFlags | extraFlags : evaluatorOptions.printTypeFlags;
+        if (options?.sourceQualifiedNames) {
+            flags |= TypePrinter.PrintTypeFlags.ViperSourceQualifiedNames;
+        }
         return TypePrinter.printFunctionParts(type, flags, getEffectiveReturnType);
     }
 
@@ -30917,6 +30970,9 @@ export function createTypeEvaluator(
         }
         if (options?.useFullyQualifiedNames) {
             flags |= TypePrinter.PrintTypeFlags.UseFullyQualifiedNames;
+        }
+        if (options?.sourceQualifiedNames) {
+            flags |= TypePrinter.PrintTypeFlags.ViperSourceQualifiedNames;
         }
         if (options?.disablePep604) {
             flags &= ~TypePrinter.PrintTypeFlags.PEP604;

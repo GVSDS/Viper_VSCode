@@ -102,9 +102,35 @@ export const enum PrintTypeFlags {
 
     // Viper 方言：将 NoneType 显示为 CVoid（C 语义 void）。
     ViperDialect = 1 << 14,
+
+    // Viper 方言：类名保留源码中书写时的完整 module 路径（如 `ast.AST`、`memhub.MemBuddy`）。
+    // Viper 源码注解习惯写完整 module 路径，而类型的 fullName 是「声明所在模块」
+    // （如 `ast.base.AST`、容器类 `_list.list`），两者并不一致，故只能按源码书写形式展示：
+    // 写了限定路径的保留路径，写裸名的（`list`/`str`）仍显示短名。
+    ViperSourceQualifiedNames = 1 << 15,
 }
 
 export type FunctionReturnTypeCallback = (type: FunctionType) => Type;
+
+// 计算类的显示名（不含 aliasName 与 rawptr 等特殊覆盖）。
+// 该函数必须被 printObjectTypeForClassInternal 与 UniqueNameMap 同时使用，
+// 否则「名字唯一性判定」与「实际打印名」不一致会导致名字被错误地降级/保留。
+function getPrintableClassName(type: ClassType, printTypeFlags: PrintTypeFlags): string {
+    // Viper 方言（展示模式）：按源码书写的完整 module 路径显示，
+    // 未写限定路径的裸名（`list`/`str` 等）保持短名。
+    if (
+        (printTypeFlags & PrintTypeFlags.ViperSourceQualifiedNames) !== 0 &&
+        (printTypeFlags & PrintTypeFlags.ViperDialect) !== 0
+    ) {
+        return type.priv.displayName ?? type.shared.name;
+    }
+
+    if ((printTypeFlags & PrintTypeFlags.UseFullyQualifiedNames) !== 0) {
+        return type.shared.fullName;
+    }
+
+    return type.shared.name;
+}
 
 export function printType(
     type: Type,
@@ -1010,8 +1036,7 @@ function printObjectTypeForClassInternal(
 ): string {
     let objName = type.priv.aliasName;
     if (!objName) {
-        objName =
-            (printTypeFlags & PrintTypeFlags.UseFullyQualifiedNames) !== 0 ? type.shared.fullName : type.shared.name;
+        objName = getPrintableClassName(type, printTypeFlags);
     }
 
     // Special-case NoneType to convert it to None.
@@ -1523,10 +1548,7 @@ class UniqueNameMap {
 
                     let className = type.priv.aliasName;
                     if (!className) {
-                        className =
-                            (this._printTypeFlags & PrintTypeFlags.UseFullyQualifiedNames) !== 0
-                                ? type.shared.fullName
-                                : type.shared.name;
+                        className = getPrintableClassName(type, this._printTypeFlags);
                     }
 
                     this._addIfUnique(className, type);

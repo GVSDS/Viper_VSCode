@@ -18,4 +18,5 @@ export const enum Commands {
     dumpTypes = 'viper.dumpTypes',
     dumpCachedTypes = 'viper.dumpCachedTypes',
     dumpCodeFlowGraph = 'viper.dumpCodeFlowGraph',
+    showFunctionFlowChart = 'viper.showFunctionFlowChart',
 }

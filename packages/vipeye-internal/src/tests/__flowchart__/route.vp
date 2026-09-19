@@ -1,0 +1,9 @@
+
+def route(n: int) -> int:
+    match n:
+        case 0:
+            return 1
+        case 1:
+            return 2
+        case _:
+            return 3

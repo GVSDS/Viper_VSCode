@@ -12,6 +12,7 @@ import { LanguageServerInterface } from '../common/languageServerInterface';
 import { Commands } from './commands';
 import { CreateTypeStubCommand } from './createTypeStub';
 import { DumpFileDebugInfoCommand } from './dumpFileDebugInfoCommand';
+import { FlowChartCommand } from './flowChartCommand';
 import { QuickActionCommand } from './quickActionCommand';
 import { RestartServerCommand } from './restartServer';
 
@@ -24,12 +25,14 @@ export class CommandController implements ServerCommand {
     private _restartServer: RestartServerCommand;
     private _quickAction: QuickActionCommand;
     private _dumpFileDebugInfo: DumpFileDebugInfoCommand;
+    private _flowChart: FlowChartCommand;
 
     constructor(ls: LanguageServerInterface) {
         this._createStub = new CreateTypeStubCommand(ls);
         this._restartServer = new RestartServerCommand(ls);
         this._quickAction = new QuickActionCommand(ls);
         this._dumpFileDebugInfo = new DumpFileDebugInfoCommand(ls);
+        this._flowChart = new FlowChartCommand(ls);
     }
 
     async execute(cmdParams: ExecuteCommandParams, token: CancellationToken): Promise<any> {
@@ -48,6 +51,10 @@ export class CommandController implements ServerCommand {
 
             case Commands.dumpFileDebugInfo: {
                 return this._dumpFileDebugInfo.execute(cmdParams, token);
+            }
+
+            case Commands.showFunctionFlowChart: {
+                return this._flowChart.execute(cmdParams, token);
             }
 
             default: {

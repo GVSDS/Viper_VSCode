@@ -1,0 +1,9 @@
+
+def handle(n: int) -> int:
+    try:
+        n = n + 1
+    except ValueError:
+        n = 0
+    finally:
+        n = n * 2
+    return n

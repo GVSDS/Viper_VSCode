@@ -1,0 +1,7 @@
+
+def countdown(n: int) -> int:
+    while n > 0:
+        n = n - 1
+    else:
+        n = 0
+    return n

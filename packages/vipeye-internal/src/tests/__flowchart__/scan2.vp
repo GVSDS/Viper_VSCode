@@ -1,0 +1,9 @@
+
+def scan2(n: int) -> int:
+    for i in n:
+        try:
+            if i < 0:
+                break
+        finally:
+            n = n * 2
+    return n

@@ -1,5 +1,5 @@
 {
-    "name": "vscode-vipeye",
+    "name": "vipeye",
     "displayName": "Vipeye",
     "description": "VS Code language support for Viper (LSP client)",
     "version": "1.1.413",
@@ -24,6 +24,7 @@
     ],
     "activationEvents": [
         "onLanguage:viper",
+        "onView:viper.flowChartView",
         "workspaceContains:**/*.vpj",
         "workspaceContains:**/*.vp"
     ],
@@ -100,6 +101,13 @@
                     "title": "Viper",
                     "icon": "images/viper-icon.svg"
                 }
+            ],
+            "panel": [
+                {
+                    "id": "viper-flowchart",
+                    "title": "Viper 流程图",
+                    "icon": "images/viper-icon.svg"
+                }
             ]
         },
         "views": {
@@ -115,6 +123,13 @@
                 {
                     "id": "viper.settingsView",
                     "name": "Settings"
+                }
+            ],
+            "viper-flowchart": [
+                {
+                    "id": "viper.flowChartView",
+                    "name": "函数流程图",
+                    "type": "webview"
                 }
             ]
         },
@@ -259,6 +274,12 @@
                 "icon": "$(refresh)"
             },
             {
+                "command": "viper.showFunctionFlowChart",
+                "title": "Show Function Flow Chart",
+                "category": "Viper",
+                "enablement": "editorLangId == viper"
+            },
+            {
                 "command": "viper.openVpjAsJson",
                 "title": "Open .vpj as JSON",
                 "category": "Viper"
@@ -269,6 +290,12 @@
                 {
                     "command": "viper.organizeimports",
                     "title": "Organize Imports",
+                    "group": "Viper",
+                    "when": "editorLangId == viper"
+                },
+                {
+                    "command": "viper.showFunctionFlowChart",
+                    "title": "Show Function Flow Chart",
                     "group": "Viper",
                     "when": "editorLangId == viper"
                 }
@@ -293,6 +320,10 @@
                 {
                     "command": "viper.dumpCodeFlowGraph",
                     "when": "editorLangId == viper && viper.development"
+                },
+                {
+                    "command": "viper.showFunctionFlowChart",
+                    "when": "editorLangId == viper"
                 },
                 {
                     "command": "viper.openVpjAsJson",
@@ -321,6 +352,14 @@
                 }
             ]
         },
+        "keybindings": [
+            {
+                "command": "viper.showFunctionFlowChart",
+                "key": "ctrl+alt+g",
+                "mac": "cmd+alt+g",
+                "when": "editorLangId == viper && editorTextFocus"
+            }
+        ],
         "configuration": {
             "type": "object",
             "title": "Vipeye",
@@ -1811,6 +1850,7 @@
         "webpack-dev": "npm run clean && rspack build -c rspack.config.js --mode development --watch"
     },
     "dependencies": {
+        "mermaid": "^11.12.0",
         "vscode-jsonrpc": "^9.0.0-next.8",
         "vscode-languageclient": "^10.0.0-next.16",
         "vscode-languageserver": "^10.0.0-next.13",

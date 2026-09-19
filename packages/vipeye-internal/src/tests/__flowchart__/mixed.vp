@@ -1,0 +1,9 @@
+
+def mixed(n: int) -> int:
+    total: int = 0
+    for i in n:
+        if i > 0:
+            total = total + i
+        else:
+            total = total - i
+    return total

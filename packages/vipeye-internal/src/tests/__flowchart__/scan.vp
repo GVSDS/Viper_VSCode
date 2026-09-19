@@ -1,0 +1,12 @@
+
+def scan(n: int) -> int:
+    total: int = 0
+    for i in n:
+        if i == 0:
+            continue
+        if i < 0:
+            break
+        total = total + i
+    else:
+        total = -1
+    return total

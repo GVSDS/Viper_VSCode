@@ -39,11 +39,15 @@ import {
 import { Commands } from 'vipeye-internal/commands/commands';
 import { isThenable } from 'vipeye-internal/common/core';
 
+// 仅用类型：type-only import 打包时会被擦除，不会把服务端代码带进客户端。
+import type { FlowChartResponse } from 'vipeye-internal/commands/flowChartCommand';
+
 // Viper 核心（packages/viper）——侧边栏活动栏（Project/Toolchain/Settings）、
 // .vpj 项目管理与工具链。源码单一，本包直接引用，构建时一并打包。
 import { activate as activateViperCore } from '../../viper/src/extension';
 
 import { FileBasedCancellationStrategy } from './cancellationUtils';
+import { registerFlowChartView } from './flowChartView';
 
 let cancellationStrategy: FileBasedCancellationStrategy | undefined;
 
@@ -289,6 +293,33 @@ export async function activate(context: ExtensionContext) {
             })
         );
     }
+
+    // 「函数跳转图」停靠面板：服务端算 Mermaid（AST → 控制流图），这里只做展示与跳转。
+    const flowChartProvider = registerFlowChartView(context, context.extensionUri);
+    context.subscriptions.push(
+        commands.registerTextEditorCommand(Commands.showFunctionFlowChart, async (editor) => {
+            const documentUri = editor.document.uri;
+            const offset = editor.document.offsetAt(editor.selection.active);
+
+            try {
+                const chart = await client.sendRequest<FlowChartResponse | undefined>('workspace/executeCommand', {
+                    command: Commands.showFunctionFlowChart,
+                    arguments: [documentUri.toString(), offset],
+                });
+
+                if (!chart) {
+                    void window.showWarningMessage('Viper：当前光标不在任何函数内，无法生成跳转图。');
+                    return;
+                }
+
+                await flowChartProvider.showChart(chart, documentUri);
+            } catch (err) {
+                void window.showErrorMessage(
+                    `Viper：生成函数跳转图失败 —— ${err instanceof Error ? err.message : String(err)}`
+                );
+            }
+        })
+    );
 
     await client.start();
 

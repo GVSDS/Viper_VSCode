@@ -1,0 +1,6 @@
+
+def early(n: int) -> int:
+    try:
+        return n + 1
+    finally:
+        n = 0

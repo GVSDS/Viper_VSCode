@@ -3,7 +3,7 @@
  * VET（Viper Environment Tool）常驻进程客户端。
  *
  * VET 是一个用 Viper 自身写的扫盘发现器（见 TransPyC/VET），协议如下：
- *   VET.exe scan --cache <path> [--sleep <毫秒>]
+ *   VET.exe scan --cache <path> [--sleep <毫秒>] [--first-no-pace]
  *           [--need-confirm <秒> [--need-confirm-timeout <毫秒>]] [--path <dir>]...
  *   - stdout：每轮输出一行**完整**的编译器 JSON 数组（所以增量变化要自己 diff）
  *   - stderr：滚动日志（量很大，原样进输出通道）
@@ -347,7 +347,14 @@ export class EnvironmentTool implements Disposable {
 
     /** 组装 scan 子命令参数。 */
     private BuildArgs(config: EnvironmentToolConfig): string[] {
-        const args = ['scan', '--cache', this.GetCachePath(), '--sleep', String(config.scanIntervalMs)];
+        // --first-no-pace：首轮不节流。VET 常驻模式默认每 16 个目录项 / 64 个文件 Sleep 20ms，
+        // 首次全盘搜索会明显变慢；首轮全速、后续轮次仍按 VET 自身的节流跑。
+        const args = [
+            'scan',
+            '--cache', this.GetCachePath(),
+            '--sleep', String(config.scanIntervalMs),
+            '--first-no-pace',
+        ];
 
         if (config.confirmSeconds > 0) {
             args.push('--need-confirm', String(config.confirmSeconds));

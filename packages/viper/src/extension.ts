@@ -300,7 +300,7 @@ async function PickManualCompiler(
     return undefined;
 }
 
-/** 手动指定一个 exe 做检查（只检查、不切换），结果通过信息消息回报。 */
+/** 挑一个 exe 做检查（只检查、不切换），结果通过信息消息回报。 */
 async function CheckEnvironmentCommand(tool: EnvironmentTool): Promise<void> {
     const result = await PickAndCheckExecutable(tool);
     if (!result) {

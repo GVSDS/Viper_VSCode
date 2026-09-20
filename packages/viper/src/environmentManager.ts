@@ -29,7 +29,7 @@ export interface EnvironmentChange {
 }
 
 /**
- * 「手动指定编译器」的处理（由扩展入口注入：弹输入框取路径 + 走 VET 的 check 通道）。
+ * 「选择编译器」的处理（由扩展入口注入：弹文件选择框 + 走 VET 的 check 通道）。
  * 返回被选中的环境表示已处理完；返回 undefined 表示用户取消或校验未通过。
  */
 export type ManualCompilerPicker = () => Promise<ViperEnvironment | undefined>;
@@ -107,7 +107,7 @@ export class EnvironmentManager implements Disposable {
     }
 
     /**
-     * 选择编译器。列表结构：首项是「选择编译器…」（手动输入 exe 路径），随后一条分隔线，
+     * 选择编译器。列表结构：首项是「选择编译器…」（挑一个 exe），随后一条分隔线，
      * 再之后才是 VET 搜到的环境。VET 关闭时这个列表照样可用（已发现的环境仍能选用）。
      * @param environmentId 传入则直接选中该 id；不传则弹 QuickPick 让用户选。
      */
@@ -119,7 +119,6 @@ export class EnvironmentManager implements Disposable {
         const items: CompilerPickItem[] = [
             {
                 label: '$(file) 选择编译器…',
-                description: '手动指定 exe 路径',
                 Manual: true,
             },
         ];
@@ -154,7 +153,7 @@ export class EnvironmentManager implements Disposable {
         return undefined;
     }
 
-    /** 注入「手动指定编译器」的处理（扩展入口提供：输入框取路径 + VET check）。 */
+    /** 注入「选择编译器」的处理（扩展入口提供：文件选择框 + VET check）。 */
     SetManualCompilerPicker(picker: ManualCompilerPicker): void {
         this.manualCompilerPicker = picker;
     }

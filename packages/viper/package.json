@@ -147,6 +147,12 @@
                 "icon": "$(output)"
             },
             {
+                "command": "viper.checkEnvironment",
+                "title": "Check Viper Executable...",
+                "category": "Viper",
+                "icon": "$(check)"
+            },
+            {
                 "command": "viper.refreshView",
                 "title": "Refresh",
                 "category": "Viper",
@@ -173,6 +179,9 @@
                     "command": "viper.showEnvironmentLog"
                 },
                 {
+                    "command": "viper.checkEnvironment"
+                },
+                {
                     "command": "viper.openVpjAsJson",
                     "when": "resourceExtname == .vpj"
                 }
@@ -192,6 +201,11 @@
                 }
             ],
             "view/title": [
+                {
+                    "command": "viper.checkEnvironment",
+                    "when": "view == viper.environmentView",
+                    "group": "navigation"
+                },
                 {
                     "command": "viper.refreshView",
                     "when": "view == viper.projectView || view == viper.environmentView || view == viper.toolchainView || view == viper.settingsView",

@@ -20,7 +20,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { commands, Disposable, Event, EventEmitter, OutputChannel, window, workspace } from 'vscode';
 
-import { ViperEnvironment } from './types';
+import { ViperCheckResult, ViperEnvironment } from './types';
 
 /**
  * VET 进程状态。
@@ -34,6 +34,29 @@ export type EnvironmentToolState = 'disabled' | 'stopped' | 'starting' | 'runnin
 const HealthyRunMs = 30000;
 /** 两次心跳之间的最小间隔，避免同一轮重复发送。 */
 const MinConfirmIntervalMs = 1500;
+/**
+ * check 请求的等待上限：看门狗只在心跳窗口内读 stdin（窗口外的请求要等下一个窗口，
+ * 最长 confirmSeconds），父进程还要等到下一个轮询点，故给足余量。
+ */
+const MinCheckTimeoutMs = 30000;
+const ExtraCheckTimeoutMs = 20000;
+/**
+ * 两次 stdin 写入之间的间隔。
+ * 原因：VET 看门狗读 stdin 时，若同一批 ReadFile 一次读到多行，只保留第一行、
+ * 其余字节被丢弃（VGuard.ReadConfirmLine 的已知缺陷），下次读就会拼出错位的残行，
+ * 被判定为"非 {"ok": 1} 的输入"从而**强杀整个 scan 进程**。
+ * 因此所有写入都排在心跳窗口内、逐行送出并留出本间隔，让每次 ReadFile 只含一行。
+ */
+const StdinLineGapMs = 300;
+/** 每个心跳窗口留给写入的时长（窗口本身是 confirmTimeoutMs，留出余量避免踩线）。 */
+const StdinWindowBudgetMs = 1000;
+
+/** 一条尚未收到回执的 check 请求。 */
+interface PendingCheck {
+    Resolve: (result: ViperCheckResult) => void;
+    Reject: (error: Error) => void;
+    Timer: NodeJS.Timeout;
+}
 
 export class EnvironmentTool implements Disposable {
     private process: ChildProcessWithoutNullStreams | undefined;
@@ -48,6 +71,15 @@ export class EnvironmentTool implements Disposable {
     private disposed = false;
     /** 上次记录过的退出信息，避免状态栏/提示重复报同一件事。 */
     private lastExitSummary = '';
+    /** check 请求 id：进程内递增即可（VET 原样回带，仅用于配对）。 */
+    private nextCheckId = 1;
+    /** 尚未收到回执的 check 请求。 */
+    private readonly pendingChecks = new Map<number, PendingCheck>();
+    /** 待写入 stdin 的 check 请求行（只在心跳窗口内逐行送出，见 BeginConfirmWindow）。 */
+    private readonly stdinQueue: string[] = [];
+    /** 本次窗口是否还需要补一行心跳。 */
+    private pendingHeartbeat = false;
+    private stdinWriting = false;
 
     private readonly channel: OutputChannel;
 
@@ -101,6 +133,110 @@ export class EnvironmentTool implements Disposable {
         this.StopProcess();
         this.restarts = 0;
         this.SetState('stopped');
+    }
+
+    /**
+     * 通过 VET 的 check 通道检查一个 exe（用户手动指定位置时用）。
+     *
+     * 通道形态：请求从 **stdin** 写入一行 `{"check": "<绝对路径>", "id": <整数>}`，
+     * 由看门狗（confirm-watch）识别后经匿名管道转发给 scan；回执是 **stdout** 的一行 JSON，
+     * 顶层 `id` 回带请求 id。故 check 通道依附心跳看门狗：没开 --need-confirm 就没有该通道。
+     *
+     * 通过后 VET 会把该项入库并写入缓存文件，下一轮（≤ scanIntervalMs）快照里就会出现它。
+     */
+    CheckExecutable(exePath: string): Promise<ViperCheckResult> {
+        const config = this.ReadConfig();
+        if (config.confirmSeconds <= 0) {
+            return Promise.reject(
+                new Error(
+                    'check 通道依附心跳看门狗：请把 viper.environmentTool.confirmSeconds 设为大于 0 的值（例如 10）。'
+                )
+            );
+        }
+
+        const child = this.process;
+        if (!child || !child.stdin.writable) {
+            return Promise.reject(new Error(`VET 未在运行（当前状态：${DescribeStateForMessage(this.state)}）。`));
+        }
+
+        const id = this.nextCheckId++;
+        const timeoutMs = Math.max(MinCheckTimeoutMs, config.confirmSeconds * 1000 + ExtraCheckTimeoutMs);
+
+        return new Promise<ViperCheckResult>((resolve, reject) => {
+            const timer = setTimeout(() => {
+                this.pendingChecks.delete(id);
+                reject(
+                    new Error(
+                        `等待 VET 回执超时（${Math.round(timeoutMs / 1000)} 秒）。请确认 VET 正在运行、且心跳确认已开启。`
+                    )
+                );
+            }, timeoutMs);
+
+            this.pendingChecks.set(id, { Resolve: resolve, Reject: reject, Timer: timer });
+
+            // 只入队：等下一个心跳窗口才送出（窗口外写入会被积压成多行，见 BeginConfirmWindow）。
+            // 路径里的反斜杠/引号等必须转义；VET 侧用 json 库解析这一行。
+            this.stdinQueue.push(`${JSON.stringify({ check: exePath, id })}\n`);
+            this.AppendLog(`[vscode] 发出 check 请求 #${id}: ${exePath}`);
+        });
+    }
+
+    /**
+     * 逐行送出 stdin 队列。
+     *
+     * 顺序有讲究：**先 check 请求，最后才发心跳**。因为看门狗一旦确认 ok=1 就立刻离开
+     * 等待循环（回去等下一个 interval），此后写进去的行只能积压到下一个窗口，下个窗口
+     * 又会与新的心跳凑成同一批 —— 正是要避免的局面。而 check 行会被转发后继续留在
+     * 等待循环里，所以只要逐行、留间隔，每一行都会被单独读走。
+     *
+     * 每窗口发送量按窗口时长封顶，保证心跳一定能在窗口内发出。
+     */
+    private async DrainStdinQueue(): Promise<void> {
+        if (this.stdinWriting) {
+            return;
+        }
+        this.stdinWriting = true;
+        try {
+            const config = this.ReadConfig();
+            const budget = Math.max(0, config.confirmTimeoutMs - StdinWindowBudgetMs);
+            const maxChecks = Math.max(0, Math.floor(budget / StdinLineGapMs));
+
+            let sent = 0;
+            while (this.stdinQueue.length > 0 && sent < maxChecks) {
+                if (!this.WriteOneLine(this.stdinQueue.shift() as string)) {
+                    return;
+                }
+                sent++;
+                // 只在后面还有内容要写时才等间隔（省掉最后一次多余的等待）。
+                if (this.stdinQueue.length > 0 || this.pendingHeartbeat) {
+                    await Delay(StdinLineGapMs);
+                }
+            }
+
+            if (this.pendingHeartbeat) {
+                this.pendingHeartbeat = false;
+                this.WriteOneLine('{"ok":1}\n');
+            }
+        } finally {
+            this.stdinWriting = false;
+        }
+    }
+
+    /** 写一行到 VET 的 stdin；返回 false 表示进程已不可写（并清空队列）。 */
+    private WriteOneLine(line: string): boolean {
+        const child = this.process;
+        if (!child || !child.stdin.writable) {
+            this.stdinQueue.length = 0;
+            this.pendingHeartbeat = false;
+            return false;
+        }
+        try {
+            child.stdin.write(line);
+            return true;
+        } catch (e) {
+            this.AppendLog(`[vscode] 写入 stdin 失败: ${String(e)}`);
+            return true;    // 单行失败不放弃整个队列（异常多为 CLOSED，下一行会走上面的分支）
+        }
     }
 
     /** 追加一行日志（进 "Vipeye VET" 输出通道），供扩展其它部分记录与 VET 相关的信息。 */
@@ -197,6 +333,7 @@ export class EnvironmentTool implements Disposable {
 
             const aliveMs = Date.now() - this.startedAt;
             this.AppendLog(`[vscode] VET 退出: code=${code} signal=${signal ?? '-'} 存活 ${aliveMs} ms`);
+            this.RejectPendingChecks('VET 进程已退出，check 请求未完成。');
 
             if (this.disposed) {
                 return;
@@ -239,6 +376,7 @@ export class EnvironmentTool implements Disposable {
 
         const child = this.process;
         this.process = undefined;
+        this.RejectPendingChecks('VET 进程已停止，check 请求未完成。');
         if (!child) {
             return;
         }
@@ -340,9 +478,63 @@ export class EnvironmentTool implements Disposable {
             return;
         }
 
+        // check 回执：{"check_result": bool, "id": <请求 id>, "viper"|"check_msg": …}
+        if (typeof parsed === 'object' && parsed !== null && 'check_result' in parsed) {
+            this.HandleCheckReply(parsed as Record<string, unknown>);
+            return;
+        }
+
         // {"exit":1, "msg":"timeout/ok!=1"} —— VET 因确认失败而终止。
         const exitInfo = parsed as { exit?: number; msg?: string };
         this.AppendLog(`[vscode] VET 报告退出: exit=${exitInfo.exit ?? '?'} msg=${exitInfo.msg ?? ''}`);
+    }
+
+    /** 处理 check 回执：按回带的 id 唤醒等待中的请求。 */
+    private HandleCheckReply(reply: Record<string, unknown>): void {
+        const id = Number(reply.id);
+        const pending = this.pendingChecks.get(id);
+        if (!pending) {
+            // 超时后迟到的回执，或不是本扩展发出的请求：只记录，不当作错误。
+            this.AppendLog(`[vscode] 收到无人等待的 check 回执: id=${reply.id}`);
+            return;
+        }
+
+        this.pendingChecks.delete(id);
+        clearTimeout(pending.Timer);
+
+        const ok = reply.check_result === true;
+        const raw = reply.viper;
+        const environment =
+            ok && typeof raw === 'object' && raw !== null
+                ? this.ToEnvironment(raw as Record<string, unknown>)
+                : undefined;
+
+        this.AppendLog(
+            ok
+                ? `[vscode] check #${id} 通过: ${environment?.DisplayName ?? '(无详情)'}`
+                : `[vscode] check #${id} 未通过: ${String(reply.check_msg ?? '未知原因')}`
+        );
+
+        pending.Resolve({
+            Ok: ok,
+            Id: id,
+            Environment: environment,
+            Message: typeof reply.check_msg === 'string' ? reply.check_msg : undefined,
+        });
+    }
+
+    /** 进程消失时：丢弃待写的 stdin 行，并唤醒所有等待中的 check 请求，避免调用方一直挂着。 */
+    private RejectPendingChecks(reason: string): void {
+        this.stdinQueue.length = 0;
+        this.pendingHeartbeat = false;
+        if (this.pendingChecks.size === 0) {
+            return;
+        }
+        for (const [, pending] of this.pendingChecks) {
+            clearTimeout(pending.Timer);
+            pending.Reject(new Error(reason));
+        }
+        this.pendingChecks.clear();
     }
 
     /** 把 VET 输出的 JSON 条目规整为强类型（字段名转 PascalCase，缺字段给空串）。 */
@@ -382,35 +574,37 @@ export class EnvironmentTool implements Disposable {
         // stderr 全部原样进 "Vipeye VET"（含 [scan] 进度行），不做过滤。
         this.channel.appendLine(line);
 
-        // 每轮结束会提示进入确认窗口，这时才回 {"ok":1}（窗口只有几秒，必须立刻回）。
+        // 每轮结束会提示进入确认窗口（两行：请在… / 当前… 本轮期限…）。
         if (line.includes('本轮期限') || line.includes('[confirm] 请在')) {
-            this.SendConfirm();
+            this.BeginConfirmWindow();
         }
     }
 
-    /** 向 VET 的 stdin 写入一行 {"ok":1}。 */
-    private SendConfirm(): void {
+    /**
+     * 心跳窗口打开：看门狗此刻正在等 stdin，是**唯一安全**的写入时机。
+     * 窗口外写入会在管道里积压成多行，被看门狗一次 ReadFile 读走时只保留第一行、
+     * 其余字节丢弃 ⇒ 拼出错位残行 ⇒ 判定失败并强杀 scan 进程（见 StdinLineGapMs）。
+     * 故：心跳与 check 请求都只入队，统一在这里开始逐行送出（行间留间隔）。
+     */
+    private BeginConfirmWindow(): void {
         const child = this.process;
         if (!child || !child.stdin.writable) {
             return;
         }
-        // 提示是两行（请在… / 当前… 本轮期限…），间隔很短；去重避免同一窗口重复发送。
+        // 提示是两行，间隔很短；此处去重避免同一窗口重复插心跳。
         if (Date.now() - this.lastConfirmAt < MinConfirmIntervalMs) {
             return;
         }
 
         this.lastConfirmAt = Date.now();
-        try {
-            child.stdin.write('{"ok":1}\n');
-            this.AppendLog('[vscode] 已发送心跳 {"ok":1}');
-        } catch (e) {
-            this.AppendLog(`[vscode] 心跳写入失败: ${String(e)}`);
-        }
+        this.pendingHeartbeat = true;
+        void this.DrainStdinQueue();
     }
 
     /**
-     * 心跳兜底：万一没识别到确认提示（例如 VET 日志措辞变化），
+     * 心跳兜底：万一一直没识别到确认提示（例如 VET 改了措辞），
      * 超过「确认周期 + 5 秒」没有发送过就补一次，避免 VET 因超时自杀。
+     * 这是异常路径，只能无视窗口直接写；为免与积压行凑成一批，先丢弃排队中的请求。
      */
     private EnsureWatchdog(): void {
         if (this.watchdogTimer) {
@@ -419,11 +613,24 @@ export class EnvironmentTool implements Disposable {
 
         this.watchdogTimer = setInterval(() => {
             const config = this.ReadConfig();
-            if (config.confirmSeconds <= 0 || !this.process) {
+            const child = this.process;
+            if (config.confirmSeconds <= 0 || !child) {
                 return;
             }
-            if (Date.now() - this.lastConfirmAt > (config.confirmSeconds + 5) * 1000) {
-                this.SendConfirm();
+            if (Date.now() - this.lastConfirmAt <= (config.confirmSeconds + 5) * 1000) {
+                return;
+            }
+
+            this.stdinQueue.length = 0;
+            if (!child.stdin.writable) {
+                return;
+            }
+            this.lastConfirmAt = Date.now();
+            try {
+                child.stdin.write('{"ok":1}\n');
+                this.AppendLog('[vscode] 兜底发送心跳（未识别到确认窗口提示）');
+            } catch (e) {
+                this.AppendLog(`[vscode] 兜底心跳写入失败: ${String(e)}`);
             }
         }, 2000);
     }
@@ -460,4 +667,27 @@ interface EnvironmentToolConfig {
     confirmTimeoutMs: number;
     scanIntervalMs: number;
     maxRestarts: number;
+}
+
+/** 简单延时（用于 stdin 逐行写入的间隔）。 */
+function Delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 状态的简短中文描述（用于错误消息）。 */
+function DescribeStateForMessage(state: EnvironmentToolState): string {
+    switch (state) {
+        case 'running':
+            return '运行中';
+        case 'starting':
+            return '启动中';
+        case 'restarting':
+            return '重启中';
+        case 'stopped':
+            return '已手动关闭';
+        case 'failed':
+            return '已停止（连续失败）';
+        default:
+            return '未启用';
+    }
 }

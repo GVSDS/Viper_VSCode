@@ -3,11 +3,13 @@
  * Viper Core 扩展入口。
  */
 
-import { commands, ExtensionContext, window, workspace } from 'vscode';
+import * as path from 'path';
+import { commands, ExtensionContext, ProgressLocation, window, workspace } from 'vscode';
 import { EnvironmentManager } from './environmentManager';
 import { EnvironmentTool } from './environmentTool';
 import { ProjectManager } from './projectManager';
 import { ToolchainManager } from './toolchainManager';
+import { ViperCheckResult } from './types';
 import { ViperViewProvider } from './viperViewProvider';
 import { EnvironmentStatusBar } from './statusBar';
 import { ViperApiImpl } from './api';
@@ -132,6 +134,9 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
         RegisterCommandSafe(context, 'viper.showEnvironmentLog', () => {
             environmentTool.ShowLog();
         }),
+        RegisterCommandSafe(context, 'viper.checkEnvironment', async () => {
+            await CheckEnvironmentCommand(environmentTool);
+        }),
         RegisterCommandSafe(context, 'viper.openVpjAsJson', async (uri?: import('vscode').Uri) => {
             const target = uri ?? window.activeTextEditor?.document.uri;
             if (!target) {
@@ -236,6 +241,86 @@ async function CreateProjectCommand(): Promise<void> {
     const content = JSON.stringify(template, null, 4);
     await workspace.fs.writeFile(uri, Buffer.from(content, 'utf8'));
     window.showInformationMessage(`Created ${uri.fsPath}`);
+}
+
+/**
+ * 手动指定一个 exe，经 VET 的 check 通道校验（PE/.PRVERSN + `--version` 前缀为 Viper）。
+ * 校验通过后 VET 会把它入库并写回缓存文件，下一轮快照里就会出现在 Environments 视图。
+ */
+async function CheckEnvironmentCommand(tool: EnvironmentTool): Promise<void> {
+    const picked = await window.showOpenDialog({
+        title: '选择要检查的 Viper 可执行文件',
+        canSelectMany: false,
+        openLabel: '检查',
+        filters: { 'Viper 可执行文件': ['exe'] },
+    });
+    const exePath = picked?.[0]?.fsPath;
+    if (!exePath) {
+        return;
+    }
+
+    await window.withProgress(
+        { location: ProgressLocation.Notification, title: `VET 正在检查 ${path.basename(exePath)}…` },
+        async () => {
+            let result: ViperCheckResult;
+            try {
+                result = await tool.CheckExecutable(exePath);
+            } catch (e) {
+                void window.showErrorMessage(`VET 检查失败：${e instanceof Error ? e.message : String(e)}`);
+                return;
+            }
+
+            const environment = result.Environment;
+            if (result.Ok && environment) {
+                void window
+                    .showInformationMessage(
+                        `VET 检查通过：${environment.DisplayName}（${environment.Arch}）`,
+                        '选择为当前环境',
+                        '显示详情'
+                    )
+                    .then((choice) => {
+                        if (choice === '选择为当前环境') {
+                            void commands.executeCommand('viper.selectEnvironment', environment.Id);
+                        } else if (choice === '显示详情') {
+                            void window.showInformationMessage(environment.Executable, { modal: true });
+                        }
+                    });
+                return;
+            }
+
+            void window.showErrorMessage(`VET 检查未通过：${DescribeCheckMessage(result.Message)}`);
+        }
+    );
+}
+
+/** 把 VET 回执里的 check_msg 固定原因串翻译成可读说明。 */
+function DescribeCheckMessage(message: string | undefined): string {
+    if (!message) {
+        return '未知原因（VET 未给出 check_msg）';
+    }
+    switch (message) {
+        case 'NOT_FOUND':
+            return '文件不存在';
+        case 'NO_PERMISSION':
+            return '无法打开该文件（权限不足或被占用）';
+        case 'NOT_EXE':
+            return '不是有效的 PE 可执行文件';
+        case 'NO_PRVERSN':
+            return '缺少 .PRVERSN 段（不是 TransPyV 工具链产物）';
+        case 'PRVERSN_ERR':
+            return '.PRVERSN 段定位或读取失败';
+        case 'PREFIX_ERR':
+            return '--version 输出不以 Viper 开头';
+        case 'TIMEOUT':
+            return '--version 探测超时';
+        case 'CHANNEL_UNAVAILABLE':
+            return 'VET 的 check 通道不可用（内部缓冲未就绪）';
+        default:
+            // EXE_ERR,0x<HEX>：拉起失败，错误码原样带上
+            return message.startsWith('EXE_ERR,')
+                ? `无法启动该 exe（错误码 ${message.slice('EXE_ERR,'.length)}）`
+                : message;
+    }
 }
 
 /** 显示当前项目信息。 */

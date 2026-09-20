@@ -42,6 +42,18 @@ export interface ViperEnvironment {
     DisplayName: string;     // 展示名，如「Viper 0.0.3-dev.428」
 }
 
+/** VET check 通道的单次检查回执。 */
+export interface ViperCheckResult {
+    /** 检查是否通过（回执的 check_result）。 */
+    Ok: boolean;
+    /** 请求时带的 id；VET 原样回带，仅用于把回执与请求配对。 */
+    Id: number;
+    /** 通过时的发现项（回执的 viper 子对象，source 固定为 check）。 */
+    Environment?: ViperEnvironment;
+    /** 未通过时的固定原因串（回执的 check_msg，如 NOT_FOUND / NO_PRVERSN）。 */
+    Message?: string;
+}
+
 /** 暴露给其他扩展的 API。 */
 export interface ViperApi {
     /** 获取当前工作区的项目配置。 */

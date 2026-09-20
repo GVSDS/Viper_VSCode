@@ -32,6 +32,16 @@ export interface ToolchainInfo {
     Source: 'hardcoded' | 'config' | 'env' | 'path';
 }
 
+/** VET（Viper Environment Tool）发现的一个编译器条目。字段名与 VET 的 stdout JSON 一致。 */
+export interface ViperEnvironment {
+    Id: string;              // VET 分配的稳定 id（GUID）
+    Executable: string;      // 编译器可执行文件绝对路径
+    Version: string;         // 版本字符串（来自 .PRVERSN 段与 --version 前缀）
+    Arch: string;            // 架构，如 x86_64
+    Source: string;          // 来源分类，如 workspace / global / ...
+    DisplayName: string;     // 展示名，如「Viper 0.0.3-dev.428」
+}
+
 /** 暴露给其他扩展的 API。 */
 export interface ViperApi {
     /** 获取当前工作区的项目配置。 */
@@ -61,5 +71,7 @@ export interface ViperTreeNode {
     Icon?: string;
     Children?: ViperTreeNode[];
     Command?: string;
+    /** 命令参数（点击该节点时随命令一起传入）。 */
+    CommandArguments?: unknown[];
     ContextValue?: string;
 }

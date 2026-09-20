@@ -117,6 +117,10 @@
                     "name": "Project"
                 },
                 {
+                    "id": "viper.environmentView",
+                    "name": "Environments"
+                },
+                {
                     "id": "viper.toolchainView",
                     "name": "Toolchain"
                 },
@@ -268,6 +272,30 @@
                 "category": "Viper"
             },
             {
+                "command": "viper.selectEnvironment",
+                "title": "Select Environment",
+                "category": "Viper",
+                "icon": "$(server-environment)"
+            },
+            {
+                "command": "viper.restartEnvironmentTool",
+                "title": "Restart VET",
+                "category": "Viper",
+                "icon": "$(debug-restart)"
+            },
+            {
+                "command": "viper.stopEnvironmentTool",
+                "title": "Stop VET",
+                "category": "Viper",
+                "icon": "$(debug-stop)"
+            },
+            {
+                "command": "viper.showEnvironmentLog",
+                "title": "Show VET Output",
+                "category": "Viper",
+                "icon": "$(output)"
+            },
+            {
                 "command": "viper.refreshView",
                 "title": "Refresh",
                 "category": "Viper",
@@ -326,6 +354,18 @@
                     "when": "editorLangId == viper"
                 },
                 {
+                    "command": "viper.selectEnvironment"
+                },
+                {
+                    "command": "viper.restartEnvironmentTool"
+                },
+                {
+                    "command": "viper.stopEnvironmentTool"
+                },
+                {
+                    "command": "viper.showEnvironmentLog"
+                },
+                {
                     "command": "viper.openVpjAsJson",
                     "when": "resourceExtname == .vpj"
                 }
@@ -347,7 +387,7 @@
             "view/title": [
                 {
                     "command": "viper.refreshView",
-                    "when": "view == viper.projectView || view == viper.toolchainView || view == viper.settingsView",
+                    "when": "view == viper.projectView || view == viper.environmentView || view == viper.toolchainView || view == viper.settingsView",
                     "group": "navigation"
                 }
             ]
@@ -364,6 +404,56 @@
             "type": "object",
             "title": "Vipeye",
             "properties": {
+                "viper.environmentTool.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "启用 VET（Viper Environment Tool）常驻扫盘发现 Viper 编译器。",
+                    "scope": "window"
+                },
+                "viper.environmentTool.path": {
+                    "type": "string",
+                    "default": "D:\\Users\\TermiNexus\\Desktop\\TransPyC\\VET\\.tpv_build\\output\\VET.exe",
+                    "description": "VET 可执行文件路径（Viper 自身实现的环境发现工具）。",
+                    "scope": "window"
+                },
+                "viper.environmentTool.scanPaths": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [],
+                    "description": "传给 VET 的 --path 扫描目录。留空则让 VET 自行建立常用目录表；一旦填写则完全替换它（不再自动建表）。",
+                    "scope": "window"
+                },
+                "viper.environmentTool.confirmSeconds": {
+                    "type": "number",
+                    "default": 10,
+                    "minimum": 0,
+                    "description": "VET 心跳确认周期（秒，对应 --need-confirm）；0 表示关闭确认（不建议：关闭后 VET 不会因超时自杀）。",
+                    "scope": "window"
+                },
+                "viper.environmentTool.confirmTimeoutMs": {
+                    "type": "number",
+                    "default": 5000,
+                    "minimum": 0,
+                    "description": "VET 每轮确认窗口长度（毫秒，对应 --need-confirm-timeout）；窗口内没收到 {\"ok\":1} 就会退出。",
+                    "scope": "window"
+                },
+                "viper.environmentTool.scanIntervalMs": {
+                    "type": "number",
+                    "default": 10000,
+                    "minimum": 0,
+                    "maximum": 86400000,
+                    "description": "VET 每轮扫盘间隔（毫秒，对应 --sleep）。",
+                    "scope": "window"
+                },
+                "viper.environmentTool.maxRestarts": {
+                    "type": "number",
+                    "default": 5,
+                    "minimum": 0,
+                    "description": "VET 异常退出后的自动重启次数上限（指数退避，单次最多等 30 秒）；超过后通知错误并停止重启。",
+                    "scope": "window"
+                },
                 "viper.analysis.autoImportCompletions": {
                     "type": "boolean",
                     "default": true,

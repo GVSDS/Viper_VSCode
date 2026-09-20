@@ -4,16 +4,24 @@
  */
 
 import { commands, ExtensionContext, window, workspace } from 'vscode';
+import { EnvironmentManager } from './environmentManager';
+import { EnvironmentTool } from './environmentTool';
 import { ProjectManager } from './projectManager';
 import { ToolchainManager } from './toolchainManager';
 import { ViperViewProvider } from './viperViewProvider';
-import { StatusBarManager } from './statusBar';
+import { EnvironmentStatusBar } from './statusBar';
 import { ViperApiImpl } from './api';
 import { VpjEditorProvider } from './vpjEditorProvider';
 
 export async function activate(context: ExtensionContext): Promise<ViperApiImpl> {
     const projects = new ProjectManager();
     const toolchain = new ToolchainManager();
+
+    // VET（Viper Environment Tool）常驻进程：扫盘发现编译器，每轮输出全量 JSON 快照。
+    // stdout 与 stderr 都原样转发到该输出通道（不落盘）。
+    const vetChannel = window.createOutputChannel('Vipeye VET');
+    const environmentTool = new EnvironmentTool(context.globalStorageUri.fsPath, vetChannel);
+    const environments = new EnvironmentManager(context.globalState);
 
     // 初始扫描项目文件。
     await projects.DiscoverProjects();
@@ -22,19 +30,21 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
     const watcher = projects.WatchProjectFiles();
     context.subscriptions.push(watcher);
 
-    // 注册三个树视图。
-    const projectView = new ViperViewProvider('viper.projectView', projects, toolchain);
-    const toolchainView = new ViperViewProvider('viper.toolchainView', projects, toolchain);
-    const settingsView = new ViperViewProvider('viper.settingsView', projects, toolchain);
+    // 注册四个树视图。
+    const projectView = new ViperViewProvider('viper.projectView', projects, toolchain, environments, environmentTool);
+    const toolchainView = new ViperViewProvider('viper.toolchainView', projects, toolchain, environments, environmentTool);
+    const settingsView = new ViperViewProvider('viper.settingsView', projects, toolchain, environments, environmentTool);
+    const environmentView = new ViperViewProvider('viper.environmentView', projects, toolchain, environments, environmentTool);
 
     context.subscriptions.push(
         window.registerTreeDataProvider('viper.projectView', projectView),
         window.registerTreeDataProvider('viper.toolchainView', toolchainView),
-        window.registerTreeDataProvider('viper.settingsView', settingsView)
+        window.registerTreeDataProvider('viper.settingsView', settingsView),
+        window.registerTreeDataProvider('viper.environmentView', environmentView)
     );
 
-    // 状态栏。
-    context.subscriptions.push(new StatusBarManager(toolchain));
+    // 状态栏：只保留 VET 环境项（编译器位置完全由发现结果决定）。
+    context.subscriptions.push(new EnvironmentStatusBar(environments, environmentTool));
 
     // 注册 .vpj 自定义编辑器。
     context.subscriptions.push(VpjEditorProvider.Register(context));
@@ -47,6 +57,42 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
         }),
         toolchain.OnDidChangeToolchain(() => {
             toolchainView.Refresh();
+        })
+    );
+
+    // VET 快照 → 环境清单（自己 diff；VET 每轮都给全量）。
+    context.subscriptions.push(
+        environmentTool.OnDidChangeEnvironments((snapshot) => {
+            const change = environments.ApplySnapshot(snapshot);
+
+            const summary = [`本轮: 共 ${change.Environments.length} 个`];
+            if (change.Added.length > 0) {
+                summary.push(`+${change.Added.length}`);
+            }
+            if (change.Removed.length > 0) {
+                summary.push(`-${change.Removed.length}`);
+            }
+            environmentTool.AppendLog(`[vscode] ${summary.join(' ')}`);
+
+            // 生效环境同步给工具链：有环境就用它（上次用的那个 → 否则发现的第一个），
+            // 一个都没发现时回退到配置/硬编码的兜底路径。
+            const selected = environments.GetSelectedEnvironment();
+            if (selected) {
+                toolchain.ApplyEnvironment(selected.Executable, selected.Version);
+            } else {
+                toolchain.ClearEnvironmentOverride();
+            }
+        }),
+        environments.OnDidChangeEnvironments(() => environmentView.Refresh()),
+        // 进程状态变化（含手动停止）会影响 Environments 视图的空态文案与状态栏。
+        environmentTool.OnDidChangeState(() => environmentView.Refresh()),
+        environments.OnDidChangeSelection((selected) => {
+            if (selected) {
+                toolchain.ApplyEnvironment(selected.Executable, selected.Version);
+            } else {
+                toolchain.ClearEnvironmentOverride();
+            }
+            environmentView.Refresh();
         })
     );
 
@@ -72,6 +118,19 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
             projectView.Refresh();
             toolchainView.Refresh();
             settingsView.Refresh();
+            environmentView.Refresh();
+        }),
+        RegisterCommandSafe(context, 'viper.selectEnvironment', async (environmentId?: unknown) => {
+            await environments.SelectEnvironment(typeof environmentId === 'string' ? environmentId : undefined);
+        }),
+        RegisterCommandSafe(context, 'viper.restartEnvironmentTool', () => {
+            environmentTool.Restart();
+        }),
+        RegisterCommandSafe(context, 'viper.stopEnvironmentTool', () => {
+            environmentTool.Stop();
+        }),
+        RegisterCommandSafe(context, 'viper.showEnvironmentLog', () => {
+            environmentTool.ShowLog();
         }),
         RegisterCommandSafe(context, 'viper.openVpjAsJson', async (uri?: import('vscode').Uri) => {
             const target = uri ?? window.activeTextEditor?.document.uri;
@@ -84,14 +143,23 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
         })
     );
 
-    // 监听配置变更，刷新工具链。
+    // 监听配置变更，刷新工具链 / 重启 VET。
     context.subscriptions.push(
         workspace.onDidChangeConfiguration((e) => {
             if (e.affectsConfiguration('viper.toolchain')) {
                 toolchain.Refresh();
             }
+            if (e.affectsConfiguration('viper.environmentTool')) {
+                environmentTool.Restart();
+            }
         })
     );
+
+    // 生命周期：随扩展一起释放（dispose 会停掉 VET 进程并关闭日志流）。
+    context.subscriptions.push(environmentTool, environments);
+
+    // 启动 VET 扫盘发现。
+    environmentTool.Start();
 
     // 导出 API。
     const api = new ViperApiImpl(projects, toolchain);

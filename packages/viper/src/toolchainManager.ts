@@ -41,11 +41,39 @@ export class ToolchainManager {
 
     /** 重新解析当前工具链（配置变更后调用）。 */
     Refresh(): void {
+        // 环境覆盖优先：用户已经用 VET 选了环境时，配置变更不应把它顶掉。
+        if (this.current.Source === 'env') {
+            return;
+        }
+
         const next = this.ResolveToolchain();
         if (next.Path !== this.current.Path || next.Version !== this.current.Version) {
             this.current = next;
             this._onDidChange.fire(this.current);
         }
+    }
+
+    /**
+     * 用 VET 选中的环境覆盖当前工具链（仅内存，不写配置、不写 .vpj）。
+     * 这样现有的工具链视图/状态栏/API 都能立刻反映「我选的编译器」。
+     */
+    ApplyEnvironment(path: string, version: string): void {
+        if (this.current.Source === 'env' && this.current.Path === path && this.current.Version === version) {
+            return;
+        }
+
+        this.current = { Path: path, Version: version, Source: 'env' };
+        this._onDidChange.fire(this.current);
+    }
+
+    /** 清除环境覆盖，回到「配置项 → 硬编码」的解析结果。 */
+    ClearEnvironmentOverride(): void {
+        if (this.current.Source !== 'env') {
+            return;
+        }
+
+        this.current = this.ResolveToolchain();
+        this._onDidChange.fire(this.current);
     }
 
     private ResolveToolchain(): ToolchainInfo {

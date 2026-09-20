@@ -39,11 +39,12 @@ export class EnvironmentStatusBar implements Disposable {
         const count = this.environments.GetEnvironments().length;
         const stateText = DescribeState(state);
 
-        // 手动停止时点击直接把它拉起来（此时选择环境没有意义）；其余情况点击打开环境选择器。
-        this.item.command = state === 'stopped' ? 'viper.restartEnvironmentTool' : 'viper.selectEnvironment';
+        // 点击状态栏始终打开选择列表：VET 关闭时也一样 —— 已发现的环境仍可选用，
+        // 需要重启 VET 请走命令面板的「Restart VET」。
+        this.item.command = 'viper.selectEnvironment';
 
         if (state === 'stopped') {
-            this.item.text = '$(debug-stop) Viper 环境: 已关闭';
+            this.item.text = '$(debug-stop) VET 已关闭';
         } else if (selected) {
             this.item.text = `$(server-environment) Viper 环境: ${selected.DisplayName}`;
         } else if (count > 0) {
@@ -60,7 +61,9 @@ export class EnvironmentStatusBar implements Disposable {
             selected ? `当前选中: ${selected.DisplayName}\n${selected.Executable}` : '当前选中: （无）',
             `VET: ${this.tool.GetExecutablePath()}`,
             '输出: Vipeye VET 输出通道',
-            state === 'stopped' ? '点击重新启动 VET' : '点击选择环境',
+            state === 'stopped'
+                ? '点击选择编译器（VET 已关闭，已发现的环境仍可选用；重启请用 Restart VET）'
+                : '点击选择编译器',
         ].join('\n');
         this.item.show();
     }

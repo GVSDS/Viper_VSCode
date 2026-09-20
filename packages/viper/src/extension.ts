@@ -9,7 +9,7 @@ import { EnvironmentManager } from './environmentManager';
 import { EnvironmentTool } from './environmentTool';
 import { ProjectManager } from './projectManager';
 import { ToolchainManager } from './toolchainManager';
-import { ViperCheckResult } from './types';
+import { ViperCheckResult, ViperEnvironment } from './types';
 import { ViperViewProvider } from './viperViewProvider';
 import { EnvironmentStatusBar } from './statusBar';
 import { ViperApiImpl } from './api';
@@ -97,6 +97,9 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
             environmentView.Refresh();
         })
     );
+
+    // 选择列表里的「选择编译器…」：手动输入路径 → VET check → 并入环境清单并切过去。
+    environments.SetManualCompilerPicker(() => PickManualCompiler(environmentTool, environments));
 
     // 命令。
     context.subscriptions.push(
@@ -244,53 +247,85 @@ async function CreateProjectCommand(): Promise<void> {
 }
 
 /**
- * 手动指定一个 exe，经 VET 的 check 通道校验（PE/.PRVERSN + `--version` 前缀为 Viper）。
- * 校验通过后 VET 会把它入库并写回缓存文件，下一轮快照里就会出现在 Environments 视图。
+ * 弹文件选择框挑一个 exe，并经 VET 的 check 通道校验。
+ * 返回回执；用户取消时返回 undefined（校验失败会在这里给出错误提示）。
  */
-async function CheckEnvironmentCommand(tool: EnvironmentTool): Promise<void> {
+async function PickAndCheckExecutable(tool: EnvironmentTool): Promise<ViperCheckResult | undefined> {
     const picked = await window.showOpenDialog({
-        title: '选择要检查的 Viper 可执行文件',
+        title: '选择 Viper 编译器',
         canSelectMany: false,
-        openLabel: '检查',
+        openLabel: '选择',
         filters: { 'Viper 可执行文件': ['exe'] },
     });
     const exePath = picked?.[0]?.fsPath;
     if (!exePath) {
+        return undefined;
+    }
+
+    return window.withProgress(
+        { location: ProgressLocation.Notification, title: `VET 正在检查 ${path.basename(exePath)}…` },
+        async () => {
+            try {
+                return await tool.CheckExecutable(exePath);
+            } catch (e) {
+                void window.showErrorMessage(`VET 检查失败：${e instanceof Error ? e.message : String(e)}`);
+                return undefined;
+            }
+        }
+    );
+}
+
+/**
+ * 「选择编译器…」：选一个 exe，经 VET check 通过后并入环境清单并立刻切换过去
+ * （VET 会把该 exe 入库，后续轮次快照里也会带着它）。
+ */
+async function PickManualCompiler(
+    tool: EnvironmentTool,
+    environments: EnvironmentManager
+): Promise<ViperEnvironment | undefined> {
+    const result = await PickAndCheckExecutable(tool);
+    if (!result) {
+        return undefined;
+    }
+
+    const environment = result.Environment;
+    if (result.Ok && environment) {
+        environments.AddEnvironment(environment);
+        const selected = await environments.SelectEnvironment(environment.Id);
+        void window.showInformationMessage(`已切换到 ${environment.DisplayName}（${environment.Arch}）`);
+        return selected;
+    }
+
+    void window.showErrorMessage(`VET 检查未通过：${DescribeCheckMessage(result.Message)}`);
+    return undefined;
+}
+
+/** 手动指定一个 exe 做检查（只检查、不切换），结果通过信息消息回报。 */
+async function CheckEnvironmentCommand(tool: EnvironmentTool): Promise<void> {
+    const result = await PickAndCheckExecutable(tool);
+    if (!result) {
         return;
     }
 
-    await window.withProgress(
-        { location: ProgressLocation.Notification, title: `VET 正在检查 ${path.basename(exePath)}…` },
-        async () => {
-            let result: ViperCheckResult;
-            try {
-                result = await tool.CheckExecutable(exePath);
-            } catch (e) {
-                void window.showErrorMessage(`VET 检查失败：${e instanceof Error ? e.message : String(e)}`);
-                return;
-            }
+    const environment = result.Environment;
+    if (result.Ok && environment) {
+        void window
+            .showInformationMessage(
+                `VET 检查通过：${environment.DisplayName}（${environment.Arch}）`,
+                '选择为当前环境',
+                '显示详情'
+            )
+            .then((choice) => {
+                if (choice === '选择为当前环境') {
+                    void commands.executeCommand('viper.selectEnvironment', environment.Id);
+                } else if (choice === '显示详情') {
+                    void window.showInformationMessage(environment.Executable, { modal: true });
+                }
+            });
+        return;
+    }
 
-            const environment = result.Environment;
-            if (result.Ok && environment) {
-                void window
-                    .showInformationMessage(
-                        `VET 检查通过：${environment.DisplayName}（${environment.Arch}）`,
-                        '选择为当前环境',
-                        '显示详情'
-                    )
-                    .then((choice) => {
-                        if (choice === '选择为当前环境') {
-                            void commands.executeCommand('viper.selectEnvironment', environment.Id);
-                        } else if (choice === '显示详情') {
-                            void window.showInformationMessage(environment.Executable, { modal: true });
-                        }
-                    });
-                return;
-            }
-
-            void window.showErrorMessage(`VET 检查未通过：${DescribeCheckMessage(result.Message)}`);
-        }
-    );
+    void window.showErrorMessage(`VET 检查未通过：${DescribeCheckMessage(result.Message)}`);
 }
 
 /** 把 VET 回执里的 check_msg 固定原因串翻译成可读说明。 */

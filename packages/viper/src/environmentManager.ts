@@ -6,7 +6,15 @@
  * 并把「选中哪个环境」持久化到扩展状态（globalState）——刻意不写回 .vpj，保持项目文件干净。
  */
 
-import { Disposable, Event, EventEmitter, Memento, QuickPickItem, window, commands } from 'vscode';
+import {
+    Disposable,
+    Event,
+    EventEmitter,
+    Memento,
+    QuickPickItem,
+    QuickPickItemKind,
+    window,
+} from 'vscode';
 
 import { ViperEnvironment } from './types';
 
@@ -20,11 +28,18 @@ export interface EnvironmentChange {
     Removed: ViperEnvironment[];
 }
 
+/**
+ * 「手动指定编译器」的处理（由扩展入口注入：弹输入框取路径 + 走 VET 的 check 通道）。
+ * 返回被选中的环境表示已处理完；返回 undefined 表示用户取消或校验未通过。
+ */
+export type ManualCompilerPicker = () => Promise<ViperEnvironment | undefined>;
+
 export class EnvironmentManager implements Disposable {
     private static readonly SelectedIdKey = 'viper.environmentTool.selectedId';
 
     private environments: ViperEnvironment[] = [];
     private selectedId: string | undefined;
+    private manualCompilerPicker: ManualCompilerPicker | undefined;
 
     private readonly _onDidChangeEnvironments = new EventEmitter<EnvironmentChange>();
     readonly OnDidChangeEnvironments: Event<EnvironmentChange> = this._onDidChangeEnvironments.event;
@@ -92,7 +107,8 @@ export class EnvironmentManager implements Disposable {
     }
 
     /**
-     * 选择环境。
+     * 选择编译器。列表结构：首项是「选择编译器…」（手动输入 exe 路径），随后一条分隔线，
+     * 再之后才是 VET 搜到的环境。VET 关闭时这个列表照样可用（已发现的环境仍能选用）。
      * @param environmentId 传入则直接选中该 id；不传则弹 QuickPick 让用户选。
      */
     async SelectEnvironment(environmentId?: string): Promise<ViperEnvironment | undefined> {
@@ -100,31 +116,59 @@ export class EnvironmentManager implements Disposable {
             return this.ApplySelection(environmentId);
         }
 
-        const all = this.environments;
-        if (all.length === 0) {
-            const picked = await window.showWarningMessage('VET 还没有发现任何 Viper 编译器。', '重启 VET 扫描');
-            if (picked === '重启 VET 扫描') {
-                void commands.executeCommand('viper.restartEnvironmentTool');
-            }
-            return undefined;
+        const items: CompilerPickItem[] = [
+            {
+                label: '$(file) 选择编译器…',
+                description: '手动指定 exe 路径',
+                Manual: true,
+            },
+        ];
+        if (this.environments.length > 0) {
+            items.push({ label: '', kind: QuickPickItemKind.Separator });
+            items.push(
+                ...this.environments.map<EnvironmentQuickPickItem>((environment) => ({
+                    label: environment.DisplayName,
+                    description: `${environment.Version} · ${environment.Arch} · ${environment.Source}`,
+                    detail: environment.Executable,
+                    picked: environment.Id === this.selectedId,
+                    Environment: environment,
+                }))
+            );
         }
 
-        const items = all.map<EnvironmentQuickPickItem>((environment) => ({
-            label: environment.DisplayName,
-            description: `${environment.Version} · ${environment.Arch} · ${environment.Source}`,
-            detail: environment.Executable,
-            picked: environment.Id === this.selectedId,
-            Environment: environment,
-        }));
-
         const picked = await window.showQuickPick(items, {
-            title: '选择 Viper 环境',
-            placeHolder: '选择要使用的 Viper 编译器（仅保存在扩展状态，不写入 .vpj）',
+            title: '选择编译器',
+            placeHolder: '选择要为当前工作区使用的 Viper 编译器',
             matchOnDescription: true,
             matchOnDetail: true,
         });
+        if (!picked) {
+            return undefined;
+        }
+        if ('Manual' in picked) {
+            return this.manualCompilerPicker ? await this.manualCompilerPicker() : undefined;
+        }
+        if ('Environment' in picked) {
+            return this.ApplySelection(picked.Environment.Id);
+        }
+        return undefined;
+    }
 
-        return picked ? this.ApplySelection(picked.Environment.Id) : undefined;
+    /** 注入「手动指定编译器」的处理（扩展入口提供：输入框取路径 + VET check）。 */
+    SetManualCompilerPicker(picker: ManualCompilerPicker): void {
+        this.manualCompilerPicker = picker;
+    }
+
+    /**
+     * 把一个刚通过 VET check 的环境并入清单 —— 下一轮全量快照（≤ scanIntervalMs）到达前
+     * 就能立刻选中它；快照到达时因为已在表中，diff 不会重复算作新增。
+     */
+    AddEnvironment(environment: ViperEnvironment): void {
+        const next = [...this.environments.filter((item) => item.Id !== environment.Id), environment].sort(
+            CompareEnvironments
+        );
+        this.environments = next;
+        this._onDidChangeEnvironments.fire({ Environments: next, Added: [environment], Removed: [] });
     }
 
     dispose(): void {
@@ -145,9 +189,17 @@ export class EnvironmentManager implements Disposable {
     }
 }
 
+/** 「选择编译器…」项：点击后走手动输入路径。 */
+interface ManualPickItem extends QuickPickItem {
+    Manual: true;
+}
+
 interface EnvironmentQuickPickItem extends QuickPickItem {
     Environment: ViperEnvironment;
 }
+
+/** 选择列表上的项：手动项 / VET 搜到的环境 / 分隔线。 */
+type CompilerPickItem = ManualPickItem | EnvironmentQuickPickItem | QuickPickItem;
 
 /** 排序：先按来源分组，再按展示名；保证每轮快照顺序稳定（避免视图抖动）。 */
 function CompareEnvironments(left: ViperEnvironment, right: ViperEnvironment): number {

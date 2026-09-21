@@ -1,5 +1,13 @@
 # Change Log
 
+## 1.1.414
+
+- **enum 语法**：支持 `enum NAME:` 声明（等价 `class NAME(t.CEnum):`），成员可只写名字（裸名 / 逗号分隔，如 `enum X: a, b, c`），也支持 `enum X: a, b, c` 后换行 TAB 继续写成员
+- **enum 取值推导**：成员取值按编译期规则推导（从 0 递增，中间显式赋值后从该值 +1 继续），hover 显示枚举类型与推导值（如 `(variable) IsAsync: ASTFlag = 0`），成员可隐式转换为 `int`
+- **define 常量声明**：支持 `define NAME: 类型 = 值` 与 `define NAME = 值`（后者类型由字面量推导）；`define f(...)` 宏函数行为不变
+- **整数字面量位宽校验**：字面量无法存入声明类型位宽时报错并提示扩容（如 `int` 为 i32 存不下 10^31），`define` 与普通声明同样适用；位宽表覆盖 `int`/`bool`/`iN`/`uN`/`t.CInt`/`t.CUInt`/`t.CLong`/`t.CInt{n}T`/`t.CUInt{n}T` 等
+- 类型检查：枚举成员取值越界复用同一份范围表，避免重复报错
+
 ## 1.1.413
 
 - **内置 char 类型**：复刻 int 定义（8 位字符/整型），与 `t.CChar`、`int` 双向隐式转换，`char → float/double` 无损

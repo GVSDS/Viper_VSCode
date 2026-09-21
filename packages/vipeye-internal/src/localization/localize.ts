@@ -463,6 +463,14 @@ export namespace Localizer {
         export const enumMemberSet = () =>
             new ParameterizedString<{ name: string }>(getRawString('Diagnostic.enumMemberSet'));
         export const enumMemberTypeAnnotation = () => getRawString('Diagnostic.enumMemberTypeAnnotation');
+        export const viperEnumValueOutOfRange = () =>
+            new ParameterizedString<{ value: string; type: string; min: string; max: string }>(
+                getRawString('Diagnostic.viperEnumValueOutOfRange')
+            );
+        export const viperIntegerLiteralOutOfRange = () =>
+            new ParameterizedString<{ value: string; type: string; min: string; max: string }>(
+                getRawString('Diagnostic.viperIntegerLiteralOutOfRange')
+            );
         export const viperBeforeInitReserved = () => getRawString('Diagnostic.viperBeforeInitReserved');
         export const exceptionGroupIncompatible = () => getRawString('Diagnostic.exceptionGroupIncompatible');
         export const exceptGroupMismatch = () => getRawString('Diagnostic.exceptGroupMismatch');

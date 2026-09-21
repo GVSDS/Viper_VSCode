@@ -647,11 +647,14 @@ enum MagicsKind {
 // Viper 支持将 C 修饰/声明语义写成语句前缀关键字：
 //   inline/export/extern def f(...)         —— 修饰关键字，必须与 def 搭配
 //   fn/fun/func/function f(...)             —— def 的别名
-//   enum/rnum class|struct Foo              —— 等价 t.CEnum / t.REnum
-//   enum Foo: / rnum Foo:                   —— 单独使用（等价 class Foo:）
+//   enum/rnum class|struct Foo              —— 跳过前缀关键字（后续 class 正常解析）
+//   enum Foo:                               —— 等价 `class Foo(t.CEnum):`（枚举）
+//   rnum Foo: / union Foo:                  —— 等价 class Foo:
 //   struct Foo:                             —— 独立的 struct 关键字（等价 class）
 // 返回 'skip'：跳过该关键字 token（后续 def/class 正常解析，位置与缩进不变）；
-// 返回 'class'：把 enum/rnum/struct 当作 class 关键字；
+// 返回 'class'：把 rnum/union/struct 当作 class 关键字；
+// 返回 'classEnum'：把 enum 当作 class 关键字，并标记为 Viper 枚举
+//   （等价 `class Foo(t.CEnum)`，analyzer 会赋予 CEnum 枚举语义）；
 // 返回 'def'：把 fn/fun/func/function 当作 def 关键字；
 // 返回 'viperModifier'：inline/export/extern 生成修饰关键字 token，由 parser
 //   判断是否与 def 搭配（搭配则跳过并记录，单独使用则报错）；
@@ -662,7 +665,7 @@ function getViperStatementKeywordAction(
     identifierEnd: number,
     name: string,
     precededByViperModifier: boolean
-): 'skip' | 'class' | 'def' | 'viperModifier' | undefined {
+): 'skip' | 'class' | 'classEnum' | 'def' | 'viperModifier' | undefined {
     const nextWord = peekViperKeywordWord(text, identifierEnd);
     if (name === 'inline' || name === 'export' || name === 'extern') {
         // 修饰关键字仅在语句起始处生效，避免误伤 `self.inline` 等成员名。
@@ -694,12 +697,16 @@ function getViperStatementKeywordAction(
         if (nextWord === 'class' || nextWord === 'struct') {
             return 'skip';
         }
-        // `enum A:` / `rnum A:` / `union A:` 单独使用（等价 class A:）。
-        return isViperAtStatementStart(text, identifierStart) &&
-            nextWord.length > 0 &&
-            isIdentifierStartChar(nextWord.charCodeAt(0))
-            ? 'class'
-            : undefined;
+        // `enum A:` / `rnum A:` / `union A:` 单独使用。
+        if (
+            !isViperAtStatementStart(text, identifierStart) ||
+            nextWord.length === 0 ||
+            !isIdentifierStartChar(nextWord.charCodeAt(0))
+        ) {
+            return undefined;
+        }
+        // `enum A:` 等价 `class A(t.CEnum):`；`rnum A:` / `union A:` 等价 `class A:`。
+        return name === 'enum' ? 'classEnum' : 'class';
     }
     if (name === 'struct') {
         // 仅当 struct 位于语句起始（行首仅空白）且后跟标识符（类名）时才视为 class，
@@ -1517,6 +1524,13 @@ export class Tokenizer {
                 }
                 if (viperAction === 'class') {
                     this._tokens.push(KeywordToken.create(start, length, KeywordType.Class, this._getComments()));
+                    return true;
+                }
+                if (viperAction === 'classEnum') {
+                    // `enum Foo:` → `class Foo(t.CEnum):`：合成带枚举标记的 class 关键字 token。
+                    this._tokens.push(
+                        KeywordToken.create(start, length, KeywordType.Class, this._getComments(), /* isViperEnum */ true)
+                    );
                     return true;
                 }
                 if (viperAction === 'def') {

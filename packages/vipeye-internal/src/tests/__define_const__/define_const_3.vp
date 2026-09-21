@@ -1,0 +1,9 @@
+import t
+
+define MAX_SIZE: int = 1024
+define FLAG = 1
+
+def use() -> int:
+    a: int = MAX_SIZE
+    b: int = FLAG
+    return a + b

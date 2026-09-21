@@ -19401,6 +19401,14 @@ export function createTypeEvaluator(
                 }
             }
 
+            // Viper 扩展：`enum X:` 语法声明的枚举隐式继承 t.CEnum。
+            // 标记 EnumClass 使枚举成员访问（如 ASTFlag.IsAsync）返回枚举类型
+            // 而不是成员的声明类型（与 class X(t.CEnum) 的语义一致）；
+            // 标记 ViperEnumClass 使枚举可隐式转换为 int（等价 CEnum 子类）。
+            if (node.d.isViperEnum) {
+                classType.shared.flags |= ClassTypeFlags.EnumClass | ClassTypeFlags.ViperEnumClass;
+            }
+
             // Make sure we don't have 'object' derive from itself. Infinite
             // recursion will result.
             if (
@@ -26842,9 +26850,11 @@ export function createTypeEvaluator(
         // C 语言中 enum 值可以隐式转换为 int（如 int x = FR_OK）。
         // Viper 的 CEnum 子类（如 FRESULT）的成员（如 FRESULT.FR_OK）
         // 可以赋值给 int 类型的变量/字段。
+        // `enum X:` 语法声明的枚举（ViperEnumClass）等价 CEnum 子类，同样适用。
         if (
             isClassInstance(destType) && ClassType.isBuiltIn(destType, 'int') &&
-            isClassInstance(srcType) && isCEnumSubclassType(srcType)
+            isClassInstance(srcType) &&
+            (isCEnumSubclassType(srcType) || ClassType.isViperEnumClass(srcType))
         ) {
             return true;
         }

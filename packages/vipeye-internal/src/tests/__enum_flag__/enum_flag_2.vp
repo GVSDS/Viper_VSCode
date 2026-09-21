@@ -1,0 +1,8 @@
+import t
+
+enum X: a, b, c
+    d
+
+def use_x() -> int:
+    v: int = X.d
+    return 0

@@ -1,0 +1,12 @@
+import t
+
+enum ASTFlag:
+    IsAsync
+    Simple
+    HasStar: int
+
+def use_enum() -> int:
+    a: int = ASTFlag.IsAsync
+    b: int = ASTFlag.Simple
+    c: int = ASTFlag.HasStar
+    return 0

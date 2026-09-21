@@ -1,0 +1,10 @@
+import t
+
+enum Mid:
+    a
+    b = 5
+    c: t.u8
+
+def use_mid() -> int:
+    v: int = Mid.c
+    return 0

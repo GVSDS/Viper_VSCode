@@ -1,0 +1,11 @@
+import t
+
+define BIG_INT: int = 10000000000000000000000000000000
+PLAIN_BIG: int = 10000000000000000000000000000000
+define SMALL_ENUM: t.CInt8T = 200
+define OK_BIG: t.CUInt64T = 18446744073709551615
+define OK_NEG: int = -2147483648
+define OK_POS: int = 2147483647
+
+def use() -> int:
+    return 0

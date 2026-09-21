@@ -10,7 +10,8 @@
 import { assert } from '../common/debug';
 import { IsViperDialect } from '../common/dialect';
 import { PythonVersion, pythonVersion3_13 } from '../common/pythonVersion';
-import { ArgCategory, ExpressionNode, NameNode, ParseNode, ParseNodeType } from '../parser/parseNodes';
+import { ArgCategory, ClassNode, ExpressionNode, NameNode, ParseNode, ParseNodeType } from '../parser/parseNodes';
+import { OperatorType } from '../parser/tokenizerTypes';
 import { getFileInfo } from './analyzerNodeInfo';
 import { VariableDeclaration } from './declaration';
 import { getClassFullName, getEnclosingClass, getTypeSourceId } from './parseTreeUtils';
@@ -301,6 +302,118 @@ export function createEnumType(
     return classType;
 }
 
+// Viper 扩展：按声明顺序推导 `enum X:` 各成员的编译期取值。
+// 规则：从 0 递增；中间显式赋值则改用该值并从其 +1 继续；
+// 显式赋的不是整数字面量时无法推导，其后成员也不推导（直到再次遇到显式整数字面量）。
+// 供枚举成员 hover 显示与取值越界校验共用同一份规则。
+export function getViperEnumMemberValues(classNode: ClassNode): Map<string, bigint> {
+    const values = new Map<string, bigint>();
+    // 目标 ES 版本低于 ES2020，不能用 BigInt 字面量（0n / 1n），统一用 BigInt()。
+    let nextValue: bigint | undefined = BigInt(0);
+
+    const addMember = (nameNode: NameNode, explicitValueNode: ExpressionNode | undefined) => {
+        const value = explicitValueNode ? getViperIntegerLiteralValue(explicitValueNode) : nextValue;
+        nextValue = value === undefined ? undefined : value + BigInt(1);
+
+        if (value !== undefined) {
+            values.set(nameNode.d.value, value);
+        }
+    };
+
+    classNode.d.suite.d.statements.forEach((statement) => {
+        if (statement.nodeType !== ParseNodeType.StatementList) {
+            return;
+        }
+
+        statement.d.statements.forEach((subStatement) => {
+            switch (subStatement.nodeType) {
+                case ParseNodeType.Name:
+                    // 裸名成员。
+                    addMember(subStatement, undefined);
+                    break;
+
+                case ParseNodeType.Tuple:
+                    // 逗号分隔的裸名成员（enum X: a, b, c）。
+                    subStatement.d.items.forEach((item) => {
+                        if (item.nodeType === ParseNodeType.Name) {
+                            addMember(item, undefined);
+                        }
+                    });
+                    break;
+
+                case ParseNodeType.TypeAnnotation:
+                    // `成员: 类型`（无显式赋值）。
+                    if (subStatement.d.valueExpr.nodeType === ParseNodeType.Name) {
+                        addMember(subStatement.d.valueExpr, undefined);
+                    }
+                    break;
+
+                case ParseNodeType.Assignment: {
+                    // `成员 = 值` 或 `成员: 类型 = 值`。
+                    const leftExpr = subStatement.d.leftExpr;
+                    if (
+                        leftExpr.nodeType === ParseNodeType.TypeAnnotation &&
+                        leftExpr.d.valueExpr.nodeType === ParseNodeType.Name
+                    ) {
+                        addMember(leftExpr.d.valueExpr, subStatement.d.rightExpr);
+                    } else if (leftExpr.nodeType === ParseNodeType.Name) {
+                        addMember(leftExpr, subStatement.d.rightExpr);
+                    }
+                    break;
+                }
+            }
+        });
+    });
+
+    return values;
+}
+
+// Viper 扩展：从字面量表达式取整数值（支持一元负号），非整数字面量返回 undefined。
+// 用 bigint 返回，超长整数字面量（tokenizer 已按 bigint 保存）不会丢精度。
+export function getViperIntegerLiteralValue(node: ExpressionNode): bigint | undefined {
+    if (node.nodeType === ParseNodeType.Number) {
+        if (node.d.isImaginary || !node.d.isInteger) {
+            return undefined;
+        }
+
+        if (typeof node.d.value === 'bigint') {
+            return node.d.value;
+        }
+
+        return Number.isInteger(node.d.value) ? BigInt(node.d.value) : undefined;
+    }
+
+    if (node.nodeType === ParseNodeType.UnaryOperation && node.d.operator === OperatorType.Subtract) {
+        const innerValue = getViperIntegerLiteralValue(node.d.expr);
+        return innerValue === undefined ? undefined : -innerValue;
+    }
+
+    return undefined;
+}
+
+// Viper 扩展：判断裸名节点是否为 `enum X:` 的成员声明。
+// 形如：
+//   enum ASTFlag:
+//       IsAsync          —— 类体内单独的裸名语句
+//   enum X: a, b, c      —— 逗号分隔的裸名元组（每个裸名都是成员）
+function isViperEnumBareMemberName(nameNode: NameNode): boolean {
+    const parent = nameNode.parent;
+    if (!parent) {
+        return false;
+    }
+
+    if (parent.nodeType === ParseNodeType.StatementList) {
+        // 类体内单独的裸名语句（`IsAsync`）。
+    } else if (parent.nodeType === ParseNodeType.Tuple && parent.parent?.nodeType === ParseNodeType.StatementList) {
+        // 逗号分隔的裸名（`enum X: a, b, c`）。
+    } else {
+        return false;
+    }
+
+    // 仅 `enum X:` 语法声明的枚举适用：普通类体内的裸名语句仍是普通表达式。
+    return getEnclosingClass(nameNode, /* stopAtFunction */ true)?.d.isViperEnum === true;
+}
+
 // Performs the "magic" that the Enum metaclass does at runtime when it
 // transforms a value into an enum instance. If the specified name isn't
 // an enum member, this function returns undefined indicating that the
@@ -399,6 +512,10 @@ export function transformTypeForEnumMember(
             ) {
                 valueTypeExprNode = nameNode.parent.parent.d.rightExpr;
             }
+        } else if (IsViperDialect(getFileInfo(nameNode).executionEnvironment.dialect) && isViperEnumBareMemberName(nameNode)) {
+            // Viper 扩展：`enum X:` 只写成员名（裸名 / 逗号分隔的裸名）时，
+            // 成员既无注解也无赋值，但仍是枚举成员（取值由编译期推导）。
+            isMemberOfEnumeration = true;
         }
 
         // The spec specifically excludes names that start and end with a single underscore.

@@ -99,7 +99,13 @@ import { addInheritedDataClassEntries } from './dataClasses';
 import { Declaration, DeclarationType, isAliasDeclaration, isVariableDeclaration } from './declaration';
 import { getNameNodeForDeclaration } from './declarationUtils';
 import { getDeprecatedAliases, getDeprecatedSpecialForms } from './deprecatedSymbols';
-import { getEnumDeclaredValueType, isEnumClassWithMembers, transformTypeForEnumMember } from './enums';
+import {
+    getEnumDeclaredValueType,
+    getViperEnumMemberValues,
+    getViperIntegerLiteralValue,
+    isEnumClassWithMembers,
+    transformTypeForEnumMember,
+} from './enums';
 import { ImportResolver, createImportedModuleDescriptor } from './importResolver';
 import { ImportResult, ImportType } from './importResult';
 import { getRelativeModuleName, getTopLevelImports } from './importStatementUtils';
@@ -410,6 +416,11 @@ export class Checker extends ParseTreeWalker {
             this._validateDataClassPostInit(classTypeResult.classType);
 
             this._validateEnumMembers(classTypeResult.classType, node);
+
+            // Viper 扩展：`enum X:` 枚举成员的编译期推取值需要能存入成员声明的类型。
+            if (node.d.isViperEnum) {
+                this._validateViperEnumMemberValues(node);
+            }
 
             if (ClassType.isTypedDictClass(classTypeResult.classType)) {
                 this._validateTypedDictClassSuite(node.d.suite);
@@ -1234,6 +1245,9 @@ export class Checker extends ParseTreeWalker {
     override visitAssignment(node: AssignmentNode): boolean {
         this._evaluator.evaluateTypesForStatement(node);
 
+        // Viper 扩展：整数字面量必须能存入声明类型的位宽（如 int 为 i32）。
+        this._validateViperIntegerLiteralType(node);
+
         if (node.d.annotationComment) {
             this._evaluator.getType(node.d.annotationComment);
 
@@ -2018,6 +2032,12 @@ export class Checker extends ParseTreeWalker {
             return;
         }
 
+        // Viper 扩展：`enum X:` 的成员可以只写成员名（裸名 / 逗号分隔的裸名），
+        // 它们是成员声明而不是"无效果的表达式"，不报未使用表达式。
+        if (this._isViperEnumMemberNameExpression(node)) {
+            return;
+        }
+
         const simpleExpressionTypes = [
             ParseNodeType.UnaryOperation,
             ParseNodeType.BinaryOperation,
@@ -2058,6 +2078,144 @@ export class Checker extends ParseTreeWalker {
         if (reportAsUnused) {
             this._evaluator.addDiagnostic(DiagnosticRule.reportUnusedExpression, LocMessage.unusedExpression(), node);
         }
+    }
+
+    // Viper 扩展：判断表达式语句是否为 `enum X:` 的成员名声明
+    // （类体内单独的裸名语句，或逗号分隔的裸名元组）。
+    private _isViperEnumMemberNameExpression(node: ParseNode): boolean {
+        if (node.nodeType === ParseNodeType.Name) {
+            return this._isViperEnumMemberNameNode(node);
+        }
+
+        if (
+            node.nodeType === ParseNodeType.Tuple &&
+            node.d.items.length > 0 &&
+            node.d.items.every((item) => item.nodeType === ParseNodeType.Name)
+        ) {
+            // 逗号分隔的裸名成员（enum X: a, b, c）。
+            return ParseTreeUtils.getEnclosingClass(node, /* stopAtFunction */ true)?.d.isViperEnum === true;
+        }
+
+        return false;
+    }
+
+    // Viper 扩展：判断裸名节点是否直接作为 `enum X:` 类体内的成员声明语句出现。
+    private _isViperEnumMemberNameNode(node: NameNode): boolean {
+        const parent = node.parent;
+        const isMemberStatement =
+            parent?.nodeType === ParseNodeType.StatementList ||
+            (parent?.nodeType === ParseNodeType.Tuple && parent.parent?.nodeType === ParseNodeType.StatementList);
+
+        return (
+            isMemberStatement &&
+            ParseTreeUtils.getEnclosingClass(node, /* stopAtFunction */ true)?.d.isViperEnum === true
+        );
+    }
+
+    // Viper 扩展：校验 `enum X:` 枚举成员的编译期推导取值能否存入成员声明的类型。
+    // 取值从 0 递增推导（见 enums.ts），故按非负取值给出范围（i1 即 0 ~ 1）。
+    // 只处理"仅注解无赋值"的成员：带显式赋值的成员（如 `c: t.i1 = 2`）由
+    // _validateViperIntegerLiteralType 按整数字面量规则统一校验，避免重复报错。
+    private _validateViperEnumMemberValues(node: ClassNode) {
+        const memberValues = getViperEnumMemberValues(node);
+
+        node.d.suite.d.statements.forEach((statement) => {
+            if (statement.nodeType !== ParseNodeType.StatementList) {
+                return;
+            }
+
+            statement.d.statements.forEach((subStatement) => {
+                // `成员: 类型`（无显式赋值）：取值由编译期推导。
+                if (
+                    subStatement.nodeType !== ParseNodeType.TypeAnnotation ||
+                    subStatement.d.valueExpr.nodeType !== ParseNodeType.Name
+                ) {
+                    return;
+                }
+
+                const nameNode = subStatement.d.valueExpr;
+                const value = memberValues.get(nameNode.d.value);
+                if (value === undefined) {
+                    return;
+                }
+
+                const range = this._getViperIntegerTypeRange(
+                    subStatement.d.annotation,
+                    /* allowNegativeBitVector */ false
+                );
+                if (!range || (value >= range.min && value <= range.max)) {
+                    return;
+                }
+
+                this._evaluator.addDiagnostic(
+                    DiagnosticRule.reportGeneralTypeIssues,
+                    LocMessage.viperEnumValueOutOfRange().format({
+                        value: value.toString(),
+                        type: range.typeName,
+                        min: range.min.toString(),
+                        max: range.max.toString(),
+                    }),
+                    nameNode
+                );
+            });
+        });
+    }
+
+    // Viper 扩展：取枚举成员类型注解对应的整型可表示范围。
+    // 优先使用注解书写形式（如 `i1` / `t.CInt8T`）解析，别名形式再回退到已解析类型名。
+    private _getViperIntegerTypeRange(
+        declaredTypeNode: ExpressionNode,
+        allowNegativeBitVector: boolean
+    ): ViperIntegerRange | undefined {
+        const writtenName = getViperWrittenTypeName(declaredTypeNode);
+        if (writtenName) {
+            const range = getViperIntegerTypeRangeFromName(writtenName, allowNegativeBitVector);
+            if (range) {
+                return range;
+            }
+        }
+
+        const annotationType = this._evaluator.getTypeOfAnnotation(declaredTypeNode);
+        if (annotationType && isClass(annotationType) && annotationType.shared.name) {
+            const range = getViperIntegerTypeRangeFromName(annotationType.shared.name, allowNegativeBitVector);
+            if (range) {
+                return range;
+            }
+        }
+
+        return undefined;
+    }
+
+    // Viper 扩展：`NAME: 类型 = 整数字面量` 时校验字面量能否存入类型的位宽。
+    // 例如 `define CONST_INT: int = 10000000000000000000000000000000`
+    // （int 为 i32，无法正确存储该数字，需要扩容）；`define` 与普通声明形式同样适用。
+    private _validateViperIntegerLiteralType(node: AssignmentNode) {
+        const leftExpr = node.d.leftExpr;
+        if (leftExpr.nodeType !== ParseNodeType.TypeAnnotation) {
+            return;
+        }
+
+        const literalValue = getViperIntegerLiteralValue(node.d.rightExpr);
+        if (literalValue === undefined) {
+            return;
+        }
+
+        const range = this._getViperIntegerTypeRange(leftExpr.d.annotation, /* allowNegativeBitVector */ true);
+        if (!range || (literalValue >= range.min && literalValue <= range.max)) {
+            return;
+        }
+
+        this._evaluator.addDiagnostic(
+            DiagnosticRule.reportGeneralTypeIssues,
+            LocMessage.viperIntegerLiteralOutOfRange().format({
+                // 用源码书写形式，超长字面量不丢精度（如 10^31）。
+                value: ParseTreeUtils.printExpression(node.d.rightExpr),
+                type: range.typeName,
+                min: range.min.toString(),
+                max: range.max.toString(),
+            }),
+            node.d.rightExpr
+        );
     }
 
     // Verifies that the target of a nonlocal statement is not a PEP 695-style
@@ -4505,6 +4663,12 @@ export class Checker extends ParseTreeWalker {
 
     private _reportUnboundName(node: NameNode) {
         if (this._fileInfo.diagnosticRuleSet.reportUnboundVariable === 'none') {
+            return;
+        }
+
+        // Viper 扩展：`enum X:` 的裸名成员是成员声明（取值由编译期推导），
+        // 不是在读取一个未绑定的变量。
+        if (this._isViperEnumMemberNameNode(node)) {
             return;
         }
 
@@ -7882,4 +8046,115 @@ export class Checker extends ParseTreeWalker {
             }
         });
     }
+}
+
+// Viper 扩展：整型的可表示范围（用于整数字面量 / 枚举取值的位宽校验）。
+interface ViperIntegerRange {
+    typeName: string;
+    min: bigint;
+    max: bigint;
+}
+
+// Viper 扩展：取类型注解的书写形式（如 `i1`、`t.CInt8T` 取 `CInt8T`）。
+function getViperWrittenTypeName(declaredTypeNode: ExpressionNode): string | undefined {
+    if (declaredTypeNode.nodeType === ParseNodeType.Name) {
+        return declaredTypeNode.d.value;
+    }
+    if (declaredTypeNode.nodeType === ParseNodeType.MemberAccess) {
+        return declaredTypeNode.d.member.d.value;
+    }
+    return undefined;
+}
+
+function viperSignedRange(typeName: string, bits: number): ViperIntegerRange | undefined {
+    if (!Number.isInteger(bits) || bits < 1 || bits > 64) {
+        return undefined;
+    }
+
+    // 目标 ES 版本低于 ES2020，不能用 BigInt 字面量（1n），统一用 BigInt()。
+    const half = BigInt(1) << BigInt(bits - 1);
+    return { typeName, min: -half, max: half - BigInt(1) };
+}
+
+function viperUnsignedRange(typeName: string, bits: number): ViperIntegerRange | undefined {
+    if (!Number.isInteger(bits) || bits < 1 || bits > 64) {
+        return undefined;
+    }
+
+    return { typeName, min: BigInt(0), max: (BigInt(1) << BigInt(bits)) - BigInt(1) };
+}
+
+// Viper 扩展：按类型名给出可表示范围。仅覆盖宽度明确的整型，其余返回 undefined
+// （不做校验，避免误报）。位宽来源见 wiki 02-type-system.md。
+// allowNegativeBitVector：LLVM 位向量短名（iN）是否允许负数——位向量的符号由运算决定，
+//   枚举成员取值必然非负（从 0 递增），传 false 时范围即 [0, 2^N-1]；
+//   一般整数字面量可为负，传 true 时取有/无符号并集 [-2^(N-1), 2^N-1]。
+function getViperIntegerTypeRangeFromName(
+    typeName: string,
+    allowNegativeBitVector: boolean
+): ViperIntegerRange | undefined {
+    let match = /^u(\d+)$/.exec(typeName);
+    if (match) {
+        return viperUnsignedRange(typeName, Number(match[1]));
+    }
+
+    match = /^i(\d+)$/.exec(typeName);
+    if (match) {
+        const bits = Number(match[1]);
+        const unsignedRange = viperUnsignedRange(typeName, bits);
+        if (!allowNegativeBitVector || !unsignedRange) {
+            return unsignedRange;
+        }
+
+        const signedRange = viperSignedRange(typeName, bits);
+        return signedRange ? { typeName, min: signedRange.min, max: unsignedRange.max } : unsignedRange;
+    }
+
+    // 定宽整数：CInt{n}T / CUInt{n}T / CInt{Least|Fast}{n}T / CIntMaxT / CUIntMaxT。
+    match = /^CIntMaxT$/.exec(typeName);
+    if (match) {
+        return viperSignedRange(typeName, 64);
+    }
+
+    match = /^CUIntMaxT$/.exec(typeName);
+    if (match) {
+        return viperUnsignedRange(typeName, 64);
+    }
+
+    match = /^CInt(?:Least|Fast)?(\d+)T$/.exec(typeName);
+    if (match) {
+        return viperSignedRange(typeName, Number(match[1]));
+    }
+
+    match = /^CUInt(?:Least|Fast)?(\d+)T$/.exec(typeName);
+    if (match) {
+        return viperUnsignedRange(typeName, Number(match[1]));
+    }
+
+    // 基本 C 类型与内置类型。[位宽, 是否有符号]
+    const basicRanges: Record<string, [number, boolean]> = {
+        CChar: [8, true],
+        CSignedChar: [8, true],
+        CUnsignedChar: [8, false],
+        CShort: [16, true],
+        CUnsignedShort: [16, false],
+        CInt: [32, true],
+        CUnsigned: [32, false],
+        CUnsignedInt: [32, false],
+        CLong: [64, true],
+        CUnsignedLong: [64, false],
+        CChar8T: [8, false],
+        CChar16T: [16, false],
+        CChar32T: [32, false],
+        bool: [1, false],
+        CBool: [1, false],
+        int: [32, true],
+    };
+
+    const basicRange = basicRanges[typeName];
+    if (basicRange) {
+        return basicRange[1] ? viperSignedRange(typeName, basicRange[0]) : viperUnsignedRange(typeName, basicRange[0]);
+    }
+
+    return undefined;
 }

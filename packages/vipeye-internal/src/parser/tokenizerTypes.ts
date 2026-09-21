@@ -343,6 +343,11 @@ export namespace NewLineToken {
 export interface KeywordToken extends Token {
     readonly type: TokenType.Keyword;
     readonly keywordType: KeywordType;
+
+    // Viper 扩展：该 class 关键字由 Viper 的 `enum X:` 语法合成
+    // （等价于 `class X(t.CEnum):`）。parser 据此在 ClassNode 上打标记，
+    // analyzer 据此赋予枚举语义。
+    readonly isViperEnum?: boolean;
 }
 
 export namespace KeywordToken {
@@ -350,7 +355,8 @@ export namespace KeywordToken {
         start: number,
         length: number,
         keywordType: KeywordType,
-        comments: Comment[] | undefined
+        comments: Comment[] | undefined,
+        isViperEnum = false
     ): KeywordToken {
         if (comments !== undefined) {
             return {
@@ -359,6 +365,7 @@ export namespace KeywordToken {
                 type: TokenType.Keyword,
                 comments,
                 keywordType,
+                isViperEnum,
             };
         }
 
@@ -367,6 +374,7 @@ export namespace KeywordToken {
             length,
             type: TokenType.Keyword,
             keywordType,
+            isViperEnum,
         };
     }
 

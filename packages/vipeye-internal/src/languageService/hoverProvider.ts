@@ -19,6 +19,7 @@ import {
     isUnresolvedAliasDeclaration,
 } from '../analyzer/declaration';
 import { getFileInfo } from '../analyzer/analyzerNodeInfo';
+import { getViperEnumMemberValues } from '../analyzer/enums';
 import * as ParseTreeUtils from '../analyzer/parseTreeUtils';
 import { SourceMapper } from '../analyzer/sourceMapper';
 import { SynthesizedTypeInfo } from '../analyzer/symbol';
@@ -221,6 +222,24 @@ export function addDocumentationResultsPart(
     fail(`Unsupported markup type: ${format}`);
 }
 
+// Viper 扩展：构造 `enum X:` 枚举成员的 hover 类型文本（枚举类型 + 编译期推导值），
+// 例如 `ASTFlag = 0`。非 `enum X:` 的成员返回 undefined，走常规显示逻辑。
+function getViperEnumMemberTypeText(declaration: VariableDeclaration | undefined, name: string): string | undefined {
+    if (!declaration || declaration.node.nodeType !== ParseNodeType.Name) {
+        return undefined;
+    }
+
+    const classNode = ParseTreeUtils.getEnclosingClass(declaration.node, /* stopAtFunction */ true);
+    if (!classNode?.d.isViperEnum) {
+        return undefined;
+    }
+
+    const className = classNode.d.name.d.value;
+    const value = getViperEnumMemberValues(classNode).get(name);
+
+    return value === undefined ? `${name}: ${className}` : `${name}: ${className} = ${value}`;
+}
+
 export function getVariableTypeText(
     evaluator: TypeEvaluator,
     declaration: VariableDeclaration | undefined,
@@ -234,6 +253,13 @@ export function getVariableTypeText(
     let label = 'variable';
     if (declaration) {
         label = declaration.isConstant || evaluator.isFinalVariableDeclaration(declaration) ? 'constant' : 'variable';
+    }
+
+    // Viper 扩展：`enum X:` 枚举成员显示枚举类型与编译期推导值（如 `ASTFlag = 0`）。
+    // 裸名成员没有赋值也没有注解，常规路径只会给出 Unbound。
+    const viperEnumMemberText = getViperEnumMemberTypeText(declaration, name);
+    if (viperEnumMemberText) {
+        return `(${label}) ` + viperEnumMemberText;
     }
 
     let typeVarName: string | undefined;

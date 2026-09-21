@@ -1,0 +1,5 @@
+define square(x: int) -> int:
+    return x * x
+
+def use() -> int:
+    return square(3)

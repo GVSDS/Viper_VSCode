@@ -670,6 +670,11 @@ export const enum ClassTypeFlags {
     // This class is rejected when used as the second argument to
     // an isinstance or issubclass call.
     IllegalIsinstanceClass = 1 << 24,
+
+    // Viper 扩展：由 `enum X:` 语法声明的枚举类（等价 `class X(t.CEnum):`）。
+    // 与 EnumClass 同时设置。用于把 Viper 枚举视作 CEnum 子类
+    // （如 enum → int 的隐式转换）。
+    ViperEnumClass = 1 << 25,
 }
 
 export interface DataClassBehaviors {
@@ -1253,6 +1258,11 @@ export namespace ClassType {
 
     export function isEnumClass(classType: ClassType) {
         return !!(classType.shared.flags & ClassTypeFlags.EnumClass);
+    }
+
+    // Viper 扩展：是否为 `enum X:` 语法声明的枚举类。
+    export function isViperEnumClass(classType: ClassType) {
+        return !!(classType.shared.flags & ClassTypeFlags.ViperEnumClass);
     }
 
     export function isPropertyClass(classType: ClassType) {

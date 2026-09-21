@@ -1,0 +1,19 @@
+import t
+
+class CEnumRef(t.CEnum):
+    RED: t.State = 0
+    GREEN = 1
+
+enum ASTFlag:
+    IsAsync
+    Simple
+    HasStar: int
+
+enum Mid:
+    a
+    b = 5
+    c: t.u8
+
+def use() -> int:
+    v: int = ASTFlag.IsAsync
+    return 0

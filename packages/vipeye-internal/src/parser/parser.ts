@@ -489,6 +489,14 @@ export class Parser {
                 return this._parseFunctionDef();
 
             case KeywordType.Define:
+                // Viper 扩展：`define NAME: 类型 = 值` / `define NAME = 值` 为编译期常量声明
+                // （值必须能存入声明的类型位宽，见 checker 的整数字面量位宽校验）。
+                // 与 `define f(...)`（宏函数，等价 def）区分：常量声明的名字后跟 ':' 或 '='。
+                if (this._isViperDefineConstDeclaration()) {
+                    this._getNextToken();
+                    return this._parseSimpleStatement();
+                }
+
                 // Viper 扩展：define 宏函数（与 def 语法一致，语义为编译期宏展开）。
                 return this._parseFunctionDef();
 
@@ -1590,7 +1598,14 @@ export class Parser {
     }
 
     // suite: ':' (simple_stmt | NEWLINE INDENT stmt+ DEDENT)
-    private _parseSuite(isFunction = false, skipBody = false, postColonCallback?: () => void): SuiteNode {
+    // allowTrailingIndent（Viper 扩展）：允许 simple_stmt 之后再接 NEWLINE INDENT stmt+ DEDENT，
+    // 用于 `enum X: a, b, c` 后换行 + TAB 续写枚举成员。
+    private _parseSuite(
+        isFunction = false,
+        skipBody = false,
+        postColonCallback?: () => void,
+        allowTrailingIndent = false
+    ): SuiteNode {
         const nextToken = this._peekToken();
         const suite = SuiteNode.create(nextToken);
 
@@ -1734,6 +1749,34 @@ export class Parser {
             const simpleStatement = this._parseSimpleStatement();
             suite.d.statements.push(simpleStatement);
             simpleStatement.parent = suite;
+
+            // Viper 扩展：`enum X: a, b, c` 允许换行 + TAB 继续写成员（等效缩进块）。
+            // 注：_parseSimpleStatement 已吃掉行尾的 NewLine，这里只需看 Indent。
+            if (allowTrailingIndent && this._peekTokenType() === TokenType.Indent) {
+                const bodyIndentToken = this._getNextToken() as IndentToken;
+                if (bodyIndentToken.isIndentAmbiguous) {
+                    this._addSyntaxError(LocMessage.inconsistentTabs(), bodyIndentToken);
+                }
+
+                while (true) {
+                    const nextToken = this._peekToken();
+                    if (nextToken.type === TokenType.Dedent || nextToken.type === TokenType.EndOfStream) {
+                        if (nextToken.type === TokenType.Dedent) {
+                            this._getNextToken();
+                        }
+                        break;
+                    }
+
+                    const statement = this._parseStatement();
+                    if (!statement) {
+                        // Perform basic error recovery to get to the next line.
+                        this._consumeTokensUntilType([TokenType.NewLine]);
+                    } else {
+                        statement.parent = suite;
+                        suite.d.statements.push(statement);
+                    }
+                }
+            }
         }
 
         if (suite.d.statements.length > 0) {
@@ -2620,6 +2663,21 @@ export class Parser {
         return false;
     }
 
+    // Viper 扩展：判断 `define` 之后是否为编译期常量声明（`NAME: 类型 = 值` / `NAME = 值`）。
+    // 位置基于 define 关键字：`_peekToken(1)` 是名字，`_peekToken(2)` 是 ':' 或 '='。
+    private _isViperDefineConstDeclaration(): boolean {
+        if (this._peekToken(1).type !== TokenType.Identifier) {
+            return false;
+        }
+
+        const afterName = this._peekToken(2);
+        if (afterName.type === TokenType.Colon) {
+            return true;
+        }
+
+        return afterName.type === TokenType.Operator && (afterName as OperatorToken).operatorType === OperatorType.Assign;
+    }
+
     // classdef: 'class' NAME ['(' [arglist] ')'] suite
     private _parseClassDef(decorators?: DecoratorNode[]): ClassNode {
         const classToken = this._getKeywordToken(KeywordType.Class);
@@ -2653,13 +2711,23 @@ export class Parser {
             }
         }
 
-        const suite = this._parseSuite(/* isFunction */ false, this._parseOptions.skipFunctionAndClassBody);
+        const suite = this._parseSuite(
+            /* isFunction */ false,
+            this._parseOptions.skipFunctionAndClassBody,
+            /* postColonCallback */ undefined,
+            /* allowTrailingIndent */ classToken.isViperEnum === true
+        );
 
         const classNode = ClassNode.create(classToken, NameNode.create(nameToken), suite, typeParameters);
         classNode.d.arguments = argList;
         argList.forEach((arg) => {
             arg.parent = classNode;
         });
+
+        // Viper 扩展：`enum X:` 语法声明的枚举（tokenizer 在 class 关键字 token 上打标记）。
+        if (classToken.isViperEnum) {
+            classNode.d.isViperEnum = true;
+        }
 
         if (decorators) {
             classNode.d.decorators = decorators;

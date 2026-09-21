@@ -1,0 +1,10 @@
+import t
+
+enum Small:
+    a
+    b
+    c: t.i1
+
+def use_small() -> int:
+    v: int = Small.a
+    return 0

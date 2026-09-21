@@ -568,6 +568,10 @@ export interface ClassNode extends ParseNodeBase<ParseNodeType.Class> {
         typeParams: TypeParameterListNode | undefined;
         arguments: ArgumentNode[];
         suite: SuiteNode;
+
+        // Viper 扩展：由 `enum X:` 语法声明（等价 `class X(t.CEnum):`）。
+        // 成员可以只写成员名（裸名 / 逗号分隔的裸名），值由编译期推导。
+        isViperEnum: boolean;
     };
 }
 
@@ -587,6 +591,7 @@ export namespace ClassNode {
                 typeParams,
                 arguments: [],
                 suite: suite,
+                isViperEnum: false,
             },
         };
 
@@ -650,6 +655,7 @@ export namespace ClassNode {
                     a: undefined,
                     d: { statements: [], typeComment: undefined },
                 },
+                isViperEnum: false,
             },
         };
 

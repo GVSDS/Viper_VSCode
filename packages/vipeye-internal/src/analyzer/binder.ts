@@ -547,6 +547,13 @@ export class Binder extends ParseTreeWalker {
 
                 this._dunderSlotsEntries = undefined;
                 if (!this._moduleSymbolOnly) {
+                    // Viper 扩展：`enum X:` 的成员允许只写成员名（裸名 / 逗号分隔的裸名），
+                    // 这不是赋值语句，Python 规则下不会产生声明。
+                    // 这里先补出类作用域声明，使成员访问、语义高亮与枚举语义可用。
+                    if (node.d.isViperEnum) {
+                        this._bindViperEnumMemberNames(node.d.suite);
+                    }
+
                     // Analyze the suite.
                     this.walk(node.d.suite);
                 }
@@ -3770,6 +3777,53 @@ export class Binder extends ParseTreeWalker {
         }
 
         return undefined;
+    }
+
+    // Viper 扩展：`enum X:` 的成员允许只写成员名：
+    //   enum ASTFlag:
+    //       IsAsync
+    //       Simple
+    //       HasStar: int
+    //   enum X: a, b, c
+    // 裸名（含逗号分隔的裸名元组）在 Python 规则下只是表达式语句，不产生声明，
+    // 这里为它们补出类作用域声明；取值由编译期推导（见 checker 的枚举取值校验）。
+    private _bindViperEnumMemberNames(suite: SuiteNode): void {
+        suite.d.statements.forEach((statement) => {
+            if (statement.nodeType !== ParseNodeType.StatementList) {
+                return;
+            }
+
+            statement.d.statements.forEach((subStatement) => {
+                this._bindViperEnumMemberNameNode(subStatement);
+            });
+        });
+    }
+
+    private _bindViperEnumMemberNameNode(node: ParseNode): void {
+        if (node.nodeType === ParseNodeType.Name) {
+            this._addViperEnumMemberDeclaration(node);
+        } else if (node.nodeType === ParseNodeType.Tuple) {
+            node.d.items.forEach((item) => this._bindViperEnumMemberNameNode(item));
+        }
+    }
+
+    private _addViperEnumMemberDeclaration(node: NameNode): void {
+        const symbol = this._bindNameToScope(this._currentScope, node);
+        if (!symbol) {
+            return;
+        }
+
+        const declaration: VariableDeclaration = {
+            type: DeclarationType.Variable,
+            node,
+            isConstant: isConstantName(node.d.value),
+            uri: this._fileInfo.fileUri,
+            range: convertTextRangeToRange(node, this._fileInfo.lines),
+            moduleName: this._fileInfo.moduleName,
+            isInExceptSuite: this._isInExceptSuite,
+            isExplicitBinding: this._currentScope.getBindingType(node.d.value) !== undefined,
+        };
+        symbol.addDeclaration(declaration);
     }
 
     private _bindPossibleTupleNamedTarget(target: ExpressionNode, addedSymbols?: Map<string, Symbol>) {

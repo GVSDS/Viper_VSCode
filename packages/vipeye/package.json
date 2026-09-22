@@ -2,7 +2,7 @@
     "name": "vipeye",
     "displayName": "Vipeye",
     "description": "Type checker for the Viper language",
-    "version": "1.1.419",
+    "version": "1.1.420",
     "license": "MIT",
     "author": {
         "name": "TermiNexus"

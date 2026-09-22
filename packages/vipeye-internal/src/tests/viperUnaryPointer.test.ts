@@ -28,7 +28,14 @@ import { createServiceProvider } from '../common/serviceProviderExtensions';
 import { UriEx } from '../common/uri/uriUtils';
 import { FullAccessHost } from '../common/fullAccessHost';
 import { convertOffsetToPosition } from '../common/positionUtils';
-import { FunctionNode, ParameterNode, TypeAnnotationNode, UnaryOperationNode } from '../parser/parseNodes';
+import {
+    BinaryOperationNode,
+    FunctionNode,
+    IndexNode,
+    ParameterNode,
+    TypeAnnotationNode,
+    UnaryOperationNode,
+} from '../parser/parseNodes';
 import { Type } from '../analyzer/types';
 import { OperatorType } from '../parser/tokenizerTypes';
 
@@ -466,10 +473,12 @@ test('Viper 解引用 str/bytes 返回 char', () => {
 
 def test_str_deref(fmt: str) -> int:
     c: char = *fmt
+    *fmt = c
     return 0
 
 def test_bytes_deref(buf: bytes) -> int:
     ch: char = *buf
+    *buf = ch
     return 0
 `;
     const { program, configOptions, parseResults, uri, serviceProvider } = buildProgramForCode(code);
@@ -497,15 +506,19 @@ def test_bytes_deref(buf: bytes) -> int:
     console.log('=== str/bytes 解引用类型 ===');
     derefs.forEach((d) => console.log(`  L${d.line}: ${d.type}`));
 
-    // L4: *fmt（fmt: str，即 i8*）→ char
-    const strDeref = derefs.find((d) => d.line === 4);
-    assert(strDeref, '*fmt not found (L4)');
-    assert.strictEqual(strDeref.type, 'char', `*fmt 应为 char，实际: ${strDeref.type}`);
+    // L4/L5: *fmt（读 / 写目标，fmt: str，即 i8*）→ char
+    for (const line of [4, 5]) {
+        const deref = derefs.find((d) => d.line === line);
+        assert(deref, `*fmt not found (L${line})`);
+        assert.strictEqual(deref.type, 'char', `*fmt (L${line}) 应为 char，实际: ${deref.type}`);
+    }
 
-    // L8: *buf（buf: bytes，即 i8*）→ char
-    const bytesDeref = derefs.find((d) => d.line === 8);
-    assert(bytesDeref, '*buf not found (L8)');
-    assert.strictEqual(bytesDeref.type, 'char', `*buf 应为 char，实际: ${bytesDeref.type}`);
+    // L9/L10: *buf（读 / 写目标，buf: bytes，即 i8*）→ char
+    for (const line of [9, 10]) {
+        const deref = derefs.find((d) => d.line === line);
+        assert(deref, `*buf not found (L${line})`);
+        assert.strictEqual(deref.type, 'char', `*buf (L${line}) 应为 char，实际: ${deref.type}`);
+    }
 
     // 不得报「类型 "str" / "bytes" 不支持运算符 "*"」
     const diagnostics = getDiagnostics(program, configOptions, uri);
@@ -514,6 +527,79 @@ def test_bytes_deref(buf: bytes) -> int:
     assert(
         !diagnostics.some((d) => d.includes('不支持运算符')),
         `str/bytes 解引用不应报运算符错误: ${JSON.stringify(diagnostics)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
+// Viper：str / bytes 的 C 指针语义 —— 指针算术（p ± n、n + p）与下标访问（s[i]）。
+test('Viper str/bytes 指针算术与下标', () => {
+    const code = `import t
+
+def test_str_arith(fmt: str) -> int:
+    p1: str = fmt + 1
+    p2: str = fmt - 1
+    p3: str = 1 + fmt
+    c1: char = fmt[0]
+    p4: str = fmt + c1
+    return 0
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgramForCode(code);
+
+    const evaluator = program.evaluator as TypeEvaluator | undefined;
+    assert(evaluator, 'evaluator not available');
+    const ev = evaluator;
+
+    const binOps: { line: number; op: string; type: string }[] = [];
+    const indexTypes: { line: number; type: string }[] = [];
+    class BinaryCollector extends ParseTreeWalker {
+        override visitBinaryOperation(node: BinaryOperationNode) {
+            if (node.d.operator !== OperatorType.Add && node.d.operator !== OperatorType.Subtract) {
+                return true;
+            }
+            const type = ev.getType(node as any);
+            binOps.push({
+                line: convertOffsetToPosition(node.start, parseResults.parserOutput.lines).line + 1,
+                op: node.d.operator === OperatorType.Add ? '+' : '-',
+                type: type ? program.printType(type) : '(undefined)',
+            });
+            return true;
+        }
+        override visitIndex(node: IndexNode) {
+            const type = ev.getType(node as any);
+            indexTypes.push({
+                line: convertOffsetToPosition(node.start, parseResults.parserOutput.lines).line + 1,
+                type: type ? program.printType(type) : '(undefined)',
+            });
+            return true;
+        }
+    }
+    console.log('=== str 指针算术 / 下标类型 ===');
+    new BinaryCollector().walk(parseResults.parserOutput.parseTree);
+    binOps.forEach((b) => console.log(`  L${b.line} ${b.op}: ${b.type}`));
+    indexTypes.forEach((i) => console.log(`  L${i.line} [i]: ${i.type}`));
+
+    // L4/L5/L6：fmt + 1 / fmt - 1 / 1 + fmt → str（指针类型不变）
+    for (const line of [4, 5, 6]) {
+        const op = binOps.find((b) => b.line === line);
+        assert(op, `指针算术未找到 (L${line})`);
+        assert.strictEqual(op.type, 'str', `指针算术结果应为 str (L${line})，实际: ${op.type}`);
+    }
+
+    // L7：fmt[0] → t.CChar（C 的 char 字节；与 `*fmt` 的 char 可隐式互转）
+    const subscript = indexTypes.find((i) => i.line === 7);
+    assert(subscript, `下标访问未找到 (L7)`);
+    assert(
+        subscript.type.includes('CChar'),
+        `fmt[0] 应为 t.CChar，实际: ${subscript.type}`
+    );
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    console.log('=== 诊断 ===');
+    diagnostics.forEach((d) => console.log(`  ${d}`));
+    assert(
+        !diagnostics.some((d) => d.includes('不支持运算符')),
+        `str 指针算术/下标不应报运算符错误: ${JSON.stringify(diagnostics)}`
     );
 
     program.dispose();

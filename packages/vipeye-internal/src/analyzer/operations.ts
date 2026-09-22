@@ -233,6 +233,17 @@ export function validateBinaryOperation(
             type = calcLiteralForBinaryOp(operator, leftType, rightType);
         }
 
+        // Viper 扩展：C 指针算术。str/bytes 是 char*（i8*），`p + n` / `p - n` / `n + p`
+        // 是合法的指针偏移，结果仍是指针本身（类型不变）；Python 的 str 无此语义。
+        // 与增强赋值 `dest += n` 的处理保持一致（见 getTypeOfAugmentedAssignment）。
+        if (
+            !type &&
+            IsViperDialect(getFileInfo(errorNode).executionEnvironment.dialect) &&
+            (operator === OperatorType.Add || operator === OperatorType.Subtract)
+        ) {
+            type = getViperPointerArithmeticResult(operator, leftType, rightType);
+        }
+
         if (!type) {
             const result = validateArithmeticOperation(
                 evaluator,
@@ -846,6 +857,35 @@ export function getTypeOfUnaryOperation(
     }
 
     return { type, isIncomplete, magicMethodDeprecationInfo: deprecatedInfo };
+}
+
+// Viper 扩展：C 指针算术的结果类型。
+//   - `p + n` / `p - n` / `n + p`（p 为 str/bytes，即 char*；n 为整数或 char）
+//     → 结果仍是指针 p 的类型（类型不变）
+//   - 其它组合返回 undefined，交由常规路径（可能报"运算符不支持"）
+function getViperPointerArithmeticResult(
+    operator: OperatorType,
+    leftType: Type,
+    rightType: Type
+): Type | undefined {
+    const isViperPointer = (type: Type) => isClassInstance(type) && ClassType.isBuiltIn(type, ['str', 'bytes']);
+    const isOffsetOperand = (type: Type) =>
+        isViperIntegerType(type) || (isClassInstance(type) && ClassType.isBuiltIn(type, 'char'));
+
+    if (
+        (operator === OperatorType.Add || operator === OperatorType.Subtract) &&
+        isViperPointer(leftType) &&
+        isOffsetOperand(rightType)
+    ) {
+        return leftType;
+    }
+
+    // 加法可交换：`n + p` 等价于 `p + n`。
+    if (operator === OperatorType.Add && isViperPointer(rightType) && isOffsetOperand(leftType)) {
+        return rightType;
+    }
+
+    return undefined;
 }
 
 // Viper 扩展：一元 '*'（解引用）类型求值，与 C 语义一致。

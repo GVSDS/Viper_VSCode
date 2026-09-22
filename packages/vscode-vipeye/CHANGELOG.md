@@ -1,5 +1,10 @@
 # Change Log
 
+## 1.1.420
+
+- Pointer semantics for `str` / `bytes` (both are C `char*`, `i8*`) now cover pointer arithmetic and writes, matching the dereference support added earlier: `p + n`, `p - n` and `n + p` return the pointer type instead of reporting `reportOperatorIssue`, and `*p = v` is accepted as an assignment target. `p[i]` already yielded `t.CChar` and is unchanged
+- Built-in C basic type names extended with `short` (`t.CShort`), `ushort` (`t.CUnsignedShort`), `ulong` (`t.CUnsignedLong`) and `ulonglong` (`t.CUnsignedLongLong`), alongside the existing `long` / `longlong`
+
 ## 1.1.419
 
 - Dereferencing `str` / `bytes` with the unary `*` operator no longer reports `reportOperatorIssue`: both are C `char*` (`i8*`) in Viper, so `*s` yields `char` (`i8`). Mirrors `t.CPtr[X]` dereferencing, which already returned the pointee type

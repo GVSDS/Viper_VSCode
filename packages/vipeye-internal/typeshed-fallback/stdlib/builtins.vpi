@@ -2753,10 +2753,14 @@ rawptr: t.CTypedef = t.CPtr
 # 解析；工程自带 builtins.vp 时仍以工程声明为准（合并逻辑会覆盖同名符号）。
 #
 # C 基本类型名（对齐编译器 t.py 的 _CNAME_ALIAS：char/short/long/unsigned 等是
-# 语言内置名称，无需 import）。C 的 "long long" 含空格、不能作标识符，Viper 写作
-# longlong；"unsigned long long" 同理不内建，需要时写 t.CUnsignedLongLong。
-long: t.CTypedef = t.CLong
-longlong: t.CTypedef = t.CLongLong
+# 语言内置名称，无需 import）。C 的 "long long" / "unsigned long long" 含空格、
+# 不能作标识符，Viper 写作 longlong / ulonglong。
+short:     t.CTypedef = t.CShort
+long:      t.CTypedef = t.CLong
+longlong:  t.CTypedef = t.CLongLong
+ushort:    t.CTypedef = t.CUnsignedShort
+ulong:     t.CTypedef = t.CUnsignedLong
+ulonglong: t.CTypedef = t.CUnsignedLongLong
 
 sizet: t.CTypedef = t.CSizeT
 size_t: t.CTypedef = sizet

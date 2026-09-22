@@ -1,5 +1,12 @@
 # Change Log
 
+## 1.1.415
+
+- **`[SIZE]T` 数组类型语法**：新增定长数组写法 `[SIZE]T`（等价 `t.CArray[T, SIZE]`）与不定长写法 `[]T`（等价 `t.CArray[T]`）；支持整数字面量 / `t.CDefine` 常量作为长度、多维嵌套 `[2][3]T`、指针元素 `[4]T*`，可用于变量、参数、返回值、类成员与 `type X =` 注解
+- `[SIZE]T` 在解析层脱糖为等价的 `t.CArray[T, SIZE]`，因此元素类型、索引返回 `T`、数组名退化为指针、字符数组降级 `str`/`bytes` 等语义与 `t.CArray` 完全一致；hover 按源码原形显示（如 `(variable) buf: [4]t.CInt`），诊断消息同样显示原形
+- 修复字符串转义引号（`'\''` / `"\""`）导致 TextMate 语法作用域泄漏、后续关键字被渲染成字符串颜色的问题
+- 导入解析：`includes/builtins.vp` 的 typedef 合并缓存改为按「执行环境 + 被分析文件目录」缓存，修复先绑定了工程外文件时 `uint32`/`int8`/`sizet` 等 typedef 集体报"未定义"（同一工程在不同 IDE/不同打开顺序下表现不一致）
+
 ## 1.1.414
 
 - **enum 语法**：支持 `enum NAME:` 声明（等价 `class NAME(t.CEnum):`），成员可只写名字（裸名 / 逗号分隔，如 `enum X: a, b, c`），也支持 `enum X: a, b, c` 后换行 TAB 继续写成员

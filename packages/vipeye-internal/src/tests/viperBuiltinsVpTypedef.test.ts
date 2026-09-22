@@ -24,7 +24,7 @@ import { RealTempFile, createFromRealFileSystem } from '../common/realFileSystem
 import { createServiceProvider } from '../common/serviceProviderExtensions';
 import { UriEx } from '../common/uri/uriUtils';
 import { FullAccessHost } from '../common/fullAccessHost';
-import { FunctionNode } from '../parser/parseNodes';
+import { FunctionNode, ParseNodeType } from '../parser/parseNodes';
 
 (global as any).__rootDirectory = path.resolve();
 
@@ -261,6 +261,149 @@ test('其它环境的文件先被绑定时，本工程 builtins.vp typedef 仍�
     program.dispose();
     serviceProvider.dispose();
     fs.rmSync(base, { recursive: true, force: true });
+});
+
+// 特性：`typedef T1 = T2` 语句（解析层脱糖为与 `T1: t.CTypedef = T2` 同形的 AST）。
+// 断言两者语义完全一致：注解名可作类型使用，参数注解解析为别名目标类型，且无诊断。
+test('typedef T1 = T2 与 T1: t.CTypedef = T2 等价（注解解析为 CUInt8T）', () => {
+    const cases: { name: string; source: string }[] = [
+        {
+            name: 'typedef 语句',
+            source: `import t
+
+typedef Buf = t.CUInt8T
+
+def f(a: Buf) -> int:
+    x: Buf = 1
+    return 0
+`,
+        },
+        {
+            name: '手写 t.CTypedef 对照',
+            source: `import t
+
+Buf: t.CTypedef = t.CUInt8T
+
+def f(a: Buf) -> int:
+    x: Buf = 1
+    return 0
+`,
+        },
+    ];
+
+    for (const c of cases) {
+        const { program, configOptions, parseResults, uri, serviceProvider } = buildProgram(c.source);
+
+        const diagnostics = (program.getSourceFile(uri)?.getDiagnostics(configOptions) || []).map(
+            (d) => `[category=${d.category}] ${d.message}`
+        );
+        const undefinedDiags = diagnostics.filter((d) => d.includes('未定义') || d.includes('undefined'));
+        assert.strictEqual(
+            undefinedDiags.length,
+            0,
+            `${c.name}: 不应报未定义，实际: ${JSON.stringify(diagnostics)}`
+        );
+        const errors = diagnostics.filter((d) => d.startsWith('[category=0]') || d.startsWith('[category=1]'));
+        assert.strictEqual(errors.length, 0, `${c.name}: 不应有错误/警告，实际: ${JSON.stringify(diagnostics)}`);
+
+        const types = collectParamAnnotationTypes(program, parseResults!);
+        const fTypes = types.get('f') ?? [];
+        assert(
+            fTypes.some((t) => t.includes('CUInt8T')),
+            `${c.name}: f(a: Buf) 的参数注解应解析为 CUInt8T，实际: ${JSON.stringify(fTypes)}`
+        );
+
+        program.dispose();
+        serviceProvider.dispose();
+    }
+
+    require('fs').rmSync(path.join(__dirname, '__builtins_vp_typedef__'), { recursive: true, force: true });
+});
+
+// 特性：`typedef T1 = T2` 不依赖源码文件 `import t`。
+// 脱糖合成的 `t.CTypedef` 注解只看成员名文本，不解析 `t` 符号；未 import t 时
+// 合成 `t` 静默退化为 Unknown，不得报「未定义 t」。
+test('typedef 语句不 import t 时同样成立', () => {
+    const source = `typedef Buf = int
+
+def f(a: Buf) -> int:
+    x: Buf = 1
+    return 0
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgram(source);
+
+    const diagnostics = (program.getSourceFile(uri)?.getDiagnostics(configOptions) || []).map(
+        (d) => `[category=${d.category}] ${d.message}`
+    );
+    const undefinedDiags = diagnostics.filter((d) => d.includes('未定义') || d.includes('undefined'));
+    assert.strictEqual(
+        undefinedDiags.length,
+        0,
+        `typedef 不应依赖 import t（合成 t 须静默退化），实际: ${JSON.stringify(diagnostics)}`
+    );
+    const errors = diagnostics.filter((d) => d.startsWith('[category=0]') || d.startsWith('[category=1]'));
+    assert.strictEqual(errors.length, 0, `typedef 不应有错误/警告，实际: ${JSON.stringify(diagnostics)}`);
+
+    // 别名仍可作类型使用（参数注解可解析）
+    const types = collectParamAnnotationTypes(program, parseResults!);
+    assert((types.get('f') ?? []).length > 0, `f(a: Buf) 的参数注解未解析: ${JSON.stringify(types)}`);
+
+    program.dispose();
+    serviceProvider.dispose();
+    require('fs').rmSync(path.join(__dirname, '__builtins_vp_typedef__'), { recursive: true, force: true });
+});
+
+// 软关键字边界：仅 `typedef <Name> =` 形状按 typedef 解析；
+// `typedef = 1`（赋值）、`typedef(1)`（调用）仍按普通标识符处理，不报语法错误。
+test('typedef 仍可作普通标识符（赋值 / 调用），不报语法错误', () => {
+    const source = `typedef = print
+
+def f() -> int:
+    typedef(1)
+    return 0
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgram(source);
+
+    const diagnostics = (program.getSourceFile(uri)?.getDiagnostics(configOptions) || []).map(
+        (d) => `[category=${d.category}] ${d.message}`
+    );
+    assert(
+        !diagnostics.some((d) => d.includes('换行符') || d.includes('分号')),
+        `typedef 作普通标识符不应报语法错误，实际: ${JSON.stringify(diagnostics)}`
+    );
+    const errors = diagnostics.filter((d) => d.startsWith('[category=0]'));
+    assert.strictEqual(errors.length, 0, `typedef 作普通标识符不应有错误，实际: ${JSON.stringify(diagnostics)}`);
+
+    // `typedef = print` 应是普通赋值：左值为 NameNode 'typedef'
+    let foundAssign = false;
+    let foundCall = false;
+    class TypedefShapeCollector extends ParseTreeWalker {
+        override visitAssignment(node: any) {
+            if (
+                node.d.leftExpr?.nodeType === ParseNodeType.Name &&
+                node.d.leftExpr?.d?.value === 'typedef'
+            ) {
+                foundAssign = true;
+            }
+            return true;
+        }
+        override visitCall(node: any) {
+            if (
+                node.d.leftExpr?.nodeType === ParseNodeType.Name &&
+                node.d.leftExpr?.d?.value === 'typedef'
+            ) {
+                foundCall = true;
+            }
+            return true;
+        }
+    }
+    new TypedefShapeCollector().walk(parseResults!.parserOutput.parseTree);
+    assert(foundAssign, '`typedef = print` 应为普通赋值（左值 NameNode typedef）');
+    assert(foundCall, '`typedef(1)` 应为普通调用（callee NameNode typedef）');
+
+    program.dispose();
+    serviceProvider.dispose();
+    require('fs').rmSync(path.join(__dirname, '__builtins_vp_typedef__'), { recursive: true, force: true });
 });
 
 test('builtins.vp 同名声明优先覆盖 builtins.vpi（ord 参数为 char）', () => {

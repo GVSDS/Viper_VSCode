@@ -1,5 +1,10 @@
 # Change Log
 
+## 1.1.425
+
+- New `typedef T1 = T2` statement, fully equivalent to `T1: t.CTypedef = T2`. It desugars in the parser into the same annotated-assignment tree (synthetic zero-length `t.CTypedef`), so binding, type evaluation, hover and semantic highlighting all behave identically — and it works without the file having to `import t`. `typedef` is a soft keyword, so `typedef = 1` / `typedef(x)` still parse as before. `typedef` is also highlighted as a declaration keyword now
+- `(T)x` casts are accepted alongside `(T*)x`: when the parenthesized expression is a type atom (a name, `t.CInt`, a subscript, or `T*`) and an operand follows, it is normalized into the equivalent `T(x)` call. `(T*)[i]` stays a subscript and `(a)*b` stays a multiplication
+
 ## 1.1.424
 
 - C-style casts now accept the pointer spellings used by TransPyC: `(T*)x`, `(T*)(x)` and `T*(x)` all evaluate to the pointer type (`CPtr[T]`). Inside parentheses or call arguments `T*` is read as a pointer *type* when the operand is a type object, and a binary `*` whose left operand is a type object is read as a cast — so `2 * 3` / `offset * 2` still multiply. `(T*)a + b` groups as `((T*)a) + b`, and `(T*)[i]` remains a subscript

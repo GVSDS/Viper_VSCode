@@ -1685,6 +1685,12 @@ export interface NameNode extends ParseNodeBase<ParseNodeType.Name> {
         // 时合成出来的 `t` 名：零长度、不对应源码字符。文件未 import t 时其解析
         // 失败须静默退化为 Unknown，不报"未定义 t"。
         isViperBracketArraySynthetic?: boolean;
+
+        // Viper 扩展：`typedef T1 = T2` 脱糖（见 parser._parseViperTypedefStatement）
+        // 时合成出来的 `t` 名：零长度、不对应源码字符。语义与手写
+        // `T1: t.CTypedef = T2` 相同，但本写法不要求源码 import t，
+        // 故合成 `t` 解析失败时同样静默退化为 Unknown（不报"未定义 t"）。
+        isViperTypedef?: boolean;
     };
 }
 

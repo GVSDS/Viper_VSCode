@@ -31,9 +31,11 @@ import { convertOffsetToPosition } from '../common/positionUtils';
 import {
     AssignmentNode,
     BinaryOperationNode,
+    CallNode,
     FunctionNode,
     IndexNode,
     ParameterNode,
+    ParseNodeType,
     TypeAnnotationNode,
     UnaryOperationNode,
 } from '../parser/parseNodes';
@@ -604,6 +606,169 @@ def f(ptr_raw: t.CUInt64T, offset: uint64) -> int:
     assert(
         errorsAndWarnings.length === 0,
         `三种强转写法不应产生错误/警告: ${JSON.stringify(errorsAndWarnings)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
+// Viper：`(T)x` 强转（括号内普通类型名 + 裸值），语义 = 调用形式 `T(x)` 的强转结果。
+// 与已支持的 `(T)(x)` 调用式强转对照；真实乘法 `(a)*b` / `(a) * (b)` 不受影响。
+test('Viper (T)x 强转：括号内普通类型名 + 裸值', () => {
+    const code = `import t
+
+def f(ptr_raw: t.CUInt64T, offset: uint64, v: t.CUInt8T) -> int:
+    d = (t.CInt)(ptr_raw)
+    e = (t.CInt)offset
+    g = (t.CUInt8T)v
+    m: int = offset * 2
+    n: int = (offset) * 2
+    k: int = (offset)*2
+    return 0
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgramForCode(code);
+
+    const evaluator = program.evaluator as TypeEvaluator | undefined;
+    assert(evaluator, 'evaluator not available');
+    const ev = evaluator;
+
+    const rhsTypes: { line: number; type: string }[] = [];
+    class RhsCollector extends ParseTreeWalker {
+        override visitAssignment(node: AssignmentNode) {
+            const line = convertOffsetToPosition(node.d.rightExpr.start, parseResults.parserOutput.lines).line + 1;
+            const type = ev.getType(node.d.rightExpr);
+            rhsTypes.push({ line, type: type ? program.printType(type) : '(undefined)' });
+            return true;
+        }
+    }
+    new RhsCollector().walk(parseResults.parserOutput.parseTree);
+
+    console.log('=== (T)x 强转赋值右值类型 ===');
+    rhsTypes.forEach((r) => console.log(`  L${r.line}: ${r.type}`));
+
+    // L4 对照：既有调用式强转 `(t.CInt)(ptr_raw)` → CInt
+    const dType = rhsTypes.find((r) => r.line === 4);
+    assert(dType, 'd 类型未找到 (L4)');
+    assert(dType.type.includes('CInt'), `(t.CInt)(ptr_raw) 应含 CInt: ${dType.type}`);
+
+    // L5：`(t.CInt)offset` → CInt（普通类型名 + 裸值）
+    const eType = rhsTypes.find((r) => r.line === 5);
+    assert(eType, 'e 类型未找到 (L5)');
+    assert(
+        eType.type.includes('CInt') && !eType.type.includes('rawptr'),
+        `(t.CInt)offset 应为 CInt: ${eType.type}`
+    );
+
+    // L6：`(t.CUInt8T)v` → CUInt8T
+    const gType = rhsTypes.find((r) => r.line === 6);
+    assert(gType, 'g 类型未找到 (L6)');
+    assert(gType.type.includes('CUInt8T'), `(t.CUInt8T)v 应为 CUInt8T: ${gType.type}`);
+
+    // L7/L8/L9：真实乘法（含 `(offset) * 2`、`(offset)*2`）→ 非指针形态
+    for (const line of [7, 8, 9]) {
+        const entry = rhsTypes.find((r) => r.line === line);
+        assert(entry, `乘法右值类型未找到 (L${line})`);
+        assert(!entry.type.includes('rawptr'), `L${line} 是真实乘法，不应为指针类型: ${entry.type}`);
+    }
+
+    // 全部写法不得有 category=0（错误）/ category=1（警告）诊断
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    const errorsAndWarnings = diagnostics.filter((d) => d.includes('category=0') || d.includes('category=1'));
+    console.log('=== 错误/警告诊断 ===');
+    errorsAndWarnings.forEach((d) => console.log(`  ${d}`));
+    assert(
+        errorsAndWarnings.length === 0,
+        `(T)x 强转不应产生错误/警告: ${JSON.stringify(errorsAndWarnings)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
+// Viper：`(T)x` 强转的判定边界。
+//   - `(xs)[0]`：'[' 非操作数起点 → 仍是下标（Name 形式）；
+//   - `(t.CInt*)[0]`：'[' 非操作数起点 → 仍是指针类型后缀 + 下标，不被吞成强转；
+//   - `(a)*b` / `(a) * (b)`：'*' 非操作数起点 → 仍是乘法；
+//   - `(a)b`：归一为调用 `a(b)`（可接受的超集；值为类型即强转，否则语义层报「不可调用」）。
+test('Viper (T)x 强转边界：(T*)[i] 仍为下标、乘法不受影响', () => {
+    const code = `import t
+
+def f(a: t.CInt, b: t.CInt, xs: list[int]) -> int:
+    s: int = (xs)[0]
+    idx0 = (t.CInt*)[0]
+    m: t.CInt = (a)*b
+    n: t.CInt = (a) * (b)
+    w = (a)b
+    return 0
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgramForCode(code);
+
+    const indexes: { line: number; leftIsPtrSuffix: boolean; leftIsName: boolean }[] = [];
+    const binOps: { line: number; isMultiply: boolean }[] = [];
+    const calls: { line: number; funcIsNameA: boolean }[] = [];
+    class ShapeCollector extends ParseTreeWalker {
+        override visitIndex(node: IndexNode) {
+            indexes.push({
+                line: convertOffsetToPosition(node.start, parseResults.parserOutput.lines).line + 1,
+                leftIsPtrSuffix:
+                    node.d.leftExpr.nodeType === ParseNodeType.UnaryOperation &&
+                    !!(node.d.leftExpr as UnaryOperationNode).d.isViperPointerTypeSuffix,
+                leftIsName: node.d.leftExpr.nodeType === ParseNodeType.Name,
+            });
+            return true;
+        }
+        override visitBinaryOperation(node: BinaryOperationNode) {
+            binOps.push({
+                line: convertOffsetToPosition(node.start, parseResults.parserOutput.lines).line + 1,
+                isMultiply: node.d.operator === OperatorType.Multiply,
+            });
+            return true;
+        }
+        override visitCall(node: CallNode) {
+            calls.push({
+                line: convertOffsetToPosition(node.start, parseResults.parserOutput.lines).line + 1,
+                funcIsNameA:
+                    node.d.leftExpr.nodeType === ParseNodeType.Name && node.d.leftExpr.d.value === 'a',
+            });
+            return true;
+        }
+    }
+    new ShapeCollector().walk(parseResults.parserOutput.parseTree);
+
+    console.log('=== (T)x 边界节点形状 ===');
+    indexes.forEach((i) => console.log(`  L${i.line} Index: ptrSuffix=${i.leftIsPtrSuffix} name=${i.leftIsName}`));
+    binOps.forEach((b) => console.log(`  L${b.line} Binary: multiply=${b.isMultiply}`));
+    calls.forEach((c) => console.log(`  L${c.line} Call: funcIsNameA=${c.funcIsNameA}`));
+
+    // L4 `(xs)[0]`：下标，左值为 Name（未被强转吞掉）
+    const sIdx = indexes.find((i) => i.line === 4);
+    assert(sIdx, '(xs)[0] 不是下标 (L4)');
+    assert(sIdx.leftIsName, `(xs)[0] 左值应为 Name (L4)`);
+
+    // L5 `(t.CInt*)[0]`：下标，左值为指针类型后缀（未被强转吞掉）
+    const ptrIdx = indexes.find((i) => i.line === 5);
+    assert(ptrIdx, '(t.CInt*)[0] 不是下标 (L5)');
+    assert(ptrIdx.leftIsPtrSuffix, `(t.CInt*)[0] 左值应保留指针类型后缀 (L5)`);
+
+    // L6/L7 乘法
+    for (const line of [6, 7]) {
+        const op = binOps.find((b) => b.line === line);
+        assert(op, `乘法未找到 (L${line})`);
+        assert(op.isMultiply, `L${line} 应为乘法`);
+    }
+
+    // L8 `(a)b` → 调用 a(b)
+    const wCall = calls.find((c) => c.line === 8);
+    assert(wCall, '(a)b 未归一为调用 (L8)');
+    assert(wCall.funcIsNameA, `(a)b 的 callee 应为 a (L8)`);
+
+    // 解析层不得出现语法错误（如「语句必须用换行符或分号分隔」）
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    console.log('=== 诊断 ===');
+    diagnostics.forEach((d) => console.log(`  ${d}`));
+    assert(
+        !diagnostics.some((d) => d.includes('换行符') || d.includes('分号') || d.includes('未关闭')),
+        `(T)x 边界不应产生语法错误: ${JSON.stringify(diagnostics)}`
     );
 
     program.dispose();

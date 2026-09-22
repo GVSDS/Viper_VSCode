@@ -58,6 +58,10 @@
                     "match": "\\bstruct\\b"
                 },
                 {
+                    "name": "storage.type.viper",
+                    "match": "\\btypedef\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*\\s*=)"
+                },
+                {
                     "name": "keyword.other.viper",
                     "match": "\\b(global|nonlocal|is|not|and|or|type)\\b"
                 },

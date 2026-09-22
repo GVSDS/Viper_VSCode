@@ -5361,6 +5361,12 @@ export function createTypeEvaluator(
                 // 该名无法解析，静默退化为 Unknown（不报"未定义 t"），
                 // 数组类型语义随之退化；正常 Viper 源码均带 import t。
                 type = UnknownType.create();
+            } else if (node.d.isViperTypedef) {
+                // Viper 扩展：`typedef T1 = T2` 脱糖出的合成 `t` 名
+                // （见 parser._parseViperTypedefStatement）。该写法不要求源码
+                // import t，合成 `t` 无法解析时同样静默退化为 Unknown；
+                // TypeAlias 识别只看注解成员名文本 'CTypedef'，不依赖 t 符号。
+                type = UnknownType.create();
             } else {
                 // Viper 扩展：前向引用支持（收紧版）。
                 // Viper 是 AOT 语言，函数/类的定义顺序无关（类似 C 语言的前向声明），
@@ -8710,13 +8716,15 @@ export function createTypeEvaluator(
         return undefined;
     }
 
-    // Viper 扩展：判断成员访问是否是 `[SIZE]T` 数组语法脱糖出的合成 `t.CArray`
-    // 成员访问（见 parser._parseViperBracketArrayType）。合成 `t` 名零长度、
-    // 不对应源码字符，未 import t 时其解析失败须静默退化，相关诊断一律跳过。
+    // Viper 扩展：判断成员访问是否是脱糖语法合成出的 `t.X` 成员访问
+    // （`[SIZE]T` 数组语法合成 `t.CArray`，见 parser._parseViperBracketArrayType；
+    // `typedef T1 = T2` 合成 `t.CTypedef`，见 parser._parseViperTypedefStatement）。
+    // 合成 `t` 名零长度、不对应源码字符，未 import t 时其解析失败须静默退化，
+    // 相关诊断一律跳过。
     function isViperBracketArraySyntheticMember(node: MemberAccessNode): boolean {
         return (
             node.d.leftExpr.nodeType === ParseNodeType.Name &&
-            node.d.leftExpr.d.isViperBracketArraySynthetic === true
+            (node.d.leftExpr.d.isViperBracketArraySynthetic === true || node.d.leftExpr.d.isViperTypedef === true)
         );
     }
 

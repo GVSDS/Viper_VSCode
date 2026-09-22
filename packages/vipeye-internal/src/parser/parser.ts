@@ -3272,6 +3272,13 @@ export class Parser {
     // flow_stmt: break_stmt | continue_stmt | return_stmt | raise_stmt | yield_stmt
     // import_stmt: import_name | import_from
     private _parseSmallStatement(): ParseNode {
+        // Viper 扩展：`typedef T1 = T2` 软关键字语句。
+        // 仅当语句起始处形如 `typedef <Name> =` 时按 typedef 解析；
+        // 否则 `typedef` 仍是普通标识符（`typedef = 1`、`typedef(x)` 不受影响）。
+        if (this._isAtViperTypedefStatement()) {
+            return this._parseViperTypedefStatement();
+        }
+
         switch (this._peekKeywordType()) {
             case KeywordType.Pass:
                 return this._parsePassStatement();
@@ -3353,6 +3360,74 @@ export class Parser {
         }
 
         return this._parseExpressionStatement();
+    }
+
+    // Viper 扩展：判定语句起始处是否为 `typedef <Name> =` 形状。
+    // `typedef` 是软关键字：仅当后跟「标识符」再跟 `=` 时才是 typedef 语句，
+    // 否则保持普通标识符解析（`typedef = 1` 是赋值、`typedef(x)` 是调用）。
+    private _isAtViperTypedefStatement(): boolean {
+        if (this._parseOptions.dialect !== 'viper') {
+            return false;
+        }
+        const keywordToken = this._peekToken();
+        if (keywordToken.type !== TokenType.Identifier || (keywordToken as IdentifierToken).value !== 'typedef') {
+            return false;
+        }
+        if (this._peekToken(1).type !== TokenType.Identifier) {
+            return false;
+        }
+        const assignToken = this._peekToken(2);
+        return (
+            assignToken.type === TokenType.Operator &&
+            (assignToken as OperatorToken).operatorType === OperatorType.Assign
+        );
+    }
+
+    // Viper 扩展：`typedef T1 = T2` 语句（与 `T1: t.CTypedef = T2` 完全等价）。
+    // 解析层脱糖为「带注解的赋值」节点：左值 `T1`，注解为合成的零长 `t.CTypedef`，
+    // 右值为 T2 —— 与手写 `T1: t.CTypedef = T2` 的 AST 同形，从而复用既有的
+    // TypeAlias 语义（绑定、类型求值、hover、语义高亮均一致）。
+    //
+    // 取舍：不依赖源码文件 `import t`。合成 `t.CTypedef` 并不真去解析 `t` 符号：
+    // 类型求值层识别 t.CTypedef 只看成员名文本（见 typeEvaluator 的
+    // isExplicitTypeAliasDeclaration / hoverProvider 的 CTypedef 快速路径），
+    // 合成 `t` 标记 isViperTypedef 后，未 import t 时静默退化为 Unknown
+    // （与 `[SIZE]T` 数组脱糖合成 `t.CArray` 的取舍相同）。
+    private _parseViperTypedefStatement(): ExpressionNode {
+        const typedefToken = this._getNextToken();
+        assert(typedefToken.type === TokenType.Identifier);
+
+        const nameToken = this._getNextToken() as IdentifierToken;
+        const nameNode = NameNode.create(nameToken);
+
+        // 消费 '='（_isAtViperTypedefStatement 已确认存在）。
+        this._getNextToken();
+
+        // 右值与 `T1: t.CTypedef = T2` 完全同路解析。
+        const rightExpr =
+            this._tryParseYieldExpression() ??
+            this._parseTestOrStarListAsExpression(
+                /* allowAssignmentExpression */ false,
+                /* allowMultipleUnpack */ true,
+                ErrorExpressionCategory.MissingExpression,
+                () => LocMessage.expectedAssignRightHandExpr()
+            );
+
+        // 合成 `t.CTypedef` 注解：零长度、位置紧贴别名名之后（满足
+        // "子节点按位置递增且不重叠" 的 AST 不变量），故不产生语义高亮
+        // （semanticTokenProvider 跳过 length <= 0 的名字），也不参与位置命中。
+        const syntheticStart = nameToken.start + nameToken.length;
+        const syntheticTNameNode = NameNode.create(
+            IdentifierToken.create(syntheticStart, 0, 't', /* comments */ undefined)
+        );
+        syntheticTNameNode.d.isViperTypedef = true;
+        const cTypedefNameNode = NameNode.create(
+            IdentifierToken.create(syntheticStart, 0, 'CTypedef', /* comments */ undefined)
+        );
+        const annotationNode = MemberAccessNode.create(syntheticTNameNode, cTypedefNameNode);
+
+        const leftExpr = TypeAnnotationNode.create(nameNode, annotationNode);
+        return AssignmentNode.create(leftExpr, rightExpr);
     }
 
     private _makeExpressionOrTuple(
@@ -4380,10 +4455,11 @@ export class Parser {
                 possibleTupleNode.d.hasParens = true;
             }
 
-            // Viper 扩展：`(T*)operand` —— 括号内是 C 指针类型后缀（T*），其后紧跟
-            // 操作数时按 C 强转解析为调用，语义等价于已支持的 `(T*)(x)` 通路。
-            // 仅当括号内由 _parseViperPointerTypeSuffix 标记为指针类型后缀时生效，
-            // 故 `(a)*b`、`(a) * (b)` 等乘法与 `(*p)x`（前缀解引用）完全不受影响。
+            // Viper 扩展：`(T)x` / `(T*)x` —— 括号内是类型原子（Name / MemberAccess /
+            // Subscript / 指针类型后缀 T*），其后紧跟操作数时按 C 强转解析为调用，
+            // 语义等价于已支持的 `T(x)` / `(T)(x)` 通路。
+            // 仅当括号内为类型原子形态才生效，故 `(a)*b`、`(a) * (b)` 等乘法、
+            // `(*p)x`（前缀解引用）完全不受影响；`(T*)[i]` 因 '[' 非操作数起点仍为下标。
             const viperCastNode = this._tryParseViperPointerCast(possibleTupleNode);
             if (viperCastNode) {
                 return viperCastNode;
@@ -5262,19 +5338,25 @@ export class Parser {
         return node;
     }
 
-    // Viper 扩展：`(T*)operand` 强转解析。
-    // 当括号内是「由 _parseViperPointerTypeSuffix 生成的指针类型后缀」节点，且紧随其后
-    // 是操作数起点（NAME / NUMBER / STRING / f-string / 字面量等，而非运算符）时，
-    // 将其后的操作数作为该强转的唯一实参，构造 CallNode 返回。
-    // 语义等价于已支持的 `(T*)(x)` 通路：CallNode(func = 括号内类型表达式, args = [操作数])。
+    // Viper 扩展：`(T)x` / `(T*)x` 强转解析。
+    // 当括号内是「类型原子」形态且紧随其后是操作数起点时，将其后的操作数作为
+    // 该强转的唯一实参，构造 CallNode 返回。
+    // 类型原子：
+    //   - Name：`(Buf)v`；
+    //   - MemberAccess：`(t.CInt)x`；
+    //   - Subscript：`(list[X])v`；
+    //   - 指针后缀一元 '*'：`(T*)x`（由 _parseViperPointerTypeSuffix 标记）。
+    // 语义等价于已支持的 `T(x)` / `(T)(x)` 调用式强转通路：
+    // CallNode(func = 括号内类型表达式, args = [操作数])。
+    // 边界：`(a)*b`、`(a) * (b)` 仍是乘法（'*' 不是操作数起点）；
+    //       `(T*)[i]` 仍是下标（'[' 不是操作数起点）；
+    //       `(a)b` 由语法错误变为「调用 a(b)」——可接受的超集，
+    //       值为类型即强转，否则由语义层报「不可调用」。
     private _tryParseViperPointerCast(possibleTupleNode: ExpressionNode): ExpressionNode | undefined {
         if (this._parseOptions.dialect !== 'viper') {
             return undefined;
         }
-        if (
-            possibleTupleNode.nodeType !== ParseNodeType.UnaryOperation ||
-            !(possibleTupleNode as UnaryOperationNode).d.isViperPointerTypeSuffix
-        ) {
+        if (!this._isViperCastTypeAtom(possibleTupleNode)) {
             return undefined;
         }
         if (!this._isAtViperCastOperandStart()) {
@@ -5285,6 +5367,22 @@ export class Parser {
         const operand = this._parseArithmeticFactor();
         const argNode = ArgumentNode.create(/* startToken */ undefined, operand, ArgCategory.Simple);
         return CallNode.create(possibleTupleNode, [argNode], /* trailingComma */ false);
+    }
+
+    // Viper 扩展：判定括号内的表达式是否为「类型原子」（可用作 C 强转的类型部分）。
+    // 仅接受 Name / MemberAccess / Subscript / 指针后缀一元 '*'，
+    // 故 `(1+2)a`、`(*p)a`（前缀解引用）等不会被当作强转。
+    private _isViperCastTypeAtom(node: ExpressionNode): boolean {
+        switch (node.nodeType) {
+            case ParseNodeType.Name:
+            case ParseNodeType.MemberAccess:
+            case ParseNodeType.Index:
+                return true;
+            case ParseNodeType.UnaryOperation:
+                return !!(node as UnaryOperationNode).d.isViperPointerTypeSuffix;
+            default:
+                return false;
+        }
     }
 
     // Viper 扩展：判定当前位置是否为 `(T*)` 之后可作为强转操作数的表达式起点。

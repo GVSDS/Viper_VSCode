@@ -5020,7 +5020,7 @@ export class Parser {
             this._addSyntaxError(LocMessage.unpackedSubscriptIllegal(), startToken);
         }
 
-        let result = this._parseTestExpression(/* allowAssignmentExpression */ false);
+        let result = this._parseViperBracketArrayTypeIfNeeded();
 
         // Viper 扩展：C 指针类型后缀 T* / T** / T***（须在还原 _isParsingTypeAnnotation 之前，
         // 使 _parseArithmeticTerm/_parseArithmeticFactor 的星号守卫仍生效）。
@@ -5083,6 +5083,77 @@ export class Parser {
                 return (nextToken as OperatorToken).operatorType === OperatorType.Assign;
         }
         return false;
+    }
+
+    // Viper 扩展：定长数组类型语法 `[SIZE]T`（等价 t.CArray[T, SIZE]）与
+    // 不定长写法 `[]T`（等价 t.CArray[T]，与 `t.CArray[T]` 单参数一致）。
+    // 只在"类型注解起点"生效：
+    //   - 值表达式里的 `[SIZE]` 仍是 list 字面量；
+    //   - 下标实参内（_isParsingIndexTrailer）不生效，否则
+    //     `t.Callable[[], t.CInt]` 这类实参列表会被误当成数组类型。
+    // 因此 `list[[4]int]`（数组类型作为泛型实参）暂不支持，需写 t.CArray。
+    private _parseViperBracketArrayTypeIfNeeded(): ExpressionNode {
+        if (
+            this._parseOptions.dialect === 'viper' &&
+            !this._isParsingIndexTrailer &&
+            this._peekTokenType() === TokenType.OpenBracket
+        ) {
+            return this._parseViperBracketArrayType();
+        }
+        return this._parseTestExpression(/* allowAssignmentExpression */ false);
+    }
+
+    // Viper 扩展：解析 `[SIZE]T` / `[]T` 并脱糖为等价的 `t.CArray[T, SIZE]` /
+    // `t.CArray[T]` 下标表达式，使类型求值、语义高亮、类型显示完全复用既有
+    // t.CArray 机制（元素类型、索引返回 T、数组名退化为指针、字符数组降级
+    // str/bytes、单参数不定长等），不引入第二套语义。
+    // 元素类型递归解析，故支持 `[2][3]T`（等价 t.CArray[t.CArray[T, 3], 2]）、
+    // `[4]T*`（指针后缀）、`[4]T | t.CPtr`（联合）等。
+    private _parseViperBracketArrayType(): ExpressionNode {
+        const openBracketToken = this._getNextToken();
+        assert(openBracketToken.type === TokenType.OpenBracket);
+
+        let sizeExpr: ExpressionNode | undefined;
+        if (this._peekTokenType() !== TokenType.CloseBracket) {
+            sizeExpr = this._parseTestExpression(/* allowAssignmentExpression */ false);
+        }
+
+        const closeBracketToken = this._peekToken();
+        if (!this._consumeTokenIfType(TokenType.CloseBracket)) {
+            this._addSyntaxError(LocMessage.expectedCloseBracket(), this._peekToken());
+        }
+
+        // 元素类型：递归走注解解析，天然支持嵌套 `[2][3]T` 与指针后缀 `[4]T*`。
+        const elementType = this._parseTypeAnnotation();
+
+        // 合成 `t.CArray`：零长度、位置落在 '[' 上，因此不产生任何语义高亮
+        // （semanticTokenProvider 跳过 length <= 0 的名字）也不参与位置命中。
+        const syntheticTNameNode = NameNode.create(
+            IdentifierToken.create(openBracketToken.start, 0, 't', /* comments */ undefined)
+        );
+        syntheticTNameNode.d.isViperBracketArraySynthetic = true;
+        const cArrayNameNode = NameNode.create(
+            IdentifierToken.create(openBracketToken.start, 0, 'CArray', /* comments */ undefined)
+        );
+        const memberAccessNode = MemberAccessNode.create(syntheticTNameNode, cArrayNameNode);
+
+        // items 按**源码顺序**排列（[长度] 在 '[' 内、元素类型在 ']' 之后），
+        // 以满足"子节点必须按位置递增且不重叠"的 AST 不变量；
+        // 类型求值在 getTypeArgs 中按语义顺序（元素类型在前）重排实参。
+        const items: ArgumentNode[] = [];
+        if (sizeExpr) {
+            items.push(ArgumentNode.create(/* startToken */ undefined, sizeExpr, ArgCategory.Simple));
+        }
+        items.push(ArgumentNode.create(/* startToken */ undefined, elementType, ArgCategory.Simple));
+
+        const indexNode = IndexNode.create(memberAccessNode, items, /* trailingComma */ false, closeBracketToken);
+        indexNode.d.isViperBracketArray = true;
+
+        // 让整个下标节点的范围覆盖 `[SIZE]T` 全文（含 ']' 之后的元素类型），
+        // 使 hover/定位落在元素类型内时仍能沿父链找到该数组类型节点。
+        extendRange(indexNode, elementType);
+
+        return indexNode;
     }
 
     // Viper 扩展：解析 C 指针类型后缀 `T*` / `T**` / `T***`。

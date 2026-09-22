@@ -51,6 +51,7 @@ import { Uri } from '../common/uri/uri';
 import {
     ExpressionNode,
     FunctionNode,
+    IndexNode,
     NameNode,
     ParamCategory,
     ParameterNode,
@@ -240,6 +241,25 @@ function getViperEnumMemberTypeText(declaration: VariableDeclaration | undefined
     return value === undefined ? `${name}: ${className}` : `${name}: ${className} = ${value}`;
 }
 
+// Viper 扩展：判断类型注解是否是/包含 `[SIZE]T` 数组语法（脱糖后的下标节点，
+// 见 parser._parseViperBracketArrayType）。用于让 hover 按源码原形显示
+// （如 `[4]t.CInt`）而非脱糖后的 `CArray[CInt, 4]`。联合类型逐操作数判断。
+function hasViperBracketArrayAnnotation(node: ExpressionNode | undefined): boolean {
+    if (!node) {
+        return false;
+    }
+    if (node.nodeType === ParseNodeType.Index && (node as IndexNode).d.isViperBracketArray === true) {
+        return true;
+    }
+    if (node.nodeType === ParseNodeType.BinaryOperation) {
+        return (
+            hasViperBracketArrayAnnotation(node.d.leftExpr) ||
+            hasViperBracketArrayAnnotation(node.d.rightExpr)
+        );
+    }
+    return false;
+}
+
 export function getVariableTypeText(
     evaluator: TypeEvaluator,
     declaration: VariableDeclaration | undefined,
@@ -260,6 +280,13 @@ export function getVariableTypeText(
     const viperEnumMemberText = getViperEnumMemberTypeText(declaration, name);
     if (viperEnumMemberText) {
         return `(${label}) ` + viperEnumMemberText;
+    }
+
+    // Viper 扩展：`[SIZE]T` 数组语法注解按源码原形显示（如 `x: [4]t.CInt`），
+    // 而不是脱糖后的 `CArray[CInt, 4]`，与用户书写形态保持一致。
+    const bracketArrayAnnotation = declaration?.typeAnnotationNode;
+    if (bracketArrayAnnotation && hasViperBracketArrayAnnotation(bracketArrayAnnotation)) {
+        return `(${label}) ${name}: ` + ParseTreeUtils.printExpression(bracketArrayAnnotation);
     }
 
     let typeVarName: string | undefined;
@@ -585,7 +612,15 @@ export class HoverProvider {
                 //   (parameter) fb: UINT32PTR
                 //   (typedef) UINT32PTR = CPtr[CUInt32T]
                 const paramType = this._getType(node);
-                let paramLine = '(parameter) ' + node.d.value + this._getTypeText(node);
+                // Viper 扩展：`[SIZE]T` 数组语法注解按源码原形显示（如 `[4]t.CInt`）。
+                const paramAnnotation = resolvedDecl.node.d.annotation;
+                let paramLine =
+                    paramAnnotation && hasViperBracketArrayAnnotation(paramAnnotation)
+                        ? '(parameter) ' +
+                          node.d.value +
+                          ': ' +
+                          ParseTreeUtils.printExpression(paramAnnotation)
+                        : '(parameter) ' + node.d.value + this._getTypeText(node);
                 if (paramType?.props?.typeAliasInfo && node.nodeType === ParseNodeType.Name) {
                     const aliasInfo = getTypeAliasInfo(paramType);
                     if (aliasInfo && aliasInfo.shared.name !== node.d.value) {

@@ -1495,6 +1495,11 @@ export interface IndexNode extends ParseNodeBase<ParseNodeType.Index> {
         leftExpr: ExpressionNode;
         items: ArgumentNode[];
         trailingComma: boolean;
+        // Viper 扩展：`[SIZE]T` 数组语法脱糖出的下标节点（见
+        // parser._parseViperBracketArrayType）。此时 leftExpr 是合成的 `t.CArray`，
+        // items 按源码顺序为 [长度, 元素类型]（省略长度时只有 [元素类型]），
+        // 类型求值按 t.CArray[元素类型, 长度] 的语义顺序解读。
+        isViperBracketArray?: boolean;
     };
 }
 
@@ -1672,6 +1677,10 @@ export interface NameNode extends ParseNodeBase<ParseNodeType.Name> {
     d: {
         token: IdentifierToken;
         value: string;
+        // Viper 扩展：`[SIZE]T` 数组语法脱糖（见 parser._parseViperBracketArrayType）
+        // 时合成出来的 `t` 名：零长度、不对应源码字符。文件未 import t 时其解析
+        // 失败须静默退化为 Unknown，不报"未定义 t"。
+        isViperBracketArraySynthetic?: boolean;
     };
 }
 

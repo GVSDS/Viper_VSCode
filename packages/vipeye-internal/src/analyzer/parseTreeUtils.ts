@@ -230,6 +230,20 @@ export function printExpression(node: ExpressionNode, flags = PrintExpressionFla
         }
 
         case ParseNodeType.Index: {
+            // Viper 扩展：`[SIZE]T` 数组语法脱糖出的下标节点，按源码原形打印
+            // （items 为 [长度, 元素类型]，省略长度时只有 [元素类型]），
+            // 使诊断/悬停显示用户实际写下的数组类型而非脱糖后的 t.CArray[...]。
+            if (node.d.isViperBracketArray === true) {
+                const sizeArg = node.d.items.length > 1 ? node.d.items[0] : undefined;
+                const elementArg = node.d.items[node.d.items.length - 1];
+                return (
+                    '[' +
+                    (sizeArg ? printArg(sizeArg, flags) : '') +
+                    ']' +
+                    printExpression(elementArg.d.valueExpr, flags)
+                );
+            }
+
             return (
                 printExpression(node.d.leftExpr, flags) +
                 '[' +

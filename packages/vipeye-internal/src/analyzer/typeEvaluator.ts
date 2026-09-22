@@ -5358,6 +5358,12 @@ export function createTypeEvaluator(
             // Handle the special case of "reveal_type" and "reveal_locals".
             if (name === 'reveal_type' || name === 'reveal_locals') {
                 type = AnyType.create();
+            } else if (node.d.isViperBracketArraySynthetic) {
+                // Viper 扩展：`[SIZE]T` 数组语法脱糖出的合成 `t` 名
+                // （见 parser._parseViperBracketArrayType）。源文件未 import t 时
+                // 该名无法解析，静默退化为 Unknown（不报"未定义 t"），
+                // 数组类型语义随之退化；正常 Viper 源码均带 import t。
+                type = UnknownType.create();
             } else {
                 // Viper 扩展：前向引用支持（收紧版）。
                 // Viper 是 AOT 语言，函数/类的定义顺序无关（类似 C 语言的前向声明），
@@ -6288,7 +6294,10 @@ export function createTypeEvaluator(
                 if (
                     isUnknown(baseType) &&
                     !(baseType.priv.isIncomplete ?? false) &&
-                    IsViperDialect(fileInfo.executionEnvironment.dialect)
+                    IsViperDialect(fileInfo.executionEnvironment.dialect) &&
+                    // Viper 扩展：`[SIZE]T` 脱糖出的合成 t.CArray 成员访问，
+                    // 合成 `t` 未解析（源文件未 import t）时静默退化，不报此警告。
+                    !isViperBracketArraySyntheticMember(node)
                 ) {
                     fileInfo.diagnosticSink.addDiagnosticWithTextRange(
                         'warning',
@@ -6749,12 +6758,17 @@ export function createTypeEvaluator(
                     ? DiagnosticRule.reportFunctionMemberAccess
                     : DiagnosticRule.reportAttributeAccessIssue;
 
-                addDiagnostic(
-                    rule,
-                    diagMessage.format({ name: memberName, type: printType(baseType) }) + diag.getString(),
-                    node.d.member,
-                    diag.getEffectiveTextRange() ?? node.d.member
-                );
+                // Viper 扩展：`[SIZE]T` 数组语法脱糖出的合成 `t.CArray` 成员访问，
+                // 当合成 `t` 未解析（源文件未 import t）时静默退化为 Unknown，
+                // 不再叠加"无法解析成员"诊断（见 parser._parseViperBracketArrayType）。
+                if (!isViperBracketArraySyntheticMember(node)) {
+                    addDiagnostic(
+                        rule,
+                        diagMessage.format({ name: memberName, type: printType(baseType) }) + diag.getString(),
+                        node.d.member,
+                        diag.getEffectiveTextRange() ?? node.d.member
+                    );
+                }
             }
 
             // If this is member access on a function, use "Any" so if the
@@ -8711,6 +8725,16 @@ export function createTypeEvaluator(
         return undefined;
     }
 
+    // Viper 扩展：判断成员访问是否是 `[SIZE]T` 数组语法脱糖出的合成 `t.CArray`
+    // 成员访问（见 parser._parseViperBracketArrayType）。合成 `t` 名零长度、
+    // 不对应源码字符，未 import t 时其解析失败须静默退化，相关诊断一律跳过。
+    function isViperBracketArraySyntheticMember(node: MemberAccessNode): boolean {
+        return (
+            node.d.leftExpr.nodeType === ParseNodeType.Name &&
+            node.d.leftExpr.d.isViperBracketArraySynthetic === true
+        );
+    }
+
     // Viper 扩展：REnum 变体字段类型（仅取类型，见 getViperREnumVariantFieldInfo）。
     function getViperREnumVariantFieldType(renumType: ClassType, memberName: string): Type | undefined {
         return getViperREnumVariantFieldInfo(renumType, memberName)?.type;
@@ -9046,6 +9070,13 @@ export function createTypeEvaluator(
         let adjFlags = flags | EvalFlags.NoConvertSpecialForm;
         adjFlags &= ~EvalFlags.TypeFormArg;
 
+        // Viper 扩展：`[SIZE]T` 数组语法脱糖出的下标节点，items 按源码顺序为
+        // [长度, 元素类型]（AST 要求子节点按位置递增不重叠），而语义顺序是
+        // [元素类型, 长度]（等价 t.CArray[T, SIZE]），故在此反转实参顺序，
+        // 使后续类型参数个数校验、特化完全复用 t.CArray 的既有逻辑。
+        const indexItems =
+            node.d.isViperBracketArray === true ? [...node.d.items].reverse() : node.d.items;
+
         const allowFinalClassVar = () => {
             // If the annotation is a variable within the body of a dataclass, a
             // Final is allowed with a ClassVar annotation. In all other cases,
@@ -9123,22 +9154,22 @@ export function createTypeEvaluator(
 
         // A tuple is treated the same as a list of items in the index.
         if (
-            node.d.items.length === 1 &&
+            indexItems.length === 1 &&
             !node.d.trailingComma &&
-            !node.d.items[0].d.name &&
-            node.d.items[0].d.valueExpr.nodeType === ParseNodeType.Tuple
+            !indexItems[0].d.name &&
+            indexItems[0].d.valueExpr.nodeType === ParseNodeType.Tuple
         ) {
-            node.d.items[0].d.valueExpr.d.items.forEach((item, index) => {
+            indexItems[0].d.valueExpr.d.items.forEach((item, index) => {
                 typeArgs.push(getTypeArgTypeResult(item, index));
             });
 
             // Set the node's type so it isn't reevaluated later.
-            setTypeResultForNode(node.d.items[0].d.valueExpr, { type: UnknownType.create() });
+            setTypeResultForNode(indexItems[0].d.valueExpr, { type: UnknownType.create() });
 
             return typeArgs;
         }
 
-        node.d.items.forEach((arg, index) => {
+        indexItems.forEach((arg, index) => {
             const typeResult = getTypeArgTypeResult(arg.d.valueExpr, index);
 
             if (arg.d.argCategory !== ArgCategory.Simple) {

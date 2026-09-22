@@ -1,5 +1,11 @@
 # Change Log
 
+## 1.1.416
+
+- **New command `Viper: Cleanup and Deactivate`**: stops the language server of the current window (terminating the server process), disposes every resource the extension registered (commands, sidebar views, status bar, file watchers, flow chart panel), and optionally purges the global semantic highlighting cache (`~/.vipeye/cache/semantic-tokens`). Run it in every window before uninstalling or updating the extension — a running server keeps its working directory inside the extension folder (undeletable on Windows) and the home-directory cache is shared across windows, so otherwise uninstall leaves a half-deleted extension and other windows keep showing stale results even after restarting the extension host. Reload the window to bring Viper back
+- Syntax highlighting fix: brackets (`[]{}()`) inside strings, comments and f-string interpolations are no longer colorized by the editor's built-in bracket pair colorization (declared `balancedBracketScopes` / `unbalancedBracketScopes` on the `viper` grammar contribution)
+- The semantic highlighting disk cache path is now defined once in `common/pathUtils.ts` and shared by the language server and the extension client
+
 ## 1.1.415
 
 - **`[SIZE]T` 数组类型语法**：新增定长数组写法 `[SIZE]T`（等价 `t.CArray[T, SIZE]`）与不定长写法 `[]T`（等价 `t.CArray[T]`）；支持整数字面量 / `t.CDefine` 常量作为长度、多维嵌套 `[2][3]T`、指针元素 `[4]T*`，可用于变量、参数、返回值、类成员、`type X =` 注解以及泛型实参位置（如 `list[[4]int]`）

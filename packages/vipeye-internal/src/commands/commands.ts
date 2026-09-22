@@ -10,6 +10,7 @@
 export const enum Commands {
     createTypeStub = 'viper.createtypestub',
     restartServer = 'viper.restartserver',
+    cleanupAndDeactivate = 'viper.cleanupAndDeactivate',
     orderImports = 'viper.organizeimports',
     unusedImport = 'viper.unusedImport',
     dumpFileDebugInfo = 'viper.dumpFileDebugInfo',

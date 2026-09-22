@@ -9,6 +9,7 @@
  * runs in another process.
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import {
     commands,
@@ -16,6 +17,7 @@ import {
     ExtensionMode,
     extensions,
     Position,
+    ProgressLocation,
     Range,
     TextEditor,
     TextEditorEdit,
@@ -38,6 +40,7 @@ import {
 
 import { Commands } from 'vipeye-internal/commands/commands';
 import { isThenable } from 'vipeye-internal/common/core';
+import { getSemanticTokenCacheDir } from 'vipeye-internal/common/pathUtils';
 
 // 仅用类型：type-only import 打包时会被擦除，不会把服务端代码带进客户端。
 import type { FlowChartResponse } from 'vipeye-internal/commands/flowChartCommand';
@@ -52,6 +55,10 @@ import { registerFlowChartView } from './flowChartView';
 let cancellationStrategy: FileBasedCancellationStrategy | undefined;
 
 let languageClient: LanguageClient | undefined;
+
+// 「清理并临时关停」执行中标志：清理期间语言服务已停、订阅已释放，
+// 重复触发只会产生误导性的报错，故直接忽略。
+let isCleaningUp = false;
 
 // Request a heap size of 3GB. This is reasonable for modern systems.
 const defaultHeapSize = 3072;
@@ -219,6 +226,61 @@ export async function activate(context: ExtensionContext) {
         );
     });
 
+    // 「清理并临时关停」：Ctrl+Shift+P → Viper: 清理并临时关停。
+    //
+    // 用途（多窗口互不干扰）：语言服务进程启动时会 chdir 到扩展自身目录
+    // （见 languageServerBase.ts），Windows 下该目录随即被进程占用而无法删除；
+    // 同时语义高亮磁盘缓存位于 ~/.vipeye/cache（跨会话、跨窗口共享）。
+    // 于是"在 A 窗口卸载扩展"时，B 窗口占着目录与缓存，卸载删不干净，
+    // 后续窗口会读到半删残留。这个命令让用户主动把某窗口的 Viper 完整停掉：
+    // 终结服务端进程 → 释放本窗口全部注册资源 →（可选）清除全局磁盘缓存，
+    // 之后再卸载/更新就不会互相拖累。重新加载窗口即可恢复。
+    context.subscriptions.push(
+        commands.registerCommand(Commands.cleanupAndDeactivate, async () => {
+            if (isCleaningUp) {
+                return;
+            }
+
+            const clearCacheChoice = 'Cleanup and Deactivate + Purge Cache';
+            const answer = await window.showWarningMessage(
+                'Viper will stop the language server for this window and dispose all resources it registered ' +
+                    '(commands, sidebar views, status bar, file watchers, flow chart panel).\n' +
+                    'Viper features in this window will stay disabled until you reload the window.\n' +
+                    `"${clearCacheChoice}" additionally deletes the global semantic token cache ` +
+                    '(~/.vipeye/cache/semantic-tokens); use it before uninstalling or updating the extension.',
+                { modal: true },
+                'Cleanup and Deactivate',
+                clearCacheChoice
+            );
+
+            if (!answer) {
+                return;
+            }
+
+            isCleaningUp = true;
+            try {
+                await window.withProgress(
+                    { location: ProgressLocation.Notification, title: 'Viper: cleaning up and shutting down...' },
+                    async () => {
+                        await stopLanguageServer();
+                        disposeAllSubscriptions(context);
+
+                        if (answer === clearCacheChoice) {
+                            clearSemanticTokenDiskCache();
+                        }
+                    }
+                );
+            } finally {
+                isCleaningUp = false;
+            }
+
+            void window.showInformationMessage(
+                'Viper has been cleaned up and temporarily shut down. If other Viper windows are open on this ' +
+                    'machine, run the same command there too before uninstalling or updating the extension.'
+            );
+        })
+    );
+
     // Register the debug only commands when running under the debugger.
     if (context.extensionMode === ExtensionMode.Development) {
         // Create a 'when' context for development.
@@ -337,6 +399,59 @@ export function deactivate() {
     languageClient = undefined;
 
     return client?.stop();
+}
+
+/**
+ * 停语言服务：先释放文件型取消策略（含其注册的文件与监听器），
+ * 再请求客户端 `stop()` 让服务端进程正常退出，最后 `dispose()` 注销客户端
+ * 注册的语言特性（语义高亮、悬停、诊断、文件监视等）。
+ * 服务端进程退出后，扩展目录不再被其 CWD 占用（Windows 下才能删除）。
+ */
+async function stopLanguageServer(): Promise<void> {
+    if (cancellationStrategy) {
+        cancellationStrategy.dispose();
+        cancellationStrategy = undefined;
+    }
+
+    const client = languageClient;
+    languageClient = undefined;
+    if (!client) {
+        return;
+    }
+
+    try {
+        await client.stop();
+    } finally {
+        client.dispose();
+    }
+}
+
+/**
+ * 释放本窗口由本扩展注册的全部资源（命令、侧边栏视图、状态栏、文件监视、
+ * 流程图面板、Viper 核心的项目/工具链视图等）。
+ * 单个资源释放失败不影响其余清理，故逐个吞掉异常。
+ */
+function disposeAllSubscriptions(context: ExtensionContext): void {
+    while (context.subscriptions.length > 0) {
+        const disposable = context.subscriptions.pop();
+        try {
+            disposable?.dispose();
+        } catch {
+            // 忽略：清理阶段不允许任何单个资源中断整体关停
+        }
+    }
+}
+
+/**
+ * 删除全局语义高亮磁盘缓存目录（与语言服务端共用同一路径定义）。
+ * 其它窗口可能正在读写同一目录（Windows 下删除会失败），失败不阻塞关停。
+ */
+function clearSemanticTokenDiskCache(): void {
+    try {
+        fs.rmSync(getSemanticTokenCacheDir(), { recursive: true, force: true });
+    } catch {
+        // 缓存目录被其它实例占用：跳过即可，下次关停或服务端过期清理仍会处理
+    }
 }
 
 function isConfigSettingSetByUser(configuration: WorkspaceConfiguration, setting: string): boolean {

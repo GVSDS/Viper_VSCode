@@ -12,8 +12,6 @@
 import './common/extensions';
 
 // Node.js 内置模块（用于语义高亮磁盘缓存目录确定）
-import * as os from 'os';
-import * as path from 'path';
 import * as fs from 'fs';
 
 import {
@@ -115,6 +113,7 @@ import {
     WorkspaceServices,
 } from './common/languageServerInterface';
 import { fromLSPAny, isNullProgressReporter } from './common/lspUtils';
+import { getSemanticTokenCacheDir } from './common/pathUtils';
 import { ProgressReportTracker, ProgressReporter } from './common/progressReporter';
 import { ServiceKeys } from './common/serviceKeys';
 import { ServiceProvider } from './common/serviceProvider';
@@ -317,7 +316,7 @@ export abstract class LanguageServerBase implements LanguageServerInterface, Dis
      */
     private _getSemanticTokenCacheDir(): string | undefined {
         try {
-            const cacheDir = path.join(os.homedir(), '.vipeye', 'cache', 'semantic-tokens');
+            const cacheDir = getSemanticTokenCacheDir();
             fs.mkdirSync(cacheDir, { recursive: true });
             return cacheDir;
         } catch {

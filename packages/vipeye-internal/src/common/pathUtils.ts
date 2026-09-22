@@ -7,6 +7,7 @@
  * Pathname utility functions.
  */
 
+import * as os from 'os';
 import * as path from 'path';
 
 import { Char } from './charCodes';
@@ -628,6 +629,24 @@ export function isRootedDiskPath(path: string) {
 export function isDiskPathRoot(path: string) {
     const rootLength = getRootLength(path);
     return rootLength > 0 && rootLength === path.length;
+}
+
+/**
+ * Viper 全局目录：`~/.vipeye/`。
+ *
+ * 该目录跨会话、跨实例共享（同一台机器上多个编辑器窗口共用一份）。
+ * 语言服务端写入、扩展客户端清理，两侧必须共用这里的定义，避免各写一份路径。
+ */
+export function getViperGlobalDir(): string {
+    return path.join(os.homedir(), '.vipeye');
+}
+
+/**
+ * 语义高亮磁盘缓存目录：`~/.vipeye/cache/semantic-tokens/`。
+ * 服务端在启动时创建并读写，客户端在执行「清理并临时关停（含清缓存）」时整体删除。
+ */
+export function getSemanticTokenCacheDir(): string {
+    return path.join(getViperGlobalDir(), 'cache', 'semantic-tokens');
 }
 
 function getAnyExtensionFromPathWorker(

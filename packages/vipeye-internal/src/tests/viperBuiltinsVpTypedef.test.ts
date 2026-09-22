@@ -187,6 +187,82 @@ def f(x: rawptr[int]) -> str:
     require('fs').rmSync(path.join(__dirname, '__builtins_vp_typedef__'), { recursive: true, force: true });
 });
 
+// 回归：builtins.vp 的 typedef 合并不能以"第一个绑定文件的环境"为准。
+// 若 Program 里先绑定了别处一个找不到 includes/builtins.vp 的文件（工程外的
+// 散落文件、多根工作区的另一个根、`.tpv_build` 下的生成物等），后续正规工程
+// 里的文件仍须能解析 uint32/int8/sizet 等 typedef，不得报"未定义"。
+// （同一工程在 VSCode 与 Trae 因打开的文件集合/顺序不同而结果不同，即此因。）
+test('其它环境的文件先被绑定时，本工程 builtins.vp typedef 仍可解析（不报未定义）', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(
+        createFromRealFileSystem(tempFile),
+        new NullConsole(),
+        tempFile
+    );
+    const fs = require('fs');
+    const base = path.join(__dirname, '__builtins_vp_env_order__');
+    fs.rmSync(base, { recursive: true, force: true });
+
+    // 环境 1：普通目录（无 includes/builtins.vp，无 extraPaths）
+    const plainRoot = path.join(base, 'Plain');
+    fs.mkdirSync(plainRoot, { recursive: true });
+    const plainFilePath = path.join(plainRoot, 'plain.vp');
+    fs.writeFileSync(plainFilePath, 'import t\n\nx: int = 0\n', 'utf8');
+
+    // 环境 2：正规工程（含 includes/builtins.vp）
+    const projRoot = path.join(base, 'Proj');
+    fs.mkdirSync(path.join(projRoot, 'includes'), { recursive: true });
+    fs.writeFileSync(
+        path.join(projRoot, 'includes', 'builtins.vp'),
+        'import t\n\nuint32: t.CTypedef = t.CUInt32T\n',
+        'utf8'
+    );
+    fs.mkdirSync(path.join(projRoot, 'App'), { recursive: true });
+    const projFilePath = path.join(projRoot, 'App', 'main.vp');
+    fs.writeFileSync(projFilePath, 'import t\n\nv: uint32 = 0\n', 'utf8');
+
+    const configOptions = new ConfigOptions(UriEx.file(projRoot));
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+    const makeEnv = (root: string) =>
+        new ExecutionEnvironment(
+            'python',
+            UriEx.file(root),
+            configOptions.diagnosticRuleSet,
+            configOptions.defaultPythonVersion,
+            configOptions.defaultPythonPlatform,
+            [],
+            /* skipNativeLibraries */ false,
+            /* defaultDialect */ 'viper'
+        );
+    configOptions.executionEnvironments = [makeEnv(plainRoot), makeEnv(projRoot)];
+
+    const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+    const program = new Program(importResolver, configOptions, serviceProvider);
+
+    // 绑定顺序：先 plain.vp（环境 1，找不到 builtins.vp），再 main.vp（环境 2）
+    const plainUri = UriEx.file(plainFilePath);
+    const projUri = UriEx.file(projFilePath);
+    program.setTrackedFiles([plainUri, projUri]);
+    while (program.analyze()) {
+        // 循环
+    }
+
+    const diagnostics = (program.getSourceFile(projUri)?.getDiagnostics(configOptions) || []).map(
+        (d) => `[category=${d.category}] ${d.message}`
+    );
+    const undefinedDiags = diagnostics.filter((d) => d.includes('未定义') || d.includes('undefined'));
+    assert.strictEqual(
+        undefinedDiags.length,
+        0,
+        `main.vp 不应报未定义（合并不得以第一个文件的环境为准），实际: ${JSON.stringify(diagnostics)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+    fs.rmSync(base, { recursive: true, force: true });
+});
+
 test('builtins.vp 同名声明优先覆盖 builtins.vpi（ord 参数为 t.CChar）', () => {
     const source = `import t
 

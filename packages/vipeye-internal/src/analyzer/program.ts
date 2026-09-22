@@ -161,8 +161,14 @@ export class Program {
     private _sourceFileFactory: ISourceFileFactory;
 
     // Viper 扩展：includes/builtins.vp（真实源码，非 .vpi 存根）的 typedef 符号
-    // 合并状态。key = builtinsImport.uri.key，避免对每个文件重复扫描/合并。
+    // 合并状态。key =（typeshed builtins 存根 + 执行环境 + 被分析文件目录），
+    // 避免对同一环境/目录下的文件重复扫描/合并；不同目录或不同执行环境会各自尝试。
     private _viperBuiltinsVpMergedKeys = new Set<string>();
+
+    // Viper 扩展：合并过程中的递归保护。查找并绑定 builtins.vp 时会重新进入
+    // _bindFile，若此时再次走到本方法会对同一文件重复 bind（触发
+    // "Bind called unnecessarily" 断言），故用该标志中断重入。
+    private _isMergingViperBuiltinsVp = false;
 
     constructor(
         initialImportResolver: ImportResolver,
@@ -1936,18 +1942,46 @@ export class Program {
             return;
         }
 
-        const key = fileToBind.builtinsImport.uri.key;
-        if (this._viperBuiltinsVpMergedKeys.has(key)) {
-            return;
-        }
-
-        // 先标记（防止绑定 builtins.vp 时递归进入本方法），成功后保留该标记。
-        this._viperBuiltinsVpMergedKeys.add(key);
-
         // 在 workspace root / 项目 includes（extraPaths）中定位 builtins.vp。
         // 注意：用 fileToBind.uri 而非 builtinsImport.uri（后者位于 typeshed，
         // findExecEnvironment 会落到默认环境而丢失 extraPaths）。
         const execEnv = this._configOptions.findExecEnvironment(fileToBind.uri);
+
+        const seeds: Uri[] = [];
+        if (fileToBind.uri && !fileToBind.uri.isEmpty()) {
+            seeds.push(fileToBind.uri.getDirectory());
+        }
+        if (execEnv?.root) {
+            seeds.push(execEnv.root);
+        }
+
+        // Viper 扩展：候选位置只取决于"被分析文件所在目录 + 执行环境（root/extraPaths）"，
+        // 因此缓存键必须包含这两者，不能只用 fileToBind.builtinsImport.uri.key ——
+        // 该 uri 是 typeshed 的 builtins 存根，整个 Program 共用同一个键：若第一个
+        // 绑定的文件所在环境找不到 builtins.vp（工程外的散落文件、多根工作区的另一个
+        // 根、`.tpv_build` 下的生成物等），标记后其它文件/工程会被永久跳过合并，
+        // 表现为 uint32/int8/sizet 等 typedef 集体报"未定义"（同一工程在 VSCode 与
+        // Trae 因打开的文件集合/顺序不同而结果不同）。
+        // 仍在查找前标记（防止绑定 builtins.vp 时递归进入本方法）：查找失败只跳过
+        // "同目录 + 同环境"的后续文件，其它目录/环境会各自尝试。
+        const key = [
+            fileToBind.builtinsImport.uri.key,
+            execEnv?.root?.key ?? '',
+            ...(execEnv?.extraPaths ?? []).map((extraPath) => extraPath.key),
+            ...seeds.map((seed) => seed.key),
+        ].join('|');
+        if (this._viperBuiltinsVpMergedKeys.has(key)) {
+            return;
+        }
+
+        // 合并过程中的重入（绑定 builtins.vp 自身时）直接跳过：
+        // 外层调用已在执行同一次合并，符号表无需重复写入。
+        if (this._isMergingViperBuiltinsVp) {
+            return;
+        }
+
+        this._viperBuiltinsVpMergedKeys.add(key);
+
         const candidates: Uri[] = [];
         if (execEnv?.root) {
             candidates.push(execEnv.root);
@@ -1963,13 +1997,6 @@ export class Program {
         // 使 `<root>/includes/builtins.vp` 对 `<root>/Test/.../App/main.vp`
         // 这类未显式配置 includes 的工程同样可用（对齐编译器行为）。
         const ancestorKeys = new Set<string>(candidates.map((c) => c.key));
-        const seeds: Uri[] = [];
-        if (fileToBind.uri && !fileToBind.uri.isEmpty()) {
-            seeds.push(fileToBind.uri.getDirectory());
-        }
-        if (execEnv?.root) {
-            seeds.push(execEnv.root);
-        }
         for (const seed of seeds) {
             let dir: Uri | undefined = seed;
             for (let depth = 0; depth < 6 && dir && !dir.isEmpty(); depth++) {
@@ -2001,9 +2028,16 @@ export class Program {
             return;
         }
 
-        // 加载并绑定 builtins.vp（_lookUpImport 会按需绑定，递归安全）。
+        // 加载并绑定 builtins.vp（_lookUpImport 会按需绑定）。
+        // 绑定过程中会重新进入 _bindFile → 本方法（builtins.vp 自身也要合并），
+        // 此时必须中断重入，否则会对同一文件重复 bind（"Bind called unnecessarily"）。
         this.addTrackedFile(builtinsVpUri);
-        this._lookUpImport(builtinsVpUri);
+        this._isMergingViperBuiltinsVp = true;
+        try {
+            this._lookUpImport(builtinsVpUri);
+        } finally {
+            this._isMergingViperBuiltinsVp = false;
+        }
 
         const builtinsVpInfo = this.getSourceFileInfo(builtinsVpUri);
         const parseResults = builtinsVpInfo?.sourceFile.getParserOutput();

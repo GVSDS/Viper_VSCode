@@ -85,6 +85,7 @@ import {
     TypeParameterNode,
     TypeParameterScopeNode,
     TypeParamKind,
+    UnaryOperationNode,
     UnpackNode,
     WithItemNode,
     YieldFromNode,
@@ -9824,6 +9825,19 @@ export function createTypeEvaluator(
                 // 最内层为 CPtr 实例（1 级），外层包裹 extraLevels 层 CPtr
                 const cptrInstance = ClassType.cloneAsInstance(baseTypeResult.type);
                 typeResult.type = buildNestedCPtrType(baseTypeResult.type, cptrInstance, extraLevels);
+            } else if (
+                // Viper 扩展：C 风格强转 `(T*)(x)`（以及由 parser 归一为同一形态的 `(T*)x`）。
+                // callee 是 C 指针类型表达式（_parseViperPointerTypeSuffix 标记的一元 '*'），
+                // 求值为指针类型 CPtr[T] 本身，而非可调用值。按 C 语义 `(T*)x` 是强转，
+                // 结果类型为 CPtr[T] 的实例，实参不做可调用性/参数类型检查。
+                // 仅匹配语法上确为指针类型后缀的 callee，故函数指针变量调用 `fn(x)` 不受影响。
+                IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                isClassInstance(baseTypeResult.type) &&
+                isCPtrType(baseTypeResult.type) &&
+                node.d.leftExpr.nodeType === ParseNodeType.UnaryOperation &&
+                !!(node.d.leftExpr as UnaryOperationNode).d.isViperPointerTypeSuffix
+            ) {
+                typeResult.type = baseTypeResult.type;
             } else if (
                 // Viper 扩展：拦截非整数、非 CPtr 的 CType 子类指针构造调用。
                 // 覆盖 t.CVoid(0, t.CPtr)、t.CFloat(x, t.CPtr) 等形式：

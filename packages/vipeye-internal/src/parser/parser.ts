@@ -4380,6 +4380,15 @@ export class Parser {
                 possibleTupleNode.d.hasParens = true;
             }
 
+            // Viper 扩展：`(T*)operand` —— 括号内是 C 指针类型后缀（T*），其后紧跟
+            // 操作数时按 C 强转解析为调用，语义等价于已支持的 `(T*)(x)` 通路。
+            // 仅当括号内由 _parseViperPointerTypeSuffix 标记为指针类型后缀时生效，
+            // 故 `(a)*b`、`(a) * (b)` 等乘法与 `(*p)x`（前缀解引用）完全不受影响。
+            const viperCastNode = this._tryParseViperPointerCast(possibleTupleNode);
+            if (viperCastNode) {
+                return viperCastNode;
+            }
+
             return possibleTupleNode;
         } else if (nextToken.type === TokenType.OpenBracket) {
             return this._parseListAtom();
@@ -5226,16 +5235,83 @@ export class Parser {
             const nextOperator = this._peekOperatorType();
             if (nextOperator === OperatorType.Multiply) {
                 const starToken = this._getNextToken();
-                result = this._createUnaryOperationNode(starToken, result, OperatorType.Multiply);
+                result = this._markViperPointerTypeSuffix(
+                    this._createUnaryOperationNode(starToken, result, OperatorType.Multiply)
+                );
             } else if (nextOperator === OperatorType.Power) {
                 const starToken = this._getNextToken();
-                result = this._createUnaryOperationNode(starToken, result, OperatorType.Multiply);
-                result = this._createUnaryOperationNode(starToken, result, OperatorType.Multiply);
+                result = this._markViperPointerTypeSuffix(
+                    this._createUnaryOperationNode(starToken, result, OperatorType.Multiply)
+                );
+                result = this._markViperPointerTypeSuffix(
+                    this._createUnaryOperationNode(starToken, result, OperatorType.Multiply)
+                );
             } else {
                 break;
             }
         }
         return result;
+    }
+
+    // Viper 扩展：标记由 C 指针类型后缀 `T*` 生成的一元 '*' 节点（区别于前缀解引用 `*x`）。
+    // 供 `(T*)x` 强转解析（_parseAtom）区分「括号内的指针类型」与「括号内的解引用」。
+    private _markViperPointerTypeSuffix(node: ExpressionNode): ExpressionNode {
+        if (node.nodeType === ParseNodeType.UnaryOperation) {
+            (node as UnaryOperationNode).d.isViperPointerTypeSuffix = true;
+        }
+        return node;
+    }
+
+    // Viper 扩展：`(T*)operand` 强转解析。
+    // 当括号内是「由 _parseViperPointerTypeSuffix 生成的指针类型后缀」节点，且紧随其后
+    // 是操作数起点（NAME / NUMBER / STRING / f-string / 字面量等，而非运算符）时，
+    // 将其后的操作数作为该强转的唯一实参，构造 CallNode 返回。
+    // 语义等价于已支持的 `(T*)(x)` 通路：CallNode(func = 括号内类型表达式, args = [操作数])。
+    private _tryParseViperPointerCast(possibleTupleNode: ExpressionNode): ExpressionNode | undefined {
+        if (this._parseOptions.dialect !== 'viper') {
+            return undefined;
+        }
+        if (
+            possibleTupleNode.nodeType !== ParseNodeType.UnaryOperation ||
+            !(possibleTupleNode as UnaryOperationNode).d.isViperPointerTypeSuffix
+        ) {
+            return undefined;
+        }
+        if (!this._isAtViperCastOperandStart()) {
+            return undefined;
+        }
+
+        // 按 C 的强转优先级解析操作数（一元表达式级），故 `(T*)a + b` = `((T*)a) + b`。
+        const operand = this._parseArithmeticFactor();
+        const argNode = ArgumentNode.create(/* startToken */ undefined, operand, ArgCategory.Simple);
+        return CallNode.create(possibleTupleNode, [argNode], /* trailingComma */ false);
+    }
+
+    // Viper 扩展：判定当前位置是否为 `(T*)` 之后可作为强转操作数的表达式起点。
+    // 仅接受操作数起点（标识符 / 数字 / 字符串 / f-string / 字面量关键字 / 字典集合 / 反引号），
+    // 排除运算符与 '('、'['：后两者由 _parseAtomExpression 的 trailer 分别按函数调用、
+    // 下标处理（即 `(T*)(x)` 走既有调用通路，`(T*)[i]` 保持下标语义），不受本扩展影响。
+    private _isAtViperCastOperandStart(): boolean {
+        const nextToken = this._peekToken();
+        switch (nextToken.type) {
+            case TokenType.Identifier:
+            case TokenType.Number:
+            case TokenType.String:
+            case TokenType.FStringStart:
+            case TokenType.OpenCurlyBrace:
+            case TokenType.Backtick:
+                return true;
+            case TokenType.Keyword: {
+                const keywordToken = nextToken as KeywordToken;
+                return (
+                    keywordToken.keywordType === KeywordType.False ||
+                    keywordToken.keywordType === KeywordType.True ||
+                    keywordToken.keywordType === KeywordType.None
+                );
+            }
+            default:
+                return false;
+        }
     }
 
     private _reportStringTokenErrors(

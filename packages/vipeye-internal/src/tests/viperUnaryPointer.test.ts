@@ -29,6 +29,7 @@ import { UriEx } from '../common/uri/uriUtils';
 import { FullAccessHost } from '../common/fullAccessHost';
 import { convertOffsetToPosition } from '../common/positionUtils';
 import {
+    AssignmentNode,
     BinaryOperationNode,
     FunctionNode,
     IndexNode,
@@ -527,6 +528,82 @@ def test_bytes_deref(buf: bytes) -> int:
     assert(
         !diagnostics.some((d) => d.includes('不支持运算符')),
         `str/bytes 解引用不应报运算符错误: ${JSON.stringify(diagnostics)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
+// Viper：三种 C 风格类型强转写法（指针类型 + 裸值/括号值），与既有调用式强转并存。
+//   形式 2：(T*)x        —— 括号内指针类型 + 裸值     → CPtr[T]
+//   形式 3：(T*)(x)      —— 括号内指针类型 + 括号值   → CPtr[T]
+//   形式 1：T*(x)        —— 指针类型 + 括号值（与乘法歧义，靠左操作数为类型对象消解）
+// 三者结果类型均为指针形态 CPtr[CInt]（打印为 rawptr[CInt]）。
+// 对照组：既有强转 `(t.CInt)(x)`、`(t.CInt | t.CPtr)(x)`，以及真实乘法不受影响。
+test('Viper 三种 C 风格强转 (T*)x / (T*)(x) / T*(x)', () => {
+    const code = `import t
+
+def f(ptr_raw: t.CUInt64T, offset: uint64) -> int:
+    d = (t.CInt)(ptr_raw)
+    a = (t.CInt*)offset
+    b = (t.CInt*)(offset)
+    c = t.CInt*(offset)
+    p: t.CInt | t.CPtr = (t.CInt | t.CPtr)(ptr_raw)
+    m: int = offset * 2
+    n: int = 2 * 3
+    return 0
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgramForCode(code);
+
+    const evaluator = program.evaluator as TypeEvaluator | undefined;
+    assert(evaluator, 'evaluator not available');
+    const ev = evaluator;
+
+    // 收集赋值右值的类型（d/a/b/c 均为无注解赋值，m/n 为带注解赋值）
+    const rhsTypes: { line: number; type: string }[] = [];
+    class RhsCollector extends ParseTreeWalker {
+        override visitAssignment(node: AssignmentNode) {
+            const line = convertOffsetToPosition(node.d.rightExpr.start, parseResults.parserOutput.lines).line + 1;
+            const type = ev.getType(node.d.rightExpr);
+            rhsTypes.push({ line, type: type ? program.printType(type) : '(undefined)' });
+            return true;
+        }
+    }
+    new RhsCollector().walk(parseResults.parserOutput.parseTree);
+
+    console.log('=== 强转赋值右值类型 ===');
+    rhsTypes.forEach((r) => console.log(`  L${r.line}: ${r.type}`));
+
+    // 形式 2/3/1（L5/L6/L7）：均为指针形态且包含 CInt（rawptr[CInt]）
+    for (const line of [5, 6, 7]) {
+        const entry = rhsTypes.find((r) => r.line === line);
+        assert(entry, `强转右值类型未找到 (L${line})`);
+        assert(
+            entry.type.includes('rawptr') && entry.type.includes('CInt'),
+            `L${line} 应为指针形态且包含 CInt: ${entry.type}`
+        );
+    }
+
+    // 对照组（L4）：既有调用式强转 `(t.CInt)(ptr_raw)` → CInt
+    const dType = rhsTypes.find((r) => r.line === 4);
+    assert(dType, 'd 类型未找到 (L4)');
+    assert(dType.type.includes('CInt'), `d 应包含 CInt: ${dType.type}`);
+
+    // 对照组的真实乘法：L9 offset * 2、L10 2 * 3 —— 不得被当作强转（不是指针形态）
+    for (const line of [9, 10]) {
+        const entry = rhsTypes.find((r) => r.line === line);
+        assert(entry, `乘法右值类型未找到 (L${line})`);
+        assert(!entry.type.includes('rawptr'), `L${line} 是真实乘法，不应为指针类型: ${entry.type}`);
+    }
+
+    // 全部写法不得有 category=0（错误）/ category=1（警告）诊断
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    const errorsAndWarnings = diagnostics.filter((d) => d.includes('category=0') || d.includes('category=1'));
+    console.log('=== 错误/警告诊断 ===');
+    errorsAndWarnings.forEach((d) => console.log(`  ${d}`));
+    assert(
+        errorsAndWarnings.length === 0,
+        `三种强转写法不应产生错误/警告: ${JSON.stringify(errorsAndWarnings)}`
     );
 
     program.dispose();

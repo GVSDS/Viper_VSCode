@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.1.424
+
+- C-style casts now accept the pointer spellings used by TransPyC: `(T*)x`, `(T*)(x)` and `T*(x)` all evaluate to the pointer type (`CPtr[T]`). Inside parentheses or call arguments `T*` is read as a pointer *type* when the operand is a type object, and a binary `*` whose left operand is a type object is read as a cast — so `2 * 3` / `offset * 2` still multiply. `(T*)a + b` groups as `((T*)a) + b`, and `(T*)[i]` remains a subscript
+
 ## 1.1.423
 
 - Parser: the C pointer suffix (`T*` / `T**`) is now recognized in call arguments, not only inside type annotations, so `va_arg(ap, int64*)` / `short*` / `int*` (as used by TransPyC's `viperlib.vp`) parse correctly. Real multiplication and power expressions (`a * b`, `a ** b`, `N * 2`) are unaffected

@@ -923,6 +923,10 @@ export interface UnaryOperationNode extends ParseNodeBase<ParseNodeType.UnaryOpe
         operatorToken: Token;
         operator: OperatorType;
         hasParens: boolean;
+
+        // Viper 扩展：该一元 '*' 是由 C 指针类型后缀 `T*` 生成的（而非前缀解引用 `*x`）。
+        // 用于 `(T*)x` 强转解析与类型求值时的区分。
+        isViperPointerTypeSuffix?: boolean;
     };
 }
 

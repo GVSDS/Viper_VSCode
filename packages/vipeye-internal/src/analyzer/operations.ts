@@ -17,6 +17,7 @@ import {
     AugmentedAssignmentNode,
     BinaryOperationNode,
     ExpressionNode,
+    ParseNode,
     ParseNodeType,
     TernaryNode,
     UnaryOperationNode,
@@ -242,6 +243,22 @@ export function validateBinaryOperation(
             (operator === OperatorType.Add || operator === OperatorType.Subtract)
         ) {
             type = getViperPointerArithmeticResult(operator, leftType, rightType);
+        }
+
+        // Viper 扩展：C 风格强转 `T*(x)`（左操作数是「类型对象」时可实例化类，如 t.CInt）。
+        // parser 对 `T*(x)` 得到 BinaryOperation(Multiply, T, (x))——'*' 后紧跟 '('，
+        // 不满足指针后缀的"无右操作数"判据，故被解析为二元乘法。Viper 语义等价于
+        // `(T*)(x)`，结果类型为指针类型 CPtr[T] 的实例。
+        // 左操作数为真值类型（int/float 等）时不受影响：`2 * 3`、`offset * 2`
+        // 等真实乘法仍走正常路径。
+        if (
+            !type &&
+            IsViperDialect(getFileInfo(errorNode).executionEnvironment.dialect) &&
+            operator === OperatorType.Multiply &&
+            isInstantiableClass(leftType)
+        ) {
+            const typeArg = isClass(leftType) && !isClassInstance(leftType) ? convertToInstance(leftType) : leftType;
+            type = getViperCPtrTypeForTypeArg(evaluator, errorNode, typeArg);
         }
 
         if (!type) {
@@ -735,6 +752,13 @@ export function getTypeOfUnaryOperation(
     // 不走魔法方法路径（指针没有 __pos__ 等）。
     if (isViperDialect) {
         if (node.d.operator === OperatorType.Multiply) {
+            // Viper 扩展：值上下文里一元 '*' 的操作数若是「类型对象」（可实例化类，
+            // 如 t.CInt、ast.AST），则 `T*` 是 C 指针类型表达式 CPtr[T]，而非对值的解引用。
+            // 于是 `(T*)x`、`(T*)(x)`、`T*(x)` 中的括号内/实参里的 `T*` 都被求值为指针类型。
+            // 只有真值（CPtr / str / bytes / 数值等）才走解引用路径。
+            if (isInstantiableClass(exprType)) {
+                return getTypeOfViperPointerAnnotation(evaluator, node);
+            }
             return getTypeOfViperDeref(evaluator, node, exprType, isIncomplete);
         }
         if (node.d.operator === OperatorType.BitwiseAnd) {
@@ -1012,11 +1036,7 @@ function getTypeOfViperAddrOf(
 }
 
 // 构造 CPtr[typeArg]（Viper 指针类型），通过 t 模块的 CPtr 泛型类特化。
-function getViperCPtrTypeForTypeArg(
-    evaluator: TypeEvaluator,
-    node: UnaryOperationNode,
-    typeArg: Type
-): Type | undefined {
+function getViperCPtrTypeForTypeArg(evaluator: TypeEvaluator, node: ParseNode, typeArg: Type): Type | undefined {
     const tSymbolWithScope = evaluator.lookUpSymbolRecursive(node, 't', /* honorCodeFlow */ true);
     if (!tSymbolWithScope) {
         return undefined;

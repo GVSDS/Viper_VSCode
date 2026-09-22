@@ -458,3 +458,64 @@ def main() -> int:
     program.dispose();
     serviceProvider.dispose();
 });
+
+// Viper：str / bytes 都是 C 的 char*（i8*），`*s` 取首字符，类型为 char（i8）。
+// 修复「类型 "str" 不支持运算符 "*"」（reportOperatorIssue）。
+test('Viper 解引用 str/bytes 返回 char', () => {
+    const code = `import t
+
+def test_str_deref(fmt: str) -> int:
+    c: char = *fmt
+    return 0
+
+def test_bytes_deref(buf: bytes) -> int:
+    ch: char = *buf
+    return 0
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgramForCode(code);
+
+    const evaluator = program.evaluator as TypeEvaluator | undefined;
+    assert(evaluator, 'evaluator not available');
+    const ev = evaluator;
+
+    const derefs: { line: number; type: string }[] = [];
+    class UnaryCollector extends ParseTreeWalker {
+        override visitUnaryOperation(node: UnaryOperationNode) {
+            if (node.d.operator !== OperatorType.Multiply) {
+                return true;
+            }
+            const type = ev.getType(node as any);
+            derefs.push({
+                line: convertOffsetToPosition(node.start, parseResults.parserOutput.lines).line + 1,
+                type: type ? program.printType(type) : '(undefined)',
+            });
+            return true;
+        }
+    }
+    new UnaryCollector().walk(parseResults.parserOutput.parseTree);
+
+    console.log('=== str/bytes 解引用类型 ===');
+    derefs.forEach((d) => console.log(`  L${d.line}: ${d.type}`));
+
+    // L4: *fmt（fmt: str，即 i8*）→ char
+    const strDeref = derefs.find((d) => d.line === 4);
+    assert(strDeref, '*fmt not found (L4)');
+    assert.strictEqual(strDeref.type, 'char', `*fmt 应为 char，实际: ${strDeref.type}`);
+
+    // L8: *buf（buf: bytes，即 i8*）→ char
+    const bytesDeref = derefs.find((d) => d.line === 8);
+    assert(bytesDeref, '*buf not found (L8)');
+    assert.strictEqual(bytesDeref.type, 'char', `*buf 应为 char，实际: ${bytesDeref.type}`);
+
+    // 不得报「类型 "str" / "bytes" 不支持运算符 "*"」
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    console.log('=== 诊断 ===');
+    diagnostics.forEach((d) => console.log(`  ${d}`));
+    assert(
+        !diagnostics.some((d) => d.includes('不支持运算符')),
+        `str/bytes 解引用不应报运算符错误: ${JSON.stringify(diagnostics)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});

@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.1.419
+
+- Dereferencing `str` / `bytes` with the unary `*` operator no longer reports `reportOperatorIssue`: both are C `char*` (`i8*`) in Viper, so `*s` yields `char` (`i8`). Mirrors `t.CPtr[X]` dereferencing, which already returned the pointee type
+
 ## 1.1.418
 
 - **Built-in C basic type names**: `long` (`t.CLong`) and `longlong` (`t.CLongLong`) are now built-in typedefs, mirroring the compiler's `_CNAME_ALIAS` table (`char`, `short`, `long`, `unsigned` and friends are language built-ins that need no import). C's `long long` cannot be spelled with a space, so Viper writes `longlong`; the unsigned form stays available as `t.CUnsignedLongLong`

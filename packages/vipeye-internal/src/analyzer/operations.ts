@@ -850,6 +850,7 @@ export function getTypeOfUnaryOperation(
 
 // Viper 扩展：一元 '*'（解引用）类型求值，与 C 语义一致。
 //   - CPtr[X]（含 `X | t.CPtr` 化简形式）→ 返回目标类型 X（类对象转为实例）
+//   - str / bytes（C 的 char*，即 i8*）→ 返回 char（i8）
 //   - Unknown/Any → 透传
 //   - 非指针类型 → 报错（C 语义：invalid type argument of unary '*'）
 function getTypeOfViperDeref(
@@ -864,6 +865,12 @@ function getTypeOfViperDeref(
     mapSubtypes(exprType, (subtype) => {
         if (isAnyOrUnknown(subtype)) {
             resultTypes.push(subtype);
+            return subtype;
+        }
+
+        // Viper：str / bytes 都是 C 的 char*（i8*），解引用取首字符，类型为 char（i8）。
+        if (isClassInstance(subtype) && ClassType.isBuiltIn(subtype, ['str', 'bytes'])) {
+            resultTypes.push(evaluator.getBuiltInObject(node, 'char'));
             return subtype;
         }
 

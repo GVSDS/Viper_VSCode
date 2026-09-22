@@ -2,8 +2,8 @@
  * viperEnumerate.test.ts
  *
  * 验证 Viper 方言下内置 enumerate 的语义：
- *   - enumerate(str) 调用类型为 enumerate[t.CChar]（_T 按 for 原迭代逻辑绑定元素类型）
- *   - `for i, ch in enumerate(str)` 中 i 为 t.CSizeT（size_t 索引）、ch 为迭代元素 t.CChar
+ *   - enumerate(str) 调用类型为 enumerate[char]（_T 按 for 原迭代逻辑绑定元素类型）
+ *   - `for i, ch in enumerate(str)` 中 i 为 t.CSizeT（size_t 索引）、ch 为迭代元素 char
  *   - 与 Python 声明（Iterable[_T] 协议、tuple[int, _T]）的差异由 Viper 特判覆盖
  *
  * 运行：npx jest src/tests/viperEnumerate.test.ts --runInBand
@@ -104,7 +104,7 @@ function collectForTargets(
     return { iterableTypes, targets };
 }
 
-test('for i, ch in enumerate(kw_arg)：i 为 t.CSizeT、ch 为 t.CChar', () => {
+test('for i, ch in enumerate(kw_arg)：i 为 t.CSizeT、ch 为 char', () => {
     const source = `import t
 
 def f(kw_arg: str) -> int:
@@ -116,16 +116,16 @@ def f(kw_arg: str) -> int:
 
     const { iterableTypes, targets } = collectForTargets(program, parseResults!);
 
-    // 1. enumerate 调用类型：元素类型按 for 原迭代逻辑（str → t.CChar）
-    assert(iterableTypes.some((t) => t === 'enumerate[CChar]'), `实际: ${JSON.stringify(iterableTypes)}`);
+    // 1. enumerate 调用类型：元素类型按 for 原迭代逻辑（str → char）
+    assert(iterableTypes.some((t) => t === 'enumerate[char]'), `实际: ${JSON.stringify(iterableTypes)}`);
 
     // 2. 索引 i 为 t.CSizeT（size_t）
     const iTypes = targets.get('i');
     assert(iTypes && iTypes.some((t) => t === 'CSizeT'), `i 应为 CSizeT，实际: ${JSON.stringify(iTypes)}`);
 
-    // 3. 元素 ch 为 t.CChar
+    // 3. 元素 ch 为 char（str/bytes 迭代元素，与 s[i] / *s 统一）
     const chTypes = targets.get('ch');
-    assert(chTypes && chTypes.some((t) => t === 'CChar'), `ch 应为 CChar，实际: ${JSON.stringify(chTypes)}`);
+    assert(chTypes && chTypes.some((t) => t === 'char'), `ch 应为 char，实际: ${JSON.stringify(chTypes)}`);
 
     program.dispose();
     serviceProvider.dispose();

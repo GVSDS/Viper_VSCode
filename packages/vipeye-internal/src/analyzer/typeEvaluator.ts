@@ -3291,15 +3291,11 @@ export function createTypeEvaluator(
                         }
                         return UnknownType.create(isIncomplete);
                     }
-                    // Viper 扩展：str/bytes 类型迭代返回 t.CChar（字符）。
-                    // Viper 语义：str/bytes = i8* 指针（const char*），迭代返回单个字符 CChar。
-                    // 使用 getViperCCharType 而非裸 int，保持与 s[i] 下标访问一致（t.CChar 显示）。
+                    // Viper 扩展：str/bytes 类型迭代返回 char（i8 字符）。
+                    // Viper 语义：str/bytes = i8* 指针（const char*），迭代返回单个字符。
+                    // 与下标访问 s[i]、解引用 *s 保持同一元素类型 char。
                     if (ClassType.isBuiltIn(subtype, ['str', 'bytes'])) {
-                        const ccharType = getViperCCharType(errorNode);
-                        if (ccharType) {
-                            return ccharType;
-                        }
-                        return getBuiltInObject(errorNode, 'int');
+                        return getBuiltInObject(errorNode, 'char');
                     }
                     // 检查联合类型中是否包含 CPtr
                     const typeContainsCPtr = findSubtype(type, (s) =>
@@ -8728,57 +8724,6 @@ export function createTypeEvaluator(
         return getViperREnumVariantFieldInfo(renumType, memberName)?.type;
     }
 
-    // Viper 扩展：构造带 t.CChar 类型别名信息的 int 类型（表示 C 的 char 类型）。
-    // Viper 中 str/bytes 是 i8* 指针，下标访问/迭代/字符运算返回 t.CChar（int 别名）。
-    // 优先从 t 模块查找 CChar 类型别名以保留显示信息；找不到时回退为
-    // 构造带 typeAliasInfo 的 int 类型。查找失败返回 undefined。
-    function getViperCCharType(node: ExpressionNode): Type | undefined {
-        const tSymbolWithScope = lookUpSymbolRecursive(node, 't', /* honorCodeFlow */ true);
-        if (tSymbolWithScope) {
-            const tEffectiveType = getEffectiveTypeOfSymbolForUsage(
-                tSymbolWithScope.symbol,
-                /* usageNode */ undefined,
-                /* useLastDecl */ true
-            ).type;
-            if (tEffectiveType && isModule(tEffectiveType)) {
-                const ccharSymbol = ModuleType.getField(tEffectiveType, 'CChar');
-                if (ccharSymbol) {
-                    // 优先使用声明类型（保留 typeAliasInfo）
-                    const ccharDeclType = getDeclaredTypeOfSymbol(ccharSymbol)?.type;
-                    if (ccharDeclType) {
-                        return convertToInstance(ccharDeclType);
-                    }
-                    // 回退到有效类型
-                    const ccharType = getEffectiveTypeOfSymbolForUsage(
-                        ccharSymbol,
-                        /* usageNode */ undefined,
-                        /* useLastDecl */ true
-                    ).type;
-                    if (ccharType) {
-                        return convertToInstance(ccharType);
-                    }
-                }
-            }
-        }
-        // 回退：构造带 CChar 别名信息的 int 类型
-        const fileInfo = AnalyzerNodeInfo.getFileInfo(node);
-        const intType = getBuiltInObject(node, 'int');
-        const ccharAliasInfo: TypeAliasInfo = {
-            shared: {
-                name: 'CChar',
-                fullName: 't.CChar',
-                moduleName: 't',
-                fileUri: fileInfo.fileUri,
-                typeVarScopeId: '',
-                isTypeAliasType: false,
-                typeParams: undefined,
-                computedVariance: undefined,
-            },
-            typeArgs: undefined,
-        };
-        return TypeBase.cloneForTypeAlias(intType, ccharAliasInfo);
-    }
-
     function getTypeOfIndexedObjectOrClass(
         node: IndexNode,
         baseType: ClassType,
@@ -14195,8 +14140,8 @@ export function createTypeEvaluator(
                 if (expectedType && requiresSpecialization(expectedType)) {
                     // Viper 扩展：str/bytes 实参传给可迭代协议参数（Iterable[_T]/Iterator[_T] 等）
                     // 时，泛型参数 _T 应从 str.__iter__ 的声明返回类型（Iterator[str]）推断。
-                    // 但 Viper 中 str 是 i8* 指针，迭代元素应为 t.CChar 而非 str。
-                    // 因此将 argType 替换为 Iterator[CChar] 实例，使协议匹配把 _T 绑定为 CChar，
+                    // 但 Viper 中 str 是 i8* 指针，迭代元素应为 char 而非 str。
+                    // 因此将 argType 替换为 Iterator[char] 实例，使协议匹配把 _T 绑定为 char，
                     // 修复 `for i, ch in enumerate(src)` 中 ch 被推断为 str 的问题
                     // （同样覆盖 zip/map/filter/reversed/sorted/list() 等 Iterable 参数场景）。
                     let argTypeForConstraint = argType;
@@ -14205,11 +14150,11 @@ export function createTypeEvaluator(
                         isClassInstance(argType) &&
                         ClassType.isBuiltIn(argType, ['str', 'bytes'])
                     ) {
-                        const ccharType = getViperCCharType(argParam.errorNode);
+                        const charType = getBuiltInObject(argParam.errorNode, 'char');
                         const iteratorClass = getTypingType(argParam.errorNode, 'Iterator');
-                        if (ccharType && iteratorClass && isInstantiableClass(iteratorClass)) {
+                        if (iteratorClass && isInstantiableClass(iteratorClass)) {
                             argTypeForConstraint = ClassType.cloneAsInstance(
-                                ClassType.specialize(iteratorClass, [ccharType])
+                                ClassType.specialize(iteratorClass, [charType])
                             );
                         }
                     }

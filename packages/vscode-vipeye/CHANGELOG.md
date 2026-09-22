@@ -1,8 +1,12 @@
 # Change Log
 
+## 1.1.422
+
+- `str` / `bytes` iteration now yields `char` as well: `for ch in s` and `Iterable` / `Iterator` argument inference (`enumerate`, `zip`, `map`, `filter`, `reversed`, `sorted`, `list()` …) bind the element type to `char`, matching subscript `s[i]` and dereference `*s`. The old `t.CChar`-aliased `int` construction is removed
+
 ## 1.1.421
 
-- `s[i]` on `str` / `bytes` now yields `char` (`i8`) instead of `t.CChar`, matching the dereference result of `*s` (the two remain implicitly convertible). Covers both the plain subscript path and the type-set subscript path (e.g. `CConst | str | CPtr` style annotations); iteration (`for ch in s`) and `Iterable` argument inference still produce `t.CChar`
+- `s[i]` on `str` / `bytes` now yields `char` (`i8`) instead of `t.CChar`, matching the dereference result of `*s` (the two remain implicitly convertible). Covers both the plain subscript path and the type-set subscript path (e.g. `CConst | str | CPtr` style annotations). Iteration and `Iterable` inference were unified in 1.1.422
 
 ## 1.1.420
 

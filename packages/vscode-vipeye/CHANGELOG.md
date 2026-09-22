@@ -1,8 +1,12 @@
 # Change Log
 
+## 1.1.421
+
+- `s[i]` on `str` / `bytes` now yields `char` (`i8`) instead of `t.CChar`, matching the dereference result of `*s` (the two remain implicitly convertible). Covers both the plain subscript path and the type-set subscript path (e.g. `CConst | str | CPtr` style annotations); iteration (`for ch in s`) and `Iterable` argument inference still produce `t.CChar`
+
 ## 1.1.420
 
-- Pointer semantics for `str` / `bytes` (both are C `char*`, `i8*`) now cover pointer arithmetic and writes, matching the dereference support added earlier: `p + n`, `p - n` and `n + p` return the pointer type instead of reporting `reportOperatorIssue`, and `*p = v` is accepted as an assignment target. `p[i]` already yielded `t.CChar` and is unchanged
+- Pointer semantics for `str` / `bytes` (both are C `char*`, `i8*`) now cover pointer arithmetic and writes, matching the dereference support added earlier: `p + n`, `p - n` and `n + p` return the pointer type instead of reporting `reportOperatorIssue`, and `*p = v` is accepted as an assignment target. Subscript access `p[i]` was already supported
 - Built-in C basic type names extended with `short` (`t.CShort`), `ushort` (`t.CUnsignedShort`), `ulong` (`t.CUnsignedLong`) and `ulonglong` (`t.CUnsignedLongLong`), alongside the existing `long` / `longlong`
 
 ## 1.1.419

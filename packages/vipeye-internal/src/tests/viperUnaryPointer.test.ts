@@ -587,13 +587,10 @@ def test_str_arith(fmt: str) -> int:
         assert.strictEqual(op.type, 'str', `指针算术结果应为 str (L${line})，实际: ${op.type}`);
     }
 
-    // L7：fmt[0] → t.CChar（C 的 char 字节；与 `*fmt` 的 char 可隐式互转）
+    // L7：fmt[0] → char（与 `*fmt` 解引用统一为同一元素类型）
     const subscript = indexTypes.find((i) => i.line === 7);
     assert(subscript, `下标访问未找到 (L7)`);
-    assert(
-        subscript.type.includes('CChar'),
-        `fmt[0] 应为 t.CChar，实际: ${subscript.type}`
-    );
+    assert.strictEqual(subscript.type, 'char', `fmt[0] 应为 char，实际: ${subscript.type}`);
     const diagnostics = getDiagnostics(program, configOptions, uri);
     console.log('=== 诊断 ===');
     diagnostics.forEach((d) => console.log(`  ${d}`));

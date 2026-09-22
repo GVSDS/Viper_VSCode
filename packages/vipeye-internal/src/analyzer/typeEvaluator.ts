@@ -8412,17 +8412,9 @@ export function createTypeEvaluator(
 
                 if (isClassInstance(concreteSubtype)) {
                     // Viper TypeSet：str/bytes 在类型组合中表示 C 字符串指针（i8*），
-                    // 下标访问 a[i] 应返回 t.CChar（int 别名），而非 str/bytes。
-                    if (
-                        isViperTypeSetIndex &&
-                        ClassType.isBuiltIn(concreteSubtype, ['str', 'bytes'])
-                    ) {
-                        // 构造带 CChar 别名信息的 int 类型（保留 t.CChar 显示信息）
-                        const ccharType = getViperCCharType(node);
-                        if (ccharType) {
-                            return ccharType;
-                        }
-                        return concreteSubtype;
+                    // 下标访问 a[i] 应返回 char（i8 字符），而非 str/bytes。
+                    if (isViperTypeSetIndex && ClassType.isBuiltIn(concreteSubtype, ['str', 'bytes'])) {
+                        return getBuiltInObject(node, 'char');
                     }
                     // Viper TypeSet：非修饰基本类型（int/float/bool 等）在类型组合中
                     // 表示指针指向的目标类型（如 CConst | int | CPtr = const int*），
@@ -8435,20 +8427,16 @@ export function createTypeEvaluator(
                     ) {
                         return concreteSubtype;
                     }
-                    // Viper 扩展：str/bytes 表示 C 字符串指针（i8* / i8*）。
+                    // Viper 扩展：str/bytes 表示 C 字符串指针（i8*）。
                     // 无论读写，下标访问 a[i] 都是指针解引用操作（C 语义）：
-                    //   - 读取 a[i] 返回 t.CChar（i8 字节），而非 Python str.__getitem__ 的 str
+                    //   - 读取 a[i] 返回 char（i8 字节），与解引用 `*a` 的结果类型一致，
+                    //     而非 Python str.__getitem__ 的 str
                     //   - 赋值 a[i] = v 是合法的指针写字节操作，不报 __setitem__ 不存在
                     if (
                         IsViperDialect(viperIndexFileInfo.executionEnvironment.dialect) &&
                         ClassType.isBuiltIn(concreteSubtype, ['str', 'bytes'])
                     ) {
-                        // 构造带 CChar 别名信息的 int 类型作为下标访问的目标类型
-                        const ccharType = getViperCCharType(node);
-                        if (ccharType) {
-                            return ccharType;
-                        }
-                        return concreteSubtype;
+                        return getBuiltInObject(node, 'char');
                     }
                     const typeResult = getTypeOfIndexedObjectOrClass(node, concreteSubtype, selfType, usage);
                     if (typeResult.isIncomplete) {

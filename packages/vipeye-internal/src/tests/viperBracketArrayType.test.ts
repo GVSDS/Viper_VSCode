@@ -133,6 +133,21 @@ def fi(x: t.Callable[[], t.CInt]) -> t.CInt:
 
 def fj(x: [4]t.CArray[t.CInt, 2]) -> t.CInt:
     return x[0][0]
+
+def fk(x: list[[4]int]) -> int:
+    return x[0][0]
+
+def fl(x: list[[2][3]int]) -> int:
+    return x[0][0][0]
+
+def fm(x: t.Callable[[int, str], t.CInt]) -> t.CInt:
+    return 0
+
+def fn(x: list[t.CArray[int, 4]]) -> int:
+    return x[0][0]
+
+def fo(x: list[t.CArray[t.CArray[int, 3], 2]]) -> int:
+    return x[0][0][0]
 `;
 
 test('[SIZE]T 数组语法：类型与 t.CArray[T, SIZE] 完全一致且无诊断', () => {
@@ -180,6 +195,22 @@ test('[SIZE]T 数组语法：类型与 t.CArray[T, SIZE] 完全一致且无诊�
     assert(
         types.get('fj')!.includes('CArray[CArray['),
         `[4]t.CArray[t.CInt, 2] 应解析为嵌套 CArray，实际: ${types.get('fj')}`
+    );
+    // 泛型实参位置（list[[4]int]）与等价的显式写法（list[t.CArray[int, 4]]）一致
+    assert.strictEqual(
+        types.get('fk'),
+        types.get('fn'),
+        `list[[4]int] 应与 list[t.CArray[int, 4]] 同类型，实际: ${types.get('fk')} vs ${types.get('fn')}`
+    );
+    assert.strictEqual(
+        types.get('fl'),
+        types.get('fo'),
+        `list[[2][3]int] 应与 list[t.CArray[t.CArray[int, 3], 2]] 同类型，实际: ${types.get('fl')} vs ${types.get('fo')}`
+    );
+    // 回归：带逗号的实参列表（t.Callable[[int, str], T]）不得被当成数组语法
+    assert(
+        types.get('fm')!.includes('->'),
+        `t.Callable[[int, str], t.CInt] 应正常解析为函数类型，实际: ${types.get('fm')}`
     );
 
     cleanup(program, serviceProvider);

@@ -248,6 +248,9 @@ export class Parser {
     private _isInExceptionGroup = false;
     private _isParsingTypeAnnotation = false;
     private _isParsingIndexTrailer = false;
+    // Viper 扩展：正在解析 `[SIZE]T` 的元素类型（此时即使身处下标实参内，
+    // 也允许再出现 `[SIZE]T`，使 `list[[2][3]int]` 这类嵌套合法）。
+    private _isParsingViperBracketArrayElement = false;
     private _isParsingQuotedText = false;
     private _isInFinallyBlock = false;
     private _isInFinallyLoop = false;
@@ -4064,7 +4067,11 @@ export class Parser {
             }
 
             const startOfSubscriptIndex = this._tokenIndex;
-            let valueExpr = this._parsePossibleSlice();
+            // Viper 扩展：下标实参位置的 `[SIZE]T`（如 list[[4]int]）先按数组类型解析。
+            let valueExpr =
+                argType === ArgCategory.Simple && this._isAtViperSubscriptBracketArrayType()
+                    ? this._parseViperBracketArrayType()
+                    : this._parsePossibleSlice();
             let nameIdentifier: IdentifierToken | undefined;
 
             // Is this a keyword argument?
@@ -5087,20 +5094,53 @@ export class Parser {
 
     // Viper 扩展：定长数组类型语法 `[SIZE]T`（等价 t.CArray[T, SIZE]）与
     // 不定长写法 `[]T`（等价 t.CArray[T]，与 `t.CArray[T]` 单参数一致）。
-    // 只在"类型注解起点"生效：
-    //   - 值表达式里的 `[SIZE]` 仍是 list 字面量；
-    //   - 下标实参内（_isParsingIndexTrailer）不生效，否则
-    //     `t.Callable[[], t.CInt]` 这类实参列表会被误当成数组类型。
-    // 因此 `list[[4]int]`（数组类型作为泛型实参）暂不支持，需写 t.CArray。
+    // 生效位置：
+    //   - 类型注解起点（变量/参数/返回值/类成员/type 别名）；
+    //   - 下标实参内，但仅当形如 `[SIZE]T` 时（见 _isAtViperSubscriptBracketArrayType），
+    //     使 `list[[4]int]` 可用，同时不影响 `t.Callable[[int, str], None]`；
+    //   - `[SIZE]T` 的元素类型内（支持 `[2][3]T`、`list[[2][3]int]`）。
+    // 值表达式里的 `[SIZE]` 仍是 list 字面量。
     private _parseViperBracketArrayTypeIfNeeded(): ExpressionNode {
         if (
             this._parseOptions.dialect === 'viper' &&
-            !this._isParsingIndexTrailer &&
+            (!this._isParsingIndexTrailer || this._isParsingViperBracketArrayElement) &&
             this._peekTokenType() === TokenType.OpenBracket
         ) {
             return this._parseViperBracketArrayType();
         }
         return this._parseTestExpression(/* allowAssignmentExpression */ false);
+    }
+
+    // Viper 扩展：判断下标实参位置（如 `list[[4]int]`）是否是定长数组类型 `[SIZE]T`。
+    // 与 `t.Callable[[int, str], None]` / `t.Callable[[], None]` 的实参列表区别在于
+    // 匹配的 `]` 之后是否紧跟元素类型：`[4]int` 是数组，`[int, str]`、`[]` 不是。
+    // 仅做 token 前瞻，不解析、不产生诊断。
+    private _isAtViperSubscriptBracketArrayType(): boolean {
+        if (this._parseOptions.dialect !== 'viper' || this._peekToken(0).type !== TokenType.OpenBracket) {
+            return false;
+        }
+
+        // 跳过 [SIZE]：SIZE 内允许嵌套下标，按括号配对找匹配的 ']'。
+        let offset = 1;
+        let depth = 0;
+        while (true) {
+            const token = this._peekToken(offset);
+            if (token.type === TokenType.OpenBracket) {
+                depth += 1;
+            } else if (token.type === TokenType.CloseBracket) {
+                if (depth === 0) {
+                    break;
+                }
+                depth -= 1;
+            } else if (token.type === TokenType.NewLine || token.type === TokenType.EndOfStream) {
+                return false;
+            }
+            offset += 1;
+        }
+
+        // ']' 之后必须是元素类型的起始（标识符，或嵌套数组的 '['）。
+        const elementStartToken = this._peekToken(offset + 1);
+        return elementStartToken.type === TokenType.Identifier || elementStartToken.type === TokenType.OpenBracket;
     }
 
     // Viper 扩展：解析 `[SIZE]T` / `[]T` 并脱糖为等价的 `t.CArray[T, SIZE]` /
@@ -5124,7 +5164,11 @@ export class Parser {
         }
 
         // 元素类型：递归走注解解析，天然支持嵌套 `[2][3]T` 与指针后缀 `[4]T*`。
+        // 期间允许在下标实参内继续出现 `[SIZE]T`（如 list[[2][3]int]）。
+        const wasParsingBracketArrayElement = this._isParsingViperBracketArrayElement;
+        this._isParsingViperBracketArrayElement = true;
         const elementType = this._parseTypeAnnotation();
+        this._isParsingViperBracketArrayElement = wasParsingBracketArrayElement;
 
         // 合成 `t.CArray`：零长度、位置落在 '[' 上，因此不产生任何语义高亮
         // （semanticTokenProvider 跳过 length <= 0 的名字）也不参与位置命中。

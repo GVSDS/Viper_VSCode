@@ -314,6 +314,9 @@ test('无 includes/builtins.vp 时，内建 builtins.vpi 提供 uint32/sizet/int
 
 def f(a: uint32, b: sizet, c: int8, d: uint64) -> uint32:
     return a
+
+def g(e: long, h: longlong) -> long:
+    return e
 `,
         'utf8'
     );
@@ -362,6 +365,15 @@ def f(a: uint32, b: sizet, c: int8, d: uint64) -> uint32:
         assert(
             fTypes.some((t) => t.includes(expected)),
             `f() 参数注解应包含 ${expected}，实际: ${JSON.stringify(fTypes)}`
+        );
+    }
+
+    // C 基本类型名：long → CLong，longlong → CLongLong
+    const gTypes = types.get('g') ?? [];
+    for (const expected of ['CLong', 'CLongLong']) {
+        assert(
+            gTypes.some((t) => t.includes(expected)),
+            `g() 参数注解应包含 ${expected}，实际: ${JSON.stringify(gTypes)}`
         );
     }
 

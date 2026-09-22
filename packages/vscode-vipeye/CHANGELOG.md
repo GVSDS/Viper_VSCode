@@ -1,5 +1,9 @@
 # Change Log
 
+## 1.1.418
+
+- **Built-in C basic type names**: `long` (`t.CLong`) and `longlong` (`t.CLongLong`) are now built-in typedefs, mirroring the compiler's `_CNAME_ALIAS` table (`char`, `short`, `long`, `unsigned` and friends are language built-ins that need no import). C's `long long` cannot be spelled with a space, so Viper writes `longlong`; the unsigned form stays available as `t.CUnsignedLongLong`
+
 ## 1.1.417
 
 - **Built-in C integer typedefs**: `sizet`, `size_t`, `uzt`, `int8`–`uint64`, `intfast*`/`uintfast*`, `intleast*`/`uintleast*` are now declared in the built-in `builtins.vpi` stub, mirroring the compiler's `includes/builtins.vp`. Any Viper project resolves them without configuring `includes`, which fixes `uint32` (and the rest) being reported as undefined in setups where the project-level `builtins.vp` cannot be located — that lookup depends on the workspace root and the set of opened files, so the same project could behave differently across editors

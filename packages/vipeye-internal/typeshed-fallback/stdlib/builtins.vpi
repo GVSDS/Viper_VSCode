@@ -2751,6 +2751,13 @@ rawptr: t.CTypedef = t.CPtr
 # "未定义"（同一工程在不同编辑器里表现不一致）。
 # 因此在 builtins stub 中内建一份等价声明：任意 Viper 工程无需配置 includes 即可
 # 解析；工程自带 builtins.vp 时仍以工程声明为准（合并逻辑会覆盖同名符号）。
+#
+# C 基本类型名（对齐编译器 t.py 的 _CNAME_ALIAS：char/short/long/unsigned 等是
+# 语言内置名称，无需 import）。C 的 "long long" 含空格、不能作标识符，Viper 写作
+# longlong；"unsigned long long" 同理不内建，需要时写 t.CUnsignedLongLong。
+long: t.CTypedef = t.CLong
+longlong: t.CTypedef = t.CLongLong
+
 sizet: t.CTypedef = t.CSizeT
 size_t: t.CTypedef = sizet
 uzt: t.CTypedef = sizet

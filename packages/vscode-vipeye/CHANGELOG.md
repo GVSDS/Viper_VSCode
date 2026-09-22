@@ -1,5 +1,13 @@
 # Change Log
 
+## 1.1.423
+
+- Parser: the C pointer suffix (`T*` / `T**`) is now recognized in call arguments, not only inside type annotations, so `va_arg(ap, int64*)` / `short*` / `int*` (as used by TransPyC's `viperlib.vp`) parse correctly. Real multiplication and power expressions (`a * b`, `a ** b`, `N * 2`) are unaffected
+- `str | t.CPtr` / `bytes | t.CPtr` now fold to `CPtr[str]` / `CPtr[bytes]` (`i8**`, e.g. `argv`), and indexing such a pointer yields the pointee (`str` / `bytes`) instead of `char` — fixes `token: str = entry[0]` being reported as `char` not assignable to `str` (`argparse.vp`)
+- C-style casts targeting a plain built-in type are accepted: `char(addr, t.CPtr)` (used by `memhub.vp` / `requests.vp`) no longer fails `char.__new__`'s `base: SupportsIndex` overload. The rule requires the second argument to be a type object, so Python's `int("12", 16)` is unaffected
+- `flowChartCommand` now passes a `CancellationToken` to `AnalyzerService.run`, fixing a TS2554 error that blocked five test suites
+- Test maintenance: the stale `ord` signature assertion was updated (TransPyC now declares `def ord(s: char) -> int`), and the `AssignGenMixin.vp` narrowing guard no longer hard-codes line numbers, so it survives source drift
+
 ## 1.1.422
 
 - `str` / `bytes` iteration now yields `char` as well: `for ch in s` and `Iterable` / `Iterator` argument inference (`enumerate`, `zip`, `map`, `filter`, `reversed`, `sorted`, `list()` …) bind the element type to `char`, matching subscript `s[i]` and dereference `*s`. The old `t.CChar`-aliased `int` construction is removed

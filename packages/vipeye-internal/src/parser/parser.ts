@@ -3796,14 +3796,15 @@ export class Parser {
             nextOperator === OperatorType.Mod ||
             nextOperator === OperatorType.FloorDivide
         ) {
-            // Viper 扩展：类型注解上下文中的后缀 '*' 是 C 指针类型（T* = CPtr[T]），
-            // 不是二元乘法。若该星号串后紧跟"无右操作数"位置（']' / ',' / ')' / ':' /
-            // '=' / 换行 / ';' / 文件结束），就地按指针后缀消费（覆盖 `list[ast.AST*]`
-            // 这类下标实参内的后缀）；否则停止解析，交由
-            // _parseTypeAnnotation/_parseTypeAliasStatement 的后缀处理消费。
+            // Viper 扩展：后缀 '*' 是 C 指针类型（T* = CPtr[T]），不是二元乘法。
+            // 若该星号串后紧跟"无右操作数"位置（']' / ',' / ')' / ':' /
+            // '=' / 换行 / ';' / 文件结束），就地按指针后缀消费。此判定不限于类型注解
+            // 上下文：调用实参中的类型名（如 `va_arg(ap, int64*)`）同样适用。
+            // 若不在后缀位置：类型注解上下文停止解析，交由
+            // _parseTypeAnnotation/_parseTypeAliasStatement 的后缀处理消费；
+            // 其他上下文则按真实二元乘法继续解析（`a * b`、`N * 2` 行为不变）。
             if (
                 this._parseOptions.dialect === 'viper' &&
-                this._isParsingTypeAnnotation &&
                 nextOperator === OperatorType.Multiply
             ) {
                 if (this._isAtViperPointerTypeSuffix()) {
@@ -3812,7 +3813,9 @@ export class Parser {
                     nextOperator = this._peekOperatorType();
                     continue;
                 }
-                break;
+                if (this._isParsingTypeAnnotation) {
+                    break;
+                }
             }
 
             this._getNextToken();
@@ -3853,13 +3856,20 @@ export class Parser {
 
         const peekToken = this._peekToken();
         const nextPowerOperator = this._peekOperatorType();
-        // Viper 扩展：类型注解上下文中的 '**' 是二级指针类型后缀（T** = CPtr[CPtr[T]]），
+        // Viper 扩展：'**' 是二级指针类型后缀（T** = CPtr[CPtr[T]]），
         // 词法化为 Power 算子（'**'），不是幂运算。若其后紧跟"无右操作数"位置
-        // （如 `list[ast.AST**]`、`x: int**`），就地按指针后缀消费；
-        // 否则跳过幂运算分支，交由 _parseTypeAnnotation/_parseTypeAliasStatement
-        // 的后缀处理消费。
-        if (nextPowerOperator === OperatorType.Power && this._parseOptions.dialect === 'viper' && this._isParsingTypeAnnotation) {
-            return this._isAtViperPointerTypeSuffix() ? this._parseViperPointerTypeSuffix(leftExpr) : leftExpr;
+        // （如 `list[ast.AST**]`、`x: int**`、调用实参 `va_arg(ap, short**)`），
+        // 就地按指针后缀消费。此判定不限于类型注解上下文；
+        // 若不在后缀位置：类型注解上下文跳过幂运算分支，交由
+        // _parseTypeAnnotation/_parseTypeAliasStatement 的后缀处理消费；
+        // 其他上下文则按真实幂运算解析（`a ** b` 行为不变）。
+        if (nextPowerOperator === OperatorType.Power && this._parseOptions.dialect === 'viper') {
+            if (this._isAtViperPointerTypeSuffix()) {
+                return this._parseViperPointerTypeSuffix(leftExpr);
+            }
+            if (this._isParsingTypeAnnotation) {
+                return leftExpr;
+            }
         }
         if (nextPowerOperator === OperatorType.Power) {
             this._getNextToken();

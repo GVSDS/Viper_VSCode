@@ -263,7 +263,7 @@ test('其它环境的文件先被绑定时，本工程 builtins.vp typedef 仍�
     fs.rmSync(base, { recursive: true, force: true });
 });
 
-test('builtins.vp 同名声明优先覆盖 builtins.vpi（ord 参数为 t.CChar）', () => {
+test('builtins.vp 同名声明优先覆盖 builtins.vpi（ord 参数为 char）', () => {
     const source = `import t
 
 def f() -> int:
@@ -272,7 +272,7 @@ def f() -> int:
 `;
     const { program, parseResults, serviceProvider } = buildProgram(source);
 
-    // ord 在 builtins.vp 中声明为 ord(s: t.CChar) -> int，
+    // ord 在 TransPyC 的 includes/builtins.vp 中声明为 ord(s: char) -> int，
     // 覆盖 builtins.vpi 的 ord(c: str | bytes | bytearray, /) -> int。
     // 通过 main 文件作用域链（含 builtin 作用域）解析 ord 符号。
     const AnalyzerNodeInfo = require('../analyzer/analyzerNodeInfo');
@@ -283,8 +283,12 @@ def f() -> int:
     const ordType = program.getTypeOfSymbol(ordSymbol);
     const ordSignature = program.printType(ordType, { expandTypeAlias: true });
     assert(
-        ordSignature.includes('CChar'),
-        `ord 应使用 builtins.vp 的 t.CChar 签名，实际: ${ordSignature}`
+        ordSignature.includes('char'),
+        `ord 应使用 builtins.vp 的 char 签名，实际: ${ordSignature}`
+    );
+    assert(
+        !ordSignature.includes('str | bytes'),
+        `ord 不应仍是 builtins.vpi 的 str | bytes 签名，实际: ${ordSignature}`
     );
 
     program.dispose();

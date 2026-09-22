@@ -8759,6 +8759,18 @@ export function createTypeEvaluator(
                 const pointeeInstance = TypeBase.isInstance(pointeeType)
                     ? pointeeType
                     : ClassType.cloneAsInstance(pointeeType);
+                // Viper 扩展：str / bytes 例外——不走转发。
+                // Viper 中 str/bytes 都对应 C 的 char*（i8*），因此 CPtr[str] 是指向
+                // char* 的指针（i8**，如 argv）。对 CPtr[str] 下标 ptr[i] 按 C 语义就是
+                // 解引用 *(ptr + i)，结果本身就是 str（i8*）指针。
+                // 若按下面的通用逻辑转发到 str 自身的下标特判，会落到 Viper 中 str[i]
+                // 返回 char 的语义（CPtr[str] 实际是 i8**，取出的应是 i8* 而非 i8），
+                // 造成 `token: str = entry[0]` 误报"char 不可分配给 str"。
+                // 因此这里直接返回 pointee 实例（等价解引用语义），CPtr[CArray[...]]、
+                // CPtr[MyStruct] 等"指针指向可下标聚合"的转发行为保持不变。
+                if (ClassType.isBuiltIn(pointeeInstance, ['str', 'bytes'])) {
+                    return { type: pointeeInstance };
+                }
                 // 检查 T 是否有自己的 item access magic method
                 const pointeeMethodType = getBoundMagicMethod(
                     pointeeInstance,
@@ -9312,6 +9324,28 @@ export function createTypeEvaluator(
         return name !== undefined && isViperCIntegerTypeName(name);
     }
 
+    // Viper 扩展：判断调用节点是否为 C 风格强转 `Type(value, t.CPtr)`。
+    // Viper 的 C 强转用类型构造调用表达，第二参数是"类型对象"（t.CPtr / t.CVoid 等
+    // CType 类型形式），表示在值上再做指针修饰（如 char(addr, t.CPtr) 表示 char*）。
+    // 判据（须同时满足）：
+    //   1. 恰好 2 个实参；
+    //   2. 第 2 个实参求值为类型对象（可实例化的 CType 子类，如 t.CPtr/t.CVoid）。
+    // 第 2 条是关键：Python 风格的 int("12", 16) 第二参是整数字面量，求值后不是类型
+    // 对象，因此不会被误判为 C 强转；只有 Viper 的 `Type(value, t.CPtr)` 才会命中。
+    function isViperCStyleCastCall(node: CallNode): boolean {
+        if (node.d.args.length !== 2) {
+            return false;
+        }
+        const secondArgExpr = node.d.args[1].d.valueExpr;
+        if (!secondArgExpr) {
+            return false;
+        }
+        const secondArgType = stripTypeForm(
+            getTypeOfExpression(secondArgExpr, EvalFlags.CallBaseDefaults).type
+        );
+        return isInstantiableClass(secondArgType) && isCTypeSubclassType(secondArgType);
+    }
+
     // Viper 扩展：判断调用节点是否为 __sizeof__ 方法调用。
     // 支持两种形式：
     //   1. 类调用：Type.__sizeof__()
@@ -9813,6 +9847,19 @@ export function createTypeEvaluator(
                 } else {
                     typeResult.type = instanceType;
                 }
+            } else if (
+                // Viper 扩展：拦截目标为普通类型构造的 C 风格强转调用，如 char(addr, t.CPtr)。
+                // 内置 char 类（builtins.vpi 的 class char:）不是 C 整数类型白名单成员
+                // （不进入上面的 int / CPtr / CType 分支），若走默认 validateCallArgs 会命中
+                // char.__new__ 的 `base: SupportsIndex` 重载而误报"类型对象不可分配给 base"。
+                // Viper 的 C 强转 `Type(value, t.CPtr)` 语义上等价 C 的 (Type*)value，
+                // 由编译器在语义分析阶段处理，LSP 跳过 __new__ 参数检查，
+                // 直接返回被调用类型构造的实例（指针修饰信息不影响此处的类型表达）。
+                IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                isInstantiableClass(baseTypeResult.type) &&
+                isViperCStyleCastCall(node)
+            ) {
+                typeResult.type = ClassType.cloneAsInstance(baseTypeResult.type);
             } else if (
                 // Viper 扩展：拦截 REnum 变体类构造调用。
                 // Viper 的 REnum 变体（如 LLVMType.Int(bits)、LLVMType.Struct(fields, fcount, name)）

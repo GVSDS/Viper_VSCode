@@ -75,7 +75,7 @@ export class FlowChartCommand implements ServerCommand {
                 startLine: convertOffsetToPosition(functionNode.start, lines).line + 1,
                 endLine: convertOffsetToPosition(functionNode.start + functionNode.length - 1, lines).line + 1,
             };
-        });
+        }, token);
     }
 }
 

@@ -2742,3 +2742,41 @@ def LOut(expr: Any, constraint: Any = None) -> Any:
 # 项目 includes/builtins.vp 是否声明；编译器侧解析 rawptr 时优先走内置
 # 路径并忽略本声明（见 TransPyC TypeAnnotationResolver / SymbolExtractor）。
 rawptr: t.CTypedef = t.CPtr
+
+# --- Viper 扩展：C 定宽/最快/最小整型 typedef（镜像 TransPyC includes/builtins.vp） ---
+# 这些 typedef 由编译器内置的 includes/builtins.vp 提供。LSP 侧原先只靠
+# program.ts 的 _mergeViperBuiltinsVpSymbols 在"被分析文件所在目录及其祖先目录的
+# includes/ + 执行环境（root/extraPaths）"里找到该文件后合并符号，查找结果依赖
+# 工作区根与打开的文件集合，某些环境下找不到文件时 uint32/int8/sizet 等会集体报
+# "未定义"（同一工程在不同编辑器里表现不一致）。
+# 因此在 builtins stub 中内建一份等价声明：任意 Viper 工程无需配置 includes 即可
+# 解析；工程自带 builtins.vp 时仍以工程声明为准（合并逻辑会覆盖同名符号）。
+sizet: t.CTypedef = t.CSizeT
+size_t: t.CTypedef = sizet
+uzt: t.CTypedef = sizet
+int8: t.CTypedef = t.CInt8T
+int16: t.CTypedef = t.CInt16T
+int32: t.CTypedef = t.CInt32T
+int64: t.CTypedef = t.CInt64T
+uint8: t.CTypedef = t.CUInt8T
+uint16: t.CTypedef = t.CUInt16T
+uint32: t.CTypedef = t.CUInt32T
+uint64: t.CTypedef = t.CUInt64T
+
+intfast8: t.CTypedef = t.CIntFast8T
+intfast16: t.CTypedef = t.CIntFast16T
+intfast32: t.CTypedef = t.CIntFast32T
+intfast64: t.CTypedef = t.CIntFast64T
+uintfast8: t.CTypedef = t.CUIntFast8T
+uintfast16: t.CTypedef = t.CUIntFast16T
+uintfast32: t.CTypedef = t.CUIntFast32T
+uintfast64: t.CTypedef = t.CUIntFast64T
+
+intleast8: t.CTypedef = t.CIntLeast8T
+intleast16: t.CTypedef = t.CIntLeast16T
+intleast32: t.CTypedef = t.CIntLeast32T
+intleast64: t.CTypedef = t.CIntLeast64T
+uintleast8: t.CTypedef = t.CUIntLeast8T
+uintleast16: t.CTypedef = t.CUIntLeast16T
+uintleast32: t.CTypedef = t.CUIntLeast32T
+uintleast64: t.CTypedef = t.CUIntLeast64T

@@ -1,5 +1,10 @@
 # Change Log
 
+## 1.1.417
+
+- **Built-in C integer typedefs**: `sizet`, `size_t`, `uzt`, `int8`–`uint64`, `intfast*`/`uintfast*`, `intleast*`/`uintleast*` are now declared in the built-in `builtins.vpi` stub, mirroring the compiler's `includes/builtins.vp`. Any Viper project resolves them without configuring `includes`, which fixes `uint32` (and the rest) being reported as undefined in setups where the project-level `builtins.vp` cannot be located — that lookup depends on the workspace root and the set of opened files, so the same project could behave differently across editors
+- When a project ships its own `includes/builtins.vp`, its declarations still win: the merge overwrites same-named built-in symbols
+
 ## 1.1.416
 
 - **New command `Viper: Cleanup and Deactivate`**: stops the language server of the current window (terminating the server process), disposes every resource the extension registered (commands, sidebar views, status bar, file watchers, flow chart panel), and optionally purges the global semantic highlighting cache (`~/.vipeye/cache/semantic-tokens`). Run it in every window before uninstalling or updating the extension — a running server keeps its working directory inside the extension folder (undeletable on Windows) and the home-directory cache is shared across windows, so otherwise uninstall leaves a half-deleted extension and other windows keep showing stale results even after restarting the extension host. Reload the window to bring Viper back

@@ -291,3 +291,81 @@ def f() -> int:
     serviceProvider.dispose();
     require('fs').rmSync(path.join(__dirname, '__builtins_vp_typedef__'), { recursive: true, force: true });
 });
+
+// 回归：完全不依赖工程 includes/builtins.vp —— C 定宽/最快/最小整型 typedef 已内建到
+// typeshed-fallback/stdlib/builtins.vpi。用于修"uint32 报未定义"在找回 builtins.vp
+// 失败的工程（如 Trae 中打开的文件集合/工作区根不同）里依然复现的问题。
+test('无 includes/builtins.vp 时，内建 builtins.vpi 提供 uint32/sizet/int8', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(
+        createFromRealFileSystem(tempFile),
+        new NullConsole(),
+        tempFile
+    );
+    const fs = require('fs');
+    const testRoot = path.join(__dirname, '__builtins_vpi_only__');
+    fs.rmSync(testRoot, { recursive: true, force: true });
+    fs.mkdirSync(testRoot, { recursive: true });
+    const filePath = path.join(testRoot, 'main.vp');
+    // 该目录没有 includes/，也没有 extraPaths，builtins.vp 必然找不到。
+    fs.writeFileSync(
+        filePath,
+        `import t
+
+def f(a: uint32, b: sizet, c: int8, d: uint64) -> uint32:
+    return a
+`,
+        'utf8'
+    );
+
+    const projectRoot = UriEx.file(testRoot);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+    configOptions.executionEnvironments = [
+        new ExecutionEnvironment(
+            'python',
+            projectRoot,
+            configOptions.diagnosticRuleSet,
+            configOptions.defaultPythonVersion,
+            configOptions.defaultPythonPlatform,
+            [],
+            /* skipNativeLibraries */ false,
+            /* defaultDialect */ 'viper'
+        ),
+    ];
+
+    const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+    const program = new Program(importResolver, configOptions, serviceProvider);
+
+    const uri = UriEx.file(filePath);
+    program.setTrackedFiles([uri]);
+    while (program.analyze()) {
+        // 循环
+    }
+
+    const diagnostics = (program.getSourceFile(uri)?.getDiagnostics(configOptions) || []).map(
+        (d) => `[category=${d.category}] ${d.message}`
+    );
+    const undefinedDiags = diagnostics.filter((d) => d.includes('未定义') || d.includes('undefined'));
+    assert.strictEqual(
+        undefinedDiags.length,
+        0,
+        `内建 builtins.vpi 应提供 uint32/sizet/int8/uint64，实际: ${JSON.stringify(diagnostics)}`
+    );
+
+    // 注解类型：uint32 → CUInt32T，sizet → CSizeT，int8 → CInt8T，uint64 → CUInt64T
+    const parseResults = program.getSourceFile(uri)!.getParseResults();
+    const types = collectParamAnnotationTypes(program, parseResults!);
+    const fTypes = types.get('f') ?? [];
+    for (const expected of ['CUInt32T', 'CSizeT', 'CInt8T', 'CUInt64T']) {
+        assert(
+            fTypes.some((t) => t.includes(expected)),
+            `f() 参数注解应包含 ${expected}，实际: ${JSON.stringify(fTypes)}`
+        );
+    }
+
+    program.dispose();
+    serviceProvider.dispose();
+    fs.rmSync(testRoot, { recursive: true, force: true });
+});

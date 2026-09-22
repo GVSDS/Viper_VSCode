@@ -135,6 +135,10 @@ AGENTS.md
 # Generated benchmark output
 packages/vipeye-internal/src/tests/benchmarks/.generated/
 
+# 测试运行生成的产物（每次跑 jest 都会被重写，不入库）
+packages/vipeye-internal/src/tests/__ty_narrow_dump.txt
+packages/vipeye-internal/src/tests/__unary_ptr__/
+
 # perfCompare.py cached commit bundles
 /build/perfCompare/
 

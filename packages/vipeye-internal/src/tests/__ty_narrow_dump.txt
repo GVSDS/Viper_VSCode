@@ -1,5 +1,0 @@
-  L2013 .Ty: rawptr[LLVMType] | rawptr[Ptr] | rawptr[Struct]
-  L2015 .Ty: rawptr[LLVMType] | rawptr[Ptr] | rawptr[Struct]
-  L2018 .Ty: rawptr[Struct]
-  L2021 .Ty: rawptr[Struct]
-  L2040 .Ty: rawptr[Struct]

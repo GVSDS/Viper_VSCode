@@ -79,6 +79,9 @@
                     "end": "\"\"\"",
                     "patterns": [
                         {
+                            "include": "#string-escape"
+                        },
+                        {
                             "include": "#fstring-interpolation"
                         }
                     ]
@@ -89,6 +92,9 @@
                     "end": "'''",
                     "patterns": [
                         {
+                            "include": "#string-escape"
+                        },
+                        {
                             "include": "#fstring-interpolation"
                         }
                     ]
@@ -96,8 +102,11 @@
                 {
                     "name": "string.quoted.double.viper",
                     "begin": "\"",
-                    "end": "\"",
+                    "end": "\"|$",
                     "patterns": [
+                        {
+                            "include": "#string-escape"
+                        },
                         {
                             "include": "#fstring-interpolation"
                         }
@@ -106,12 +115,23 @@
                 {
                     "name": "string.quoted.single.viper",
                     "begin": "'",
-                    "end": "'",
+                    "end": "'|$",
                     "patterns": [
+                        {
+                            "include": "#string-escape"
+                        },
                         {
                             "include": "#fstring-interpolation"
                         }
                     ]
+                }
+            ]
+        },
+        "string-escape": {
+            "patterns": [
+                {
+                    "name": "constant.character.escape.viper",
+                    "match": "\\\\."
                 }
             ]
         },

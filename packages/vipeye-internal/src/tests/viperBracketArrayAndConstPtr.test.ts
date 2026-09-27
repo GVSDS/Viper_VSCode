@@ -15,8 +15,12 @@
  *    边界：两侧不是整数的运算（如类名相加）仍须报错。
  * ② `const` 指针（如 `lfn: const str` = `CConst | str`）指向只读数据：
  *      解引用**读**允许（`*lfn`、`lfn[0]`）；
- *      解引用**赋值**必须报错（`*lfn = c`）；
- *      非 const 指针（`buf: str`）的 `*buf = c` 仍合法。
+ *      解引用**赋值**必须报错（`*lfn = c`、`lfn[i] = c`）；
+ *      非 const 指针（`buf: str`）的 `*buf = c` / `buf[i] = c` 仍合法。
+ * ③ C 修饰符（CConst / CStatic / CVolatile / CVoid）在迭代 / 解引用路径上
+ *    **只是修饰**，跳过即可：`path: const str` 可 `for ch in path:` 迭代，
+ *    不再误报「“CConst”不可迭代 / 未定义 __iter__」（判据须认 str / bytes，
+ *    不能只认 CPtr，见 viperTypeContainsPointer）。
  *
  * 运行：npx jest src/tests/viperBracketArrayAndConstPtr.test.ts --runInBand
  */
@@ -199,6 +203,94 @@ def mutable_ok(buf: str) -> None:
             otherErrors.length,
             0,
             `解引用读 / 非 const 指针赋值不应报错：${JSON.stringify(otherErrors)}`
+        );
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        require('fs').rmSync(testDir, { recursive: true, force: true });
+    }
+});
+
+test('const 指针：下标读允许、下标赋值报错；非 const 指针下标赋值仍合法', () => {
+    const code = `def index_read(lfn: const str) -> char:
+    return lfn[0]
+
+def index_write(lfn: const str) -> None:
+    lfn[0] = char(65)
+
+def mutable_index_ok(buf: str) -> None:
+    buf[0] = char(65)
+`;
+    const { program, configOptions, uri, serviceProvider, testDir } = buildProgramForCode(
+        code,
+        '__viper_const_ptr_index__'
+    );
+
+    try {
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== const 指针下标诊断 ===');
+        diagnostics.forEach((d) => console.log(`  L${d.line}:${d.col} [category=${d.category}] ${d.message}`));
+
+        const constWriteDiags = diagnostics.filter((d) => d.message.includes('const 指针的解引用赋值'));
+        assert.strictEqual(
+            constWriteDiags.length,
+            1,
+            `只应报 1 处 const 下标赋值错误（lfn[0] = ...）：${JSON.stringify(diagnostics)}`
+        );
+        // 报错行应为 `lfn[0] = char(65)` 所在行（第 5 行）。
+        assert.strictEqual(
+            constWriteDiags[0].line,
+            5,
+            `const 下标赋值错误应落在第 5 行：${JSON.stringify(constWriteDiags)}`
+        );
+
+        const otherErrors = diagnostics.filter(
+            (d) => d.category === 0 && !d.message.includes('const 指针的解引用赋值')
+        );
+        assert.strictEqual(
+            otherErrors.length,
+            0,
+            `下标读 / 非 const 指针下标赋值不应报错：${JSON.stringify(otherErrors)}`
+        );
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        require('fs').rmSync(testDir, { recursive: true, force: true });
+    }
+});
+
+test('const 指针可迭代：for ch in path 不报「不可迭代 / 未定义 __iter__」', () => {
+    const code = `import t
+
+def walk(path: const str) -> int:
+    count: int = 0
+    for ch in path:
+        count = count + 1
+    return count
+
+def walk_parts(parts: const t.CPtr) -> int:
+    total: int = 0
+    for p in parts:
+        total = total + 1
+    return total
+`;
+    const { program, configOptions, uri, serviceProvider, testDir } = buildProgramForCode(
+        code,
+        '__viper_const_ptr_iter__'
+    );
+
+    try {
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== const 指针迭代诊断 ===');
+        diagnostics.forEach((d) => console.log(`  L${d.line}:${d.col} [category=${d.category}] ${d.message}`));
+
+        const notIterableDiags = diagnostics.filter(
+            (d) => d.message.includes('不可迭代') || d.message.includes('__iter__')
+        );
+        assert.strictEqual(
+            notIterableDiags.length,
+            0,
+            `const 指针（const str 等）应可迭代，不应报不可迭代：${JSON.stringify(diagnostics)}`
         );
     } finally {
         program.dispose();

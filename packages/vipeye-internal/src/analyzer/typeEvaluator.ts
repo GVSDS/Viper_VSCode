@@ -3300,10 +3300,8 @@ export function createTypeEvaluator(
                     if (ClassType.isBuiltIn(subtype, ['str', 'bytes'])) {
                         return getBuiltInObject(errorNode, 'char');
                     }
-                    // 检查联合类型中是否包含 CPtr
-                    const typeContainsCPtr = findSubtype(type, (s) =>
-                        isClassInstance(s) && isCPtrType(s)) !== undefined;
-                    if (typeContainsCPtr && (
+                    // 检查联合类型中是否包含 Viper 指针（CPtr / str / bytes）
+                    if (viperTypeContainsPointer(type) && (
                         isCConstType(subtype) || isCStaticType(subtype) || isCVolatileType(subtype) ||
                         isCVoidType(subtype) ||
                         ClassType.isBuiltIn(subtype, 'int')
@@ -3453,9 +3451,11 @@ export function createTypeEvaluator(
                         }
                         return UnknownType.create();
                     }
-                    const typeContainsCPtr = findSubtype(type, (s) =>
-                        isClassInstance(s) && isCPtrType(s)) !== undefined;
-                    if (typeContainsCPtr && (
+                    // 判据必须认全 Viper 指针（CPtr / str / bytes），不能只认 CPtr：
+                    //   `path: const str`（AST = `CConst | str`）里的指针成员是 str，
+                    //   旧写法 findSubtype(isCPtrType) 匹配不上，CConst 落到末尾
+                    //   报「“CConst”不可迭代 / 未定义 __iter__」。
+                    if (viperTypeContainsPointer(type) && (
                         isCConstType(subtype) || isCStaticType(subtype) || isCVolatileType(subtype) ||
                         isCVoidType(subtype) ||
                         ClassType.isBuiltIn(subtype, 'int')
@@ -4836,6 +4836,23 @@ export function createTypeEvaluator(
 
             case ParseNodeType.Index: {
                 const baseTypeResult = getTypeOfExpression(target.d.leftExpr, EvalFlags.IndexBaseDefaults);
+
+                // Viper 扩展：const 指针（如 `lfn: const str` = `CConst | str`）指向只读
+                // 数据 —— 下标**读**允许，下标**赋值**（`lfn[i] = c`）必须报错，
+                // 与解引用赋值（`*lfn = c`）共用同一诊断。
+                if (
+                    IsViperDialect(AnalyzerNodeInfo.getFileInfo(target).executionEnvironment.dialect) &&
+                    isViperConstPointerType(baseTypeResult.type)
+                ) {
+                    addDiagnostic(
+                        DiagnosticRule.reportGeneralTypeIssues,
+                        LocMessage.viperConstDerefAssignment().format({
+                            type: printType(baseTypeResult.type),
+                        }),
+                        target
+                    );
+                    break;
+                }
 
                 getTypeOfIndexWithBaseType(
                     target,
@@ -9552,6 +9569,19 @@ export function createTypeEvaluator(
             return subtype;
         });
         return hasConstModifier && hasPointer;
+    }
+
+    // Viper 扩展：联合类型里是否存在「Viper 指针」子类型（CPtr[T] / str / bytes）。
+    // str / bytes 在 Viper 里就是 C 的 i8*（char*），与 CPtr 同为指针；
+    // 迭代 / 解引用等路径据此判断「联合里的 C 修饰符（CConst 等）只是修饰，可跳过」，
+    // 而 `const int`（CConst | int，无指针成员）仍按不可迭代/不可解引用报错。
+    function viperTypeContainsPointer(type: Type): boolean {
+        return (
+            findSubtype(
+                type,
+                (s) => isClassInstance(s) && (isCPtrType(s) || ClassType.isBuiltIn(s, ['str', 'bytes']))
+            ) !== undefined
+        );
     }
 
     // Viper 扩展：解析 `t.attr.<name>` / `t.attr.<name>(...)` 属性标记 → t.CAttr 实例。

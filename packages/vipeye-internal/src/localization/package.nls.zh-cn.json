@@ -629,6 +629,7 @@
         "viperNoVirtualDefPlacement": "\"novirtual def\" 必须位于 class、virtual class 或 novirtual class 内",
         "viperVirtualDefInNoVirtualClass": "\"virtual def\" 不能位于 novirtual class 内（该形态的类不生成 vtable）",
         "viperExternBodyInvalid": "extern 函数 \"{name}\" 的函数体必须为 pass 或 None",
+        "viperStaticUsedOutsideOfModule": "\"{name}\" 是 static 符号，禁止跨模块使用（static 仅限定义模块内可见）",
         "viperLenNoLenMethod": "类型 \"{name}\" 没有 __len__ 方法，不能用于 len()",
         "unhashableDictKey": "字典密钥必须可哈希",
         "unhashableSetEntry": "Set 条目必须是可哈希的",

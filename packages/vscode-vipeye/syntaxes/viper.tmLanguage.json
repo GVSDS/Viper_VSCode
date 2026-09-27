@@ -55,6 +55,10 @@
                 },
                 {
                     "name": "storage.modifier.viper",
+                    "match": "\\bstatic\\b(?=\\s+(?:def|fn|fun|func|function)\\b|\\s+[A-Za-z_][A-Za-z0-9_]*\\s*:)"
+                },
+                {
+                    "name": "storage.modifier.viper",
                     "match": "\\b(const|volatile)\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*|\\s*\\[)"
                 },
                 {
@@ -89,6 +93,10 @@
         },
         "string": {
             "patterns": [
+                {
+                    "name": "storage.type.string.viper",
+                    "match": "(?i)\\b[rubf]{1,3}(?=\"\"\"|'''|\"|')"
+                },
                 {
                     "name": "string.quoted.double.block.viper",
                     "begin": "\"\"\"",

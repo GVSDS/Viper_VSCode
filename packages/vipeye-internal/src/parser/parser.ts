@@ -486,6 +486,35 @@ export class Parser {
                     this._getNextToken();
                     return this._parseSimpleStatement();
                 }
+                if (modifierText === 'static') {
+                    // Viper 扩展：`static` 修饰符（C 的 internal linkage）——
+                    // 语义为「禁止跨模块取参」，跨模块引用由 checker / typeEvaluator 报错。
+                    //   `static def f(...)`  → 与 virtual 同法，把 static 记到 FunctionNode.d.viperModifier；
+                    //   `static x: T = v`    → 在注解联合最左插入 `t.CStatic`（`t.CStatic | T`，
+                    //                          与 TPC includes/ast/parser.vp _parse_type_ann 同形），
+                    //                          并在声明节点上打 isViperStatic 标记。
+                    if (
+                        this._peekToken(1).type === TokenType.Keyword &&
+                        (this._peekToken(1) as KeywordToken).keywordType === KeywordType.Def
+                    ) {
+                        this._getNextToken();
+                        return this._parseFunctionDef(
+                            /* asyncToken */ undefined,
+                            /* decorators */ undefined,
+                            modifierText
+                        );
+                    }
+                    if (this._peekToken(1).type === TokenType.Identifier) {
+                        this._getNextToken();
+                        return this._parseViperStaticAnnotatedStatement(modifierToken);
+                    }
+                    this._addSyntaxError(
+                        LocMessage.viperModifierRequiresDef().format({ name: modifierText }),
+                        modifierToken
+                    );
+                    this._getNextToken();
+                    return this._parseSimpleStatement();
+                }
                 if (
                     this._peekToken(1).type === TokenType.Keyword &&
                     (this._peekToken(1) as KeywordToken).keywordType === KeywordType.Def
@@ -2701,6 +2730,18 @@ export class Parser {
                         LocMessage.viperVirtualModifierRequiresClassOrDef().format({ name: modifierText }),
                         modifierToken
                     );
+                }
+                if (modifierText === 'static') {
+                    // Viper 扩展：装饰器之后的 `static def f(...)`（与 _parseStatement 同法）。
+                    // 变量形式 `static x: T` 不跟装饰器（装饰器只作用于 def / class）。
+                    const afterModifierKeywordType =
+                        this._peekToken(1).type === TokenType.Keyword
+                            ? (this._peekToken(1) as KeywordToken).keywordType
+                            : undefined;
+                    if (afterModifierKeywordType === KeywordType.Def) {
+                        this._getNextToken();
+                        return this._parseFunctionDef(undefined, decoratorList, modifierText);
+                    }
                 }
                 // 其他修饰关键字（inline/export/extern）不在装饰器后支持，
                 // 保持原行为：落到下方 expectedAfterDecorator 报错。
@@ -5465,6 +5506,68 @@ export class Parser {
         const nameNode = NameNode.create(IdentifierToken.create(start, 0, name, /* comments */ undefined));
         nameNode.d.isViperImplicitModule = true;
         return nameNode;
+    }
+
+    // Viper 扩展：合成 `t.CStatic` 属性标记（模块根是隐式名，不要求源码 import t）。
+    private _createViperStaticMarker(start: number): ExpressionNode {
+        return MemberAccessNode.create(
+            this._createViperImplicitModuleName(start, 't'),
+            NameNode.create(IdentifierToken.create(start, 0, 'CStatic', /* comments */ undefined))
+        );
+    }
+
+    // Viper 扩展：`static x: T = v` 变量声明（C 的 internal linkage）。
+    // 已消费 `static` 关键字后调用；把注解改写为 `t.CStatic | T`
+    // （与 TPC includes/ast/parser.vp 在 _parse_type_ann 里把 t.CStatic 插到
+    //  联合最左同形），并在声明节点上打 isViperStatic 标记，供「禁止跨模块取参」
+    // 检查（typeEvaluator / checker）使用。注解范围向前扩展到 `static` 起点。
+    private _parseViperStaticAnnotatedStatement(modifierToken: KeywordToken): StatementNode {
+        const statementList = this._parseSimpleStatement();
+
+        let annotationNode: TypeAnnotationNode | undefined;
+        for (const inner of statementList.d.statements) {
+            if (inner.nodeType === ParseNodeType.TypeAnnotation) {
+                annotationNode = inner;
+                break;
+            }
+            if (inner.nodeType === ParseNodeType.Assignment) {
+                const leftExpr = inner.d.leftExpr;
+                if (leftExpr.nodeType === ParseNodeType.TypeAnnotation) {
+                    annotationNode = leftExpr;
+                    break;
+                }
+            }
+        }
+
+        if (!annotationNode) {
+            // tokenizer 已保证 `static` 后是 `名字 :`；走到这里说明写法异常。
+            this._addSyntaxError(LocMessage.viperModifierRequiresDef().format({ name: 'static' }), modifierToken);
+            return statementList;
+        }
+
+        // 变量声明的「离节点」是注解的目标表达式（NameNode），在那里打标记。
+        const targetExpr = annotationNode.d.valueExpr;
+        if (targetExpr.nodeType === ParseNodeType.Name) {
+            targetExpr.d.isViperStatic = true;
+        }
+        annotationNode.d.isViperStatic = true;
+
+        // 合成的 `t.CStatic` 标记与被改写的联合都必须留在原注解范围内
+        // （注解节点的 start/length 由 valueExpr/annotation 决定；此处不能把
+        //  范围向前扩到 `static`，否则子节点会跑到父节点范围之外，绑定期
+        //  的 testWalker 会报 "Child node ... is not contained within its parent"）。
+        // 故锚点取内层注解自身的起点，零长度合成名正好落在注解内侧。
+        const anchorStart = annotationNode.d.annotation.start;
+        const wrappedAnnotation = BinaryOperationNode.create(
+            this._createViperStaticMarker(anchorStart),
+            annotationNode.d.annotation,
+            OperatorToken.create(anchorStart, 0, OperatorType.BitwiseOr, /* comments */ undefined),
+            OperatorType.BitwiseOr
+        );
+        wrappedAnnotation.parent = annotationNode;
+        annotationNode.d.annotation = wrappedAnnotation;
+
+        return statementList;
     }
 
     // Viper 扩展：把 `@__attribute__(...)` 装饰器脱糖为

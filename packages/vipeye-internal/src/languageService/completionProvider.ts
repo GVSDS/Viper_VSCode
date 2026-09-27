@@ -191,8 +191,8 @@ namespace Keywords {
     // 不并入就会"看不见"（如 define/typedef/const 等）：
     //   - 硬关键字：define（宏函数，等价 def）、const / volatile（类型描述符前缀）；
     //   - 软关键字：typedef（类型别名）；inline / export / extern / virtual /
-    //     novirtual（C 风格修饰）；enum / rnum / union / struct（类/枚举声明前缀）；
-    //     fn / fun / func / function（def 别名）。
+    //     novirtual / static（C 风格修饰；static 意为禁止跨模块取参）；enum /
+    //     rnum / union / struct（类/枚举声明前缀）；fn / fun / func / function（def 别名）。
     //   - `__attribute__`：宏属性装饰器/注解修饰器（`@__attribute__(...)` /
     //     `a: __attribute__(...) T`），非关键字（普通标识符），但写法特殊，
     //     单独键入 `__a` 时若不列出就"看不见"。
@@ -206,6 +206,7 @@ namespace Keywords {
         'extern',
         'virtual',
         'novirtual',
+        'static',
         'enum',
         'rnum',
         'union',

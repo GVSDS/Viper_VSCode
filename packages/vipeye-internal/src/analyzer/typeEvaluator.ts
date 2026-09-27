@@ -6630,6 +6630,21 @@ export function createTypeEvaluator(
                             node.d.member
                         );
                     }
+
+                    // Viper 扩展：`static` 声明的符号禁止跨模块取参（C 的 internal linkage）。
+                    // 与 TransPyV ExprGenAttr 的 `mod.name` 拦截同语义：同模块自引用放行。
+                    if (
+                        IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect) &&
+                        isViperStaticSymbolFromOtherFile(symbol, fileInfo)
+                    ) {
+                        addDiagnostic(
+                            DiagnosticRule.reportGeneralTypeIssues,
+                            LocMessage.viperStaticUsedOutsideOfModule().format({
+                                name: `${baseType.priv.moduleName}.${memberName}`,
+                            }),
+                            node.d.member
+                        );
+                    }
                 } else {
                     // Viper 扩展：模块级 __getattr__（PEP 562）语义不存在，跳过动态属性解析。
 
@@ -9484,6 +9499,21 @@ export function createTypeEvaluator(
             scope = scope.parent;
         }
         return undefined;
+    }
+
+    // Viper 扩展：判定单条声明是否为 `static` 声明（C 的 internal linkage）。
+    // 判据在 ParseTreeUtils.isViperStaticDeclarationNode（与 checker 的
+    // `from mod import name` 检查共用，保证两处口径一致）。
+    function isViperStaticDeclaration(decl: Declaration): boolean {
+        return ParseTreeUtils.isViperStaticDeclarationNode(decl.node);
+    }
+
+    // Viper 扩展：该符号是否存在「来自其它文件」的 static 声明。
+    // 语义为「禁止跨模块取参」（TransPyV 的 ExprGenAttr / CallGenMixin / ImportsGenMixin
+    // 三处拦截）：按声明所在文件与引用所在文件是否相同判定，同模块自引用放行。
+    function isViperStaticSymbolFromOtherFile(symbol: Symbol, fileInfo: AnalyzerFileInfo): boolean {
+        const fileUri = fileInfo.fileUri.toString();
+        return symbol.getDeclarations().some((decl) => isViperStaticDeclaration(decl) && decl.uri.toString() !== fileUri);
     }
 
     // Viper 扩展：解析 `t.attr.<name>` / `t.attr.<name>(...)` 属性标记 → t.CAttr 实例。

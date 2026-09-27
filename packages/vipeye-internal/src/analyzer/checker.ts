@@ -1644,6 +1644,8 @@ export class Checker extends ParseTreeWalker {
             return false;
         }
 
+        this._validateViperStaticImport(node);
+
         const decls = this._evaluator.getDeclInfoForNameNode(node.d.name)?.decls;
         if (!decls) {
             return false;
@@ -1684,6 +1686,42 @@ export class Checker extends ParseTreeWalker {
         this._reportDeprecatedUseForType(node.d.name, type, isImportFromTyping);
 
         return false;
+    }
+
+    // Viper 扩展：`from mod import name` —— 若 name 是目标模块里的 `static` 符号
+    // （C 的 internal linkage），禁止跨模块取参。与 TransPyV ImportsGenMixin 的
+    // `from mod import name` 拦截同语义（同模块自引用放行，按声明文件判定）。
+    // `mod.name` / `mod.fn()` 形态由 typeEvaluator 的模块成员访问分支负责。
+    private _validateViperStaticImport(node: ImportFromAsNode) {
+        if (!IsViperDialect(this._fileInfo.executionEnvironment.dialect)) {
+            return;
+        }
+
+        const decls = this._evaluator.getDeclInfoForNameNode(node.d.name)?.decls;
+        if (!decls) {
+            return;
+        }
+
+        const currentFileUri = this._fileInfo.fileUri.toString();
+        for (const decl of decls) {
+            const resolvedDecl = this._evaluator.resolveAliasDeclaration(decl, /* resolveLocalNames */ true);
+            if (
+                !resolvedDecl ||
+                !ParseTreeUtils.isViperStaticDeclarationNode(resolvedDecl.node) ||
+                resolvedDecl.uri.toString() === currentFileUri
+            ) {
+                continue;
+            }
+
+            this._evaluator.addDiagnostic(
+                DiagnosticRule.reportGeneralTypeIssues,
+                LocMessage.viperStaticUsedOutsideOfModule().format({
+                    name: `${_getViperImportFromModuleName(node)}.${node.d.name.d.value}`,
+                }),
+                node.d.name
+            );
+            return;
+        }
     }
 
     override visitModuleName(node: ModuleNameNode): boolean {
@@ -8148,6 +8186,18 @@ function getViperWrittenTypeName(declaredTypeNode: ExpressionNode): string | und
         return declaredTypeNode.d.member.d.value;
     }
     return undefined;
+}
+
+// Viper 扩展：把 `from <module> import <name>` 里的模块名还原成源码写法
+// （相对导入的前导点保留），用于 static 跨模块取参的诊断文案。
+function _getViperImportFromModuleName(node: ImportFromAsNode): string {
+    const importFrom = node.parent;
+    if (importFrom?.nodeType !== ParseNodeType.ImportFrom) {
+        return '';
+    }
+    const leadingDots = '.'.repeat(importFrom.d.module.d.leadingDots);
+    const nameParts = importFrom.d.module.d.nameParts.map((part) => part.d.value).join('.');
+    return leadingDots + nameParts;
 }
 
 function viperSignedRange(typeName: string, bits: number): ViperIntegerRange | undefined {

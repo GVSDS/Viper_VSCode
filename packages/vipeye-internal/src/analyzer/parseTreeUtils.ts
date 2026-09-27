@@ -83,6 +83,21 @@ export function getNodeDepth(node: ParseNode): number {
     return depth;
 }
 
+// Viper 扩展：判定一条声明的「离节点」是否带 `static` 修饰（C 的 internal linkage，
+// 语义为禁止跨模块取参）。两种来源：
+//   - 函数：parser 把 `static` 记到 FunctionNode.d.viperModifier（与 virtual 同法）；
+//   - 变量：`static x: T` 的变量声明离节点是目标 NameNode（parser 打 isViperStatic 标记），
+//     注解节点（TypeAnnotationNode）上也有兜底标记。
+// 供 typeEvaluator（`mod.name` 取参）与 checker（`from mod import name`）共用，
+// 保证两处判据一致。
+export function isViperStaticDeclarationNode(node: ParseNode): boolean {
+    const declarationFields = node.d as { isViperStatic?: boolean; viperModifier?: string };
+    if (declarationFields.isViperStatic === true) {
+        return true;
+    }
+    return node.nodeType === ParseNodeType.Function && declarationFields.viperModifier === 'static';
+}
+
 // Returns the deepest node that contains the specified position.
 export function findNodeByPosition(
     node: ParseNode,

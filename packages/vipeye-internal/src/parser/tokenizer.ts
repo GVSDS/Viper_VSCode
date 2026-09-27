@@ -658,7 +658,7 @@ enum MagicsKind {
 // 返回 'classEnum'：把 enum 当作 class 关键字，并标记为 Viper 枚举
 //   （等价 `class Foo(t.CEnum)`，analyzer 会赋予 CEnum 枚举语义）；
 // 返回 'def'：把 fn/fun/func/function 当作 def 关键字；
-// 返回 'viperModifier'：inline/export/extern/virtual/novirtual 生成修饰关键字
+// 返回 'viperModifier'：inline/export/extern/virtual/novirtual/static 生成修饰关键字
 //   token，由 parser 判断搭配是否合法（单独使用则报错）；
 // undefined：按普通标识符处理（变量名、成员名、导入名、`state:` 注解等）。
 function getViperStatementKeywordAction(
@@ -669,6 +669,32 @@ function getViperStatementKeywordAction(
     precededByViperModifier: boolean
 ): 'skip' | 'class' | 'classEnum' | 'def' | 'viperModifier' | undefined {
     const nextWord = peekViperKeywordWord(text, identifierEnd);
+    if (name === 'static') {
+        // Viper 扩展：`static` 是**软关键字**，只在语句起始且后随
+        //   `def` 族（static def f()）或 `名字 :`（static x: T = v）
+        // 时才作为修饰关键字；`static = 1` / `static: int` / `static.x` /
+        // `static(x)` 仍按普通标识符处理（与 TPC includes/ast/parser.vp
+        //  的 _IsStaticModifier 同判据）。
+        if (!isViperAtStatementStart(text, identifierStart)) {
+            return undefined;
+        }
+        // 后跟 ':' 直接结束（`static: t.CInt` 这类字段声明）按普通标识符处理。
+        if (isViperNextCharColon(text, identifierEnd)) {
+            return undefined;
+        }
+        const wordAndNextChar = peekViperKeywordWordAndNextChar(text, identifierEnd);
+        if (isViperDefFamilyWord(wordAndNextChar.word)) {
+            return 'viperModifier';
+        }
+        if (
+            wordAndNextChar.word.length > 0 &&
+            isIdentifierStartChar(wordAndNextChar.word.charCodeAt(0)) &&
+            wordAndNextChar.nextChar === ':'
+        ) {
+            return 'viperModifier';
+        }
+        return undefined;
+    }
     if (
         name === 'inline' ||
         name === 'export' ||
@@ -738,6 +764,35 @@ function peekViperKeywordWord(text: string, from: number): string {
         pos++;
     }
     return text.slice(start, pos);
+}
+
+// 跳过空白读出一个标识符词，并返回其后的首个非空白字符（用于判断
+// `static x: T` 里名字之后是否紧跟 ':'）。到行尾/文件尾时 nextChar 为 undefined。
+function peekViperKeywordWordAndNextChar(
+    text: string,
+    from: number
+): { word: string; nextChar: string | undefined } {
+    let pos = from;
+    const len = text.length;
+    while (pos < len && (text[pos] === ' ' || text[pos] === '\t')) {
+        pos++;
+    }
+    const start = pos;
+    while (pos < len && isIdentifierChar(text.charCodeAt(pos))) {
+        pos++;
+    }
+    const word = text.slice(start, pos);
+
+    let after = pos;
+    while (after < len && (text[after] === ' ' || text[after] === '\t')) {
+        after++;
+    }
+    return { word, nextChar: after < len ? text[after] : undefined };
+}
+
+// def 及其别名（fn/fun/func/function）：`static def f()` 与 `static fn f()` 等价。
+function isViperDefFamilyWord(word: string): boolean {
+    return word === 'def' || word === 'fn' || word === 'fun' || word === 'func' || word === 'function';
 }
 
 function isViperNextCharColon(text: string, from: number): boolean {

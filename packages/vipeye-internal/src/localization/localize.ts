@@ -1208,6 +1208,8 @@ export namespace Localizer {
             getRawString('Diagnostic.viperVirtualDefInNoVirtualClass');
         export const viperExternBodyInvalid = () =>
             new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperExternBodyInvalid'));
+        export const viperStaticUsedOutsideOfModule = () =>
+            new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperStaticUsedOutsideOfModule'));
         export const viperLenNoLenMethod = () =>
             new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperLenNoLenMethod'));
         export const unhashableDictKey = () => getRawString('Diagnostic.unhashableDictKey');

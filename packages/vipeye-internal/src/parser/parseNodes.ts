@@ -1201,6 +1201,12 @@ export interface TypeAnnotationNode extends ParseNodeBase<ParseNodeType.TypeAnno
     d: {
         valueExpr: ExpressionNode;
         annotation: ExpressionNode;
+
+        // Viper 扩展：`static x: T = v` 的注解（见
+        // parser._parseViperStaticAnnotatedStatement）。注解已被改写为
+        // `t.CStatic | T`，此标记供跨模块取参检查兜底判定（变量声明的
+        // 离节点是目标 NameNode，见 NameNode.d.isViperStatic）。
+        isViperStatic?: boolean;
     };
 }
 
@@ -1712,6 +1718,11 @@ export interface NameNode extends ParseNodeBase<ParseNodeType.Name> {
         // 的同名绑定（builtins.vpi 通过 `from t import ...` / `from c import ...`
         // 绑定了它们），而不是报"未定义 t"。
         isViperImplicitModule?: boolean;
+
+        // Viper 扩展：`static x: T = v` 的变量声明目标名（见
+        // parser._parseViperStaticAnnotatedStatement）。变量的 Declaration.node
+        // 就是这个 NameNode，跨模块取参检查依此判定「声明带 static」。
+        isViperStatic?: boolean;
     };
 }
 

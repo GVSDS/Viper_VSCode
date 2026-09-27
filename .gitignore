@@ -148,6 +148,7 @@ packages/vipeye-internal/src/tests/__viper_attribute_implicit_scope__/
 packages/vipeye-internal/src/tests/__viper_volatile__/
 packages/vipeye-internal/src/tests/__viper_volatile_bad__/
 packages/vipeye-internal/src/tests/__viper_callable__/
+packages/vipeye-internal/src/tests/__viper_static__/
 
 # perfCompare.py cached commit bundles
 /build/perfCompare/

@@ -263,3 +263,89 @@ def f(static: int) -> int:
         require('fs').rmSync(testRoot, { recursive: true, force: true });
     }
 });
+
+// ViperOS 全仓实际写法是**注解内前缀**（`buf_head: static uint32 = 0`，
+// 见 VKernel/Kernel/drivers/**），此前 LSP 只认语句起始形态 `static x: T`，
+// 导致 `static` 在注解里被当普通名引用 → 误报「"static" is not defined」。
+test('注解内 static 前缀（x: static T = v）解析、展示与跨模块拦截', () => {
+    const { program, configOptions, uris, testRoot, serviceProvider } = buildProgram({
+        'lib.vp': `buf_head: static int = 0
+
+def touch() -> int:
+    return buf_head
+`,
+        'main.vp': `import lib
+
+def use() -> int:
+    return lib.buf_head
+`,
+    });
+
+    try {
+        const libDiags = getDiagnostics(program, configOptions, uris['lib.vp']);
+        console.log('=== 注解内 static 诊断 ===');
+        libDiags.forEach((d) => console.log(`  L${d.line} [category=${d.category}] ${d.message}`));
+
+        assert.strictEqual(
+            libDiags.filter((d) => d.category === 0).length,
+            0,
+            `注解内 static 不应报语法/未定义错误：${JSON.stringify(libDiags)}`
+        );
+        assert.strictEqual(
+            libDiags.filter((d) => d.message.includes('static 符号')).length,
+            0,
+            `同模块自引用不应报 static 跨模块错误：${JSON.stringify(libDiags)}`
+        );
+
+        // 注解脱糖为 `t.CStatic | int`，与语句起始形态一样展示为 `static int`。
+        const types = collectAnnotatedVarTypes(program, uris['lib.vp']);
+        console.log('=== 注解变量类型 ===');
+        types.forEach((v, k) => console.log(`  ${k}: ${v}`));
+        assert(
+            types.get('buf_head')!.includes('static') && types.get('buf_head')!.includes('int'),
+            `buf_head 应展示为 static int，实际: ${types.get('buf_head')}`
+        );
+
+        // 跨模块取参仍须报错（与语句起始形态同判据）。
+        const mainDiags = getDiagnostics(program, configOptions, uris['main.vp']);
+        console.log('=== 跨模块取参诊断 ===');
+        mainDiags.forEach((d) => console.log(`  L${d.line} [category=${d.category}] ${d.message}`));
+        const staticDiags = mainDiags.filter((d) => d.message.includes('static 符号'));
+        assert.strictEqual(
+            staticDiags.length,
+            1,
+            `lib.buf_head 取用应报一条 static 跨模块错误：${JSON.stringify(mainDiags)}`
+        );
+        assert(
+            staticDiags[0].message.includes('lib.buf_head'),
+            `诊断文案应含 lib.buf_head：${JSON.stringify(staticDiags)}`
+        );
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        require('fs').rmSync(testRoot, { recursive: true, force: true });
+    }
+});
+
+test('注解内 static 仍受软关键字边界约束：static 单独作为注解名不变', () => {
+    const code = `static: int = 0
+static = 1
+`;
+    const { program, configOptions, uris, testRoot, serviceProvider } = buildProgram({ 'main.vp': code });
+
+    try {
+        const diagnostics = getDiagnostics(program, configOptions, uris['main.vp']);
+        console.log('=== 注解内 static 边界诊断 ===');
+        diagnostics.forEach((d) => console.log(`  L${d.line} [category=${d.category}] ${d.message}`));
+
+        assert.strictEqual(
+            diagnostics.filter((d) => d.category === 0).length,
+            0,
+            `static 作为普通标识符/变量名不应报语法错误：${JSON.stringify(diagnostics)}`
+        );
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        require('fs').rmSync(testRoot, { recursive: true, force: true });
+    }
+});

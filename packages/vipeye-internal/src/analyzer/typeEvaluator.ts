@@ -8746,6 +8746,22 @@ export function createTypeEvaluator(
                 }
             }
         }
+
+        // 回退：builtins stub 的编译器内置 `rawptr`（= t.CPtr，见 builtins.vpi）。
+        // 文件没 `import t` 时（如 ViperOS 的 serial.vp）也要能用 `*args` 的
+        // va_list 指针语义，与 `T*` 注解 / `[SIZE]T` 一致（不强制源码 import t）。
+        const rawptrSymbolWithScope = lookUpSymbolRecursive(node, 'rawptr', /* honorCodeFlow */ true);
+        if (rawptrSymbolWithScope) {
+            const rawptrType = getEffectiveTypeOfSymbolForUsage(
+                rawptrSymbolWithScope.symbol,
+                /* usageNode */ undefined,
+                /* useLastDecl */ true
+            ).type;
+            if (rawptrType && isInstantiableClass(rawptrType)) {
+                return convertToInstance(ClassType.specialize(rawptrType, [UnknownType.create()]));
+            }
+        }
+
         return undefined;
     }
 

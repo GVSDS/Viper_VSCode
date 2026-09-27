@@ -55,7 +55,7 @@
                 },
                 {
                     "name": "storage.modifier.viper",
-                    "match": "\\bstatic\\b(?=\\s+(?:def|fn|fun|func|function)\\b|\\s+[A-Za-z_][A-Za-z0-9_]*\\s*:)"
+                    "match": "\\bstatic\\b(?=\\s+(?:def|fn|fun|func|function)\\b|\\s*[A-Za-z_\\[])"
                 },
                 {
                     "name": "storage.modifier.viper",

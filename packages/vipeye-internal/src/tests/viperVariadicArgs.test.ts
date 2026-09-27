@@ -128,6 +128,69 @@ test('viperlib.vp 中 *args 透传 vsnprintf 不报 tuple 类型错误', () => {
     serviceProvider.dispose();
 });
 
+/*
+ * ViperOS VKernel/Kernel/drivers/serial/uart/serial.vp 场景：
+ *   export def printf(fmt: const str, *args) -> int:
+ *       ...
+ *       n: int = viperlib.vsnprintf(&buf, 1024, fmt, args)
+ *   该文件**没有** `import t`，此前 getViperCPtrType 只认源码可见的 `t.CPtr`，
+ *   取不到就退回 Python 语义的 tuple → 误报
+ *   「无法将"tuple"类型的参数分配给函数"vsnprintf"中类型为"str"的参数"ap"」。
+ *   修法：回退 builtins stub 的 `rawptr`（= t.CPtr，与 `T*` 注解同机制）。
+ */
+test('未 import t 的文件里 *args 仍是 va_list 指针（serial.vp 场景）', () => {
+    const fs = require('fs');
+    const testRoot = path.join(__dirname, '__viper_variadic_noimport__');
+    fs.rmSync(testRoot, { recursive: true, force: true });
+    fs.mkdirSync(testRoot, { recursive: true });
+    const filePath = path.join(testRoot, 'main.vp');
+    fs.writeFileSync(
+        filePath,
+        `import viperlib
+
+export def printf(fmt: const str, *args) -> int:
+    if fmt is None:
+        return 0
+    buf: [1024]char
+    n: int = viperlib.vsnprintf(&buf, 1024, fmt, args)
+    return n
+`,
+        'utf8'
+    );
+
+    const { program, serviceProvider, uri, configOptions } = buildProgram(filePath, testRoot, [
+        TRANSPYC_INCLUDES,
+    ]);
+
+    try {
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== *args 无 import t 诊断 ===');
+        diagnostics.forEach((d) => console.log(`  ${d.range} [category=${d.category}] ${d.message}`));
+
+        const variadicErrors = diagnostics.filter(
+            (d) =>
+                d.message.includes('tuple') ||
+                d.message.includes('参数 "ap"') ||
+                d.message.includes('is not defined')
+        );
+        assert.strictEqual(
+            variadicErrors.length,
+            0,
+            `*args 应绑定为 va_list 指针（rawptr），不应报 tuple/未定义：${JSON.stringify(variadicErrors)}`
+        );
+
+        assert.strictEqual(
+            diagnostics.filter((d) => d.category === 0).length,
+            0,
+            `不应有任何 error：${JSON.stringify(diagnostics)}`
+        );
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        fs.rmSync(testRoot, { recursive: true, force: true });
+    }
+});
+
 test('memhub.vp 中 viperio.Buf.__sizeof__() 不报 Argument missing for parameter "self"', () => {
     const { program, serviceProvider, uri, configOptions } = buildProgram(MEMHUB_PATH);
 

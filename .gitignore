@@ -154,6 +154,7 @@ packages/vipeye-internal/src/tests/__viper_type_binop_bound__/
 packages/vipeye-internal/src/tests/__viper_const_ptr_deref__/
 packages/vipeye-internal/src/tests/__viper_const_ptr_index__/
 packages/vipeye-internal/src/tests/__viper_const_ptr_iter__/
+packages/vipeye-internal/src/tests/__viper_variadic_noimport__/
 
 # perfCompare.py cached commit bundles
 /build/perfCompare/

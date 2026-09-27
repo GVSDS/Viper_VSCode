@@ -257,6 +257,10 @@ export class Parser {
     // 不因 `*` 之后是行尾还是下一行内容而在两条解析路径间摇摆
     // （见 _isAtViperPointerTypeSuffix 对换行的处理）。
     private _isParsingViperTypeDescriptorInner = false;
+    // Viper 扩展：本次注解解析里消费过 `static` 类型描述符（`x: static T = v`）。
+    // 注解解析结束后由 _parseExpressionStatement 读取一次并清零：命中时把该声明
+    // 标为 static 符号（isViperStatic），供「禁止跨模块取参」检查使用。
+    private _viperStaticDescriptorInAnnotation = false;
     // Viper 扩展：当前所处的类声明形态，用于校验 vtable 修饰方法的出现位置：
     //   `virtual def`   仅允许位于 class / virtual class 内；
     //   `novirtual def` 允许位于 class / virtual class / novirtual class 内。
@@ -5121,8 +5125,18 @@ export class Parser {
         if (this._consumeTokenIfType(TokenType.Colon)) {
             // 保留原始赋值目标（NameNode），后续 `*=` 拆分重包装时避免嵌套 TypeAnnotationNode。
             const targetExpr = leftExpr;
+            // Viper 扩展：注解内 `static` 描述符（`x: static T = v`）→ 该声明是 static 符号。
+            this._viperStaticDescriptorInAnnotation = false;
             annotationExpr = this._parseTypeAnnotation();
-            leftExpr = TypeAnnotationNode.create(targetExpr, annotationExpr);
+            const annotationNode = TypeAnnotationNode.create(targetExpr, annotationExpr);
+            leftExpr = annotationNode;
+            if (this._viperStaticDescriptorInAnnotation) {
+                annotationNode.d.isViperStatic = true;
+                if (targetExpr.nodeType === ParseNodeType.Name) {
+                    targetExpr.d.isViperStatic = true;
+                }
+                this._viperStaticDescriptorInAnnotation = false;
+            }
 
             if (
                 !this._parseOptions.isStubFile &&
@@ -5367,11 +5381,64 @@ export class Parser {
         if (attributeNode) {
             return attributeNode;
         }
+        const staticNode = this._parseViperStaticTypeDescriptorPrefix();
+        if (staticNode) {
+            return staticNode;
+        }
         const descriptorNode = this._parseViperTypeDescriptorPrefix();
         if (descriptorNode) {
             return descriptorNode;
         }
         return this._parseViperBracketArrayTypeIfNeeded();
+    }
+
+    // Viper 扩展：注解位置的 `static` 类型描述符前缀 `x: static T = v`。
+    // 与语句起始形态 `static x: T = v`（见 _parseViperStaticAnnotatedStatement）
+    // 脱糖为同一形状 `t.CStatic | T`（存储类标记：TypeSet 语义里只作修饰，
+    // 不改变数据类型；展示为 `static T`）。ViperOS 全仓写法都是注解内前缀，
+    // 故两种位置都支持。
+    //
+    // `static` 是**软关键字**：只有「后随类型原子起点」时才在此消费，
+    // 其余（`x: static`、`def f(static: int)`、`self.static`、`x: static.y`）
+    // 仍按普通标识符处理（与 TPC `_IsStaticModifier` 的软关键字边界同口径）。
+    // 消费成功后置 _viperStaticDescriptorInAnnotation，供 _parseExpressionStatement
+    // 把该变量声明标为 static 符号（禁止跨模块取参）。
+    private _parseViperStaticTypeDescriptorPrefix(): ExpressionNode | undefined {
+        if (this._parseOptions.dialect !== 'viper') {
+            return undefined;
+        }
+
+        const staticToken = this._peekToken();
+        if (staticToken.type !== TokenType.Identifier) {
+            return undefined;
+        }
+        if (this._fileContents!.slice(staticToken.start, staticToken.start + staticToken.length) !== 'static') {
+            return undefined;
+        }
+        if (
+            !this._isViperTypeAtomStartToken(this._peekToken(1)) &&
+            !this._isAtViperAttributePrefix(1)
+        ) {
+            return undefined;
+        }
+
+        this._getNextToken(); // 消费 static
+
+        // 同 const / volatile：解析被修饰的主体期间禁止就地消费指针后缀 `*`，
+        // 使 `static int*` 恒为 `(CStatic | int)*`。
+        const wasDescriptorInner = this._isParsingViperTypeDescriptorInner;
+        this._isParsingViperTypeDescriptorInner = true;
+        const innerType = this._parseViperTypeAnnotationCore();
+        this._isParsingViperTypeDescriptorInner = wasDescriptorInner;
+
+        this._viperStaticDescriptorInAnnotation = true;
+
+        return BinaryOperationNode.create(
+            this._createViperStaticMarker(staticToken.start),
+            innerType,
+            this._createViperSyntheticBarToken(staticToken),
+            OperatorType.BitwiseOr
+        );
     }
 
     // Viper 扩展：注解位置的 `__attribute__(...)` 修饰器前缀。

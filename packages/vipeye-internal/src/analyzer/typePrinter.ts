@@ -726,8 +726,11 @@ function printTypeInternal(
 // Viper 用联合（TypeSet）表示「类型 + 描述符」，如 `CConst | CPtr[int]`（const int*）、
 // `CVolatile | int`（volatile int）。展示时须把它们当作**前缀限定符**，
 // 而不是联合成员，否则会暴露出内部表示（"CConst | rawptr[int]"）。
-// 仅覆盖有唯一 C 关键字的修饰符；State / CExport / CPass / CDefine
-// （声明标记、编译期元指令）另有语义，保持原样。
+// `CExport`（`export x: T`）/ `State`（`extern x: T` = CExtern | CExport）是本
+// 语言软关键字 `export` / `extern` 声明变量的脱糖产物（与 TPC
+// `_parse_export_extern_var` 同形），同属存储类修饰，故与 static/register 等一样
+// 按前缀渲染（`export int` / `extern int`）。
+// 其余声明标记 / 编译期元指令（CPass / CDefine）保持原样。
 function getViperModifierKeyword(type: Type): string | undefined {
     if (!isClass(type)) {
         return undefined;
@@ -747,6 +750,10 @@ function getViperModifierKeyword(type: Type): string | undefined {
         case 'CInline':
             return 'inline';
         case 'CExtern':
+            return 'extern';
+        case 'CExport':
+            return 'export';
+        case 'State':
             return 'extern';
         default:
             return undefined;

@@ -4223,12 +4223,12 @@ export function combineTypes(subtypes: Type[], options?: CombineTypesOptions): T
                 isClass(subtype) &&
                 // None 是空指针取值而非结构体，不能作为 CPtr 的类型参数（否则 None | CPtr[T] 会误折叠成 CPtr[None]）
                 !ClassType.isBuiltIn(subtype, 'NoneType') &&
+                // 修饰符（CConst/CStatic/CVolatile/CExport/State/CExtern/CInline/CDefine/CAttr 等）
+                // 只作修饰，不能当被指向类型：`t.CPtr | t.State`（extern 变量的存储类标记）保持联合，
+                // 否则会折叠成 CPtr[State] 这种把修饰符当结构体的错误类型。
+                !isCModifierType(subtype) &&
                 !isCVoidType(subtype) &&
                 !isCArrayType(subtype) &&
-                !isCConstType(subtype) &&
-                !isCStaticType(subtype) &&
-                !isCVolatileType(subtype) &&
-                !isCDefineType(subtype) &&
                 !ClassType.isBuiltIn(subtype, 'object')
             ) {
                 structSubtypes.push(subtype);

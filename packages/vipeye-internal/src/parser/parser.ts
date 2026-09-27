@@ -530,6 +530,13 @@ export class Parser {
                     (modifierText === 'extern' || modifierText === 'export') &&
                     this._peekToken(1).type === TokenType.Identifier
                 ) {
+                    // Viper 扩展：`export NAME: T [= v]` / `extern NAME: T` 变量声明。
+                    // 与 `extern A(...)` / `export A(...)` 函数声明由第三个 token 区分：
+                    // `:` 是变量（类型注解），`(` / `[` 是函数（参数表 / 泛型）。
+                    // （与 TPC includes/ast/parser.vp `_is_export_extern_var` 同判据）
+                    if (this._peekToken(2).type === TokenType.Colon) {
+                        return this._parseViperExportExternVarStatement(modifierToken, modifierText);
+                    }
                     // extern/export 直接声明形式：`extern A(...)`。
                     // 消费修饰关键字后，下一个标识符即函数名；defToken 用修饰关键字
                     // 作为范围起点（diagnostic 定位）。
@@ -5434,7 +5441,7 @@ export class Parser {
         this._viperStaticDescriptorInAnnotation = true;
 
         return BinaryOperationNode.create(
-            this._createViperStaticMarker(staticToken.start),
+            this._createViperStorageClassMarker(staticToken.start, 'CStatic'),
             innerType,
             this._createViperSyntheticBarToken(staticToken),
             OperatorType.BitwiseOr
@@ -5575,11 +5582,13 @@ export class Parser {
         return nameNode;
     }
 
-    // Viper 扩展：合成 `t.CStatic` 属性标记（模块根是隐式名，不要求源码 import t）。
-    private _createViperStaticMarker(start: number): ExpressionNode {
+    // Viper 扩展：合成 `t.<memberName>` 存储类标记（模块根是隐式名，不要求源码
+    // import t）。`CStatic`（static 变量）、`CExport`（export 变量）、
+    // `State`（extern 变量 = CExtern | CExport）共用本函数。
+    private _createViperStorageClassMarker(start: number, memberName: string): ExpressionNode {
         return MemberAccessNode.create(
             this._createViperImplicitModuleName(start, 't'),
-            NameNode.create(IdentifierToken.create(start, 0, 'CStatic', /* comments */ undefined))
+            NameNode.create(IdentifierToken.create(start, 0, memberName, /* comments */ undefined))
         );
     }
 
@@ -5626,13 +5635,74 @@ export class Parser {
         // 故锚点取内层注解自身的起点，零长度合成名正好落在注解内侧。
         const anchorStart = annotationNode.d.annotation.start;
         const wrappedAnnotation = BinaryOperationNode.create(
-            this._createViperStaticMarker(anchorStart),
+            this._createViperStorageClassMarker(anchorStart, 'CStatic'),
             annotationNode.d.annotation,
             OperatorToken.create(anchorStart, 0, OperatorType.BitwiseOr, /* comments */ undefined),
             OperatorType.BitwiseOr
         );
         wrappedAnnotation.parent = annotationNode;
         annotationNode.d.annotation = wrappedAnnotation;
+
+        return statementList;
+    }
+
+    // Viper 扩展：`export NAME: T [= v]` / `extern NAME: T` 模块级变量声明。
+    // 与 TPC includes/ast/parser.vp `_parse_export_extern_var` 逐条对应：
+    //   export → 注解改写为 `T | t.CExport`（定义端裸名，**不加模块 SHA1 头**
+    //            —— 内联汇编 / C 符号对接必需），允许带初始值；
+    //   extern → 注解改写为 `T | t.State`（= t.CExtern | t.CExport：仅声明 + 裸名，
+    //            与 `extern def` 同口径），**不允许初始值**（符号定义在外部），
+    //            `extern a: int = 1` 报错（响亮失败，非静默）。
+    // `t` 用隐式模块根（不要求源码 import t）。
+    // 存储类标记只作修饰：TypeSet 语义下不改变数据类型（isCModifierType 统一跳过），
+    // 故 `gdt[i].field` / `gdt = ...` 等访问与普通变量一致。
+    private _parseViperExportExternVarStatement(modifierToken: KeywordToken, modifierText: string): StatementNode {
+        this._getNextToken(); // 消费 export / extern
+        const statementList = this._parseSimpleStatement();
+        const isExtern = modifierText === 'extern';
+
+        let annotationNode: TypeAnnotationNode | undefined;
+        let hasInitialValue = false;
+        for (const inner of statementList.d.statements) {
+            if (inner.nodeType === ParseNodeType.TypeAnnotation) {
+                annotationNode = inner;
+                break;
+            }
+            if (inner.nodeType === ParseNodeType.Assignment) {
+                hasInitialValue = true;
+                const leftExpr = inner.d.leftExpr;
+                if (leftExpr.nodeType === ParseNodeType.TypeAnnotation) {
+                    annotationNode = leftExpr;
+                    break;
+                }
+            }
+        }
+
+        if (!annotationNode) {
+            // 调用方已保证 `export`/`extern` 后是 `名字 :`；走到这里说明写法异常。
+            this._addSyntaxError(LocMessage.viperModifierRequiresDef().format({ name: modifierText }), modifierToken);
+            return statementList;
+        }
+
+        if (isExtern && hasInitialValue) {
+            this._addSyntaxError(LocMessage.viperExternVarCannotHaveValue(), modifierToken);
+        }
+
+        // 合成的存储类标记贴在注解**右侧**（`T | t.CExport` / `T | t.State`，
+        // 与 TPC `BinOp(ann, BitOr, storage_attr)` 同形）。锚点取内层注解的**末尾**：
+        // 标记零长度、落在注解范围内侧，既不会让子节点跑到父节点范围之外
+        // （绑定期 testWalker 的 "Child node ... is not contained within its parent"），
+        // 也保持「子节点按位置递增」。
+        const annotationEnd = annotationNode.d.annotation.start + annotationNode.d.annotation.length;
+        const annotation = annotationNode.d.annotation;
+        const markerAnnotation = BinaryOperationNode.create(
+            annotation,
+            this._createViperStorageClassMarker(annotationEnd, isExtern ? 'State' : 'CExport'),
+            OperatorToken.create(annotationEnd, 0, OperatorType.BitwiseOr, /* comments */ undefined),
+            OperatorType.BitwiseOr
+        );
+        markerAnnotation.parent = annotationNode;
+        annotationNode.d.annotation = markerAnnotation;
 
         return statementList;
     }

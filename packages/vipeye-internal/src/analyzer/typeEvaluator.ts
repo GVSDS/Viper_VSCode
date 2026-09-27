@@ -8263,8 +8263,11 @@ export function createTypeEvaluator(
 
         // Viper 扩展：TypeSet 类型组合的下标访问语义。
         // Viper 中 `|` 表示类型组合（如 CConst | str = const char*），
-        // 对 TypeSet 中的修饰类型（CConst/CStatic/CPtr/CVoid/CDefine/CArray/CAttr）跳过下标访问，
+        // 对 TypeSet 中的修饰类型（isCModifierType：CConst/CStatic/CVolatile/
+        // CExport/State/CExtern/CInline/…/CAttr）与 CPtr/CVoid 跳过下标访问，
         // 让 combineTypes 只合并非修饰类型的结果（如 str/bytes 的下标返回 int/CChar）。
+        // 注：CArray 不在此列 —— 它有真实的元素访问语义，由本函数开头的
+        // CArray 快路径统一处理（裸类型与联合成员都取元素类型）。
         const viperIndexFileInfo = AnalyzerNodeInfo.getFileInfo(node);
         const isViperTypeSetIndex =
             IsViperDialect(viperIndexFileInfo.executionEnvironment.dialect) &&
@@ -8272,14 +8275,7 @@ export function createTypeEvaluator(
             baseTypeResult.type.priv.subtypes.some(
                 (subtype) =>
                     isClassInstance(subtype) &&
-                    (isCConstType(subtype) ||
-                        isCStaticType(subtype) ||
-                        isCVolatileType(subtype) ||
-                        isCPtrType(subtype) ||
-                        isCVoidType(subtype) ||
-                        isCDefineType(subtype) ||
-                        isViperAttrMarkerType(subtype) ||
-                        isCArrayType(subtype))
+                    (isCModifierType(subtype) || isCPtrType(subtype) || isCVoidType(subtype))
             );
 
         // Viper 扩展：PEP 695 风格显式类型实参 `fn[TypeArgs]`。
@@ -8301,17 +8297,13 @@ export function createTypeEvaluator(
                 const selfType = isTypeVar(unexpandedSubtype) ? unexpandedSubtype : undefined;
 
                 // Viper TypeSet：修饰类型跳过下标访问，避免产生 Unknown 污染结果。
+                // （CArray 除外：它有元素访问语义，走本函数开头的 CArray 快路径。）
                 if (
                     isViperTypeSetIndex &&
                     isClassInstance(concreteSubtype) &&
-                    (isCConstType(concreteSubtype) ||
-                        isCStaticType(concreteSubtype) ||
-                        isCVolatileType(concreteSubtype) ||
+                    (isCModifierType(concreteSubtype) ||
                         isCPtrType(concreteSubtype) ||
-                        isCVoidType(concreteSubtype) ||
-                        isCDefineType(concreteSubtype) ||
-                        isViperAttrMarkerType(concreteSubtype) ||
-                        isCArrayType(concreteSubtype))
+                        isCVoidType(concreteSubtype))
                 ) {
                     return undefined;
                 }
@@ -8866,16 +8858,22 @@ export function createTypeEvaluator(
         // 下标恒为 Unknown，进而 `buf[i].field` 误报「无法解析类型上的成员访问」。
         // 按 C 语义直接取第一个类型实参（元素类型），与 CPtr 分支读
         // `baseType.priv.typeArgs[0]` 同法，不依赖 TypeVar 替换。
+        //
+        // 基类型也可以是**联合**（`CArray[T, N] | t.CExport` / `| t.State` ——
+        // 存储类标记只作修饰，见 parser._parseViperExportExternVarStatement）：
+        // 此时取联合里的 CArray 成员，避免修饰符成员被当"不可下标"报错。
         const viperArrayFileInfo = AnalyzerNodeInfo.getFileInfo(node);
         if (
             IsViperDialect(viperArrayFileInfo.executionEnvironment.dialect) &&
-            usage.method === 'get' &&
-            isClassInstance(baseType) &&
-            isCArrayType(baseType) &&
-            baseType.priv.typeArgs &&
-            baseType.priv.typeArgs.length > 0
+            usage.method !== 'del'
         ) {
-            return { type: makeTopLevelTypeVarsConcrete(baseType.priv.typeArgs[0]) };
+            const arrayType = isClassInstance(baseType) && isCArrayType(baseType)
+                ? baseType
+                : findSubtype(baseType, (subtype) => isClassInstance(subtype) && isCArrayType(subtype));
+            const arrayTypeArgs = (arrayType as ClassType | undefined)?.priv.typeArgs;
+            if (arrayTypeArgs && arrayTypeArgs.length > 0) {
+                return { type: makeTopLevelTypeVarsConcrete(arrayTypeArgs[0]) };
+            }
         }
 
         // Viper 扩展：CPtr[T] 指针下标解引用语义。

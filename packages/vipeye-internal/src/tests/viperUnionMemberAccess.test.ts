@@ -111,3 +111,76 @@ test('BuddyTest 联合类型变量访问 realloc/alloc 成员不报 UnionType/Un
     program.dispose();
     serviceProvider.dispose();
 });
+
+// Viper：`X | t.CPtr` 折叠出的指针级数。
+// 背景（用户报的误报）：`HANDLE = VOIDPTR = t.CPtr`（void*），CreatePipe 的
+// `hReadPipe: HANDLE | t.CPtr` 语义上是 HANDLE*（void**）。但两侧在类型层同形
+// （都是 type[CPtr[Unknown]]），原先被并成一级指针 → `&stdout_read`（void**）
+// 传参被误报"跨级指针隐式转换不允许"。
+// 本用例锁定：左操作数已是指针时按"包一层指针"折叠；同时真实跨级错误必须照报。
+test('Viper `X | t.CPtr`：左操作数已是指针时折成二级指针（HANDLE | t.CPtr = void**）', () => {
+    const code = `import t
+from stdint import *
+import w32.win32base
+import w32.win32file
+
+extern def TakeHandlePtr(h: w32.win32base.HANDLE | t.CPtr) -> BOOL
+extern def TakeStructPtr(s: w32.win32base.SECURITY_ATTRIBUTES | t.CPtr) -> BOOL
+extern def TakeVoidPtr(p: t.CVoid | t.CPtr) -> BOOL
+extern def TakeStrPtr(s: str | t.CPtr) -> BOOL
+
+def types_ok(handle: w32.win32base.HANDLE, sa: w32.win32base.SECURITY_ATTRIBUTES, text: str) -> int:
+    # HANDLE | t.CPtr = void**：&handle（void**）应接受
+    TakeHandlePtr(&handle)
+    # 结构体 | t.CPtr = 结构体*：&sa 应接受
+    TakeStructPtr(&sa)
+    # CVoid | t.CPtr = void*：&sa（一级）应接受
+    TakeVoidPtr(&sa)
+    # str | t.CPtr = i8**：&text（i8**）应接受
+    TakeStrPtr(&text)
+    return 0
+
+def level_mismatch_still_reported(handle: w32.win32base.HANDLE) -> int:
+    # void** 传 void*：真实跨级错误必须照报
+    TakeVoidPtr(&handle)
+    return 0
+
+def create_pipe(capture_output: BOOL, sa: w32.win32base.SECURITY_ATTRIBUTES) -> int:
+    stdout_read: w32.win32base.HANDLE = None
+    stdout_write: w32.win32base.HANDLE = None
+    if capture_output:
+        pipe_result: BOOL = w32.win32file.CreatePipe(&stdout_read, &stdout_write, &sa, 0)
+    return 0
+`;
+
+    const fs = require('fs');
+    const testDir = path.join(__dirname, '__viper_union_ptr_level__');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'ptr_level.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const { program, serviceProvider, uri, configOptions } = buildProgram(testFile);
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== ptr_level.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d.range} [category=${d.category}] ${d.message}`));
+
+        const errors = diagnostics.filter((d) => d.category === 0);
+        const levelErrors = errors.filter((d) => d.message.includes('跨级指针'));
+        const callErrors = errors.filter((d) => d.message.includes('CreatePipe') || d.message.includes('TakeHandlePtr')
+            || d.message.includes('TakeStructPtr') || d.message.includes('TakeStrPtr'));
+
+        // 唯一允许的错误：level_mismatch_still_reported 里 `TakeVoidPtr(&handle)` 的跨级错误。
+        assert.strictEqual(
+            levelErrors.length,
+            1,
+            `应且仅应报 1 处跨级指针错误（void** → void*）：${JSON.stringify(errors)}`
+        );
+        assert.strictEqual(callErrors.length, 0, `不应有参数类型误报：${JSON.stringify(callErrors)}`);
+
+        program.dispose();
+        serviceProvider.dispose();
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+});

@@ -572,6 +572,12 @@ export interface ClassNode extends ParseNodeBase<ParseNodeType.Class> {
         // Viper 扩展：由 `enum X:` 语法声明（等价 `class X(t.CEnum):`）。
         // 成员可以只写成员名（裸名 / 逗号分隔的裸名），值由编译期推导。
         isViperEnum: boolean;
+
+        // Viper 扩展：类声明前的 vtable 修饰关键字（`virtual class X` / `novirtual class X`）。
+        // 'virtual' 等价 `@t.CVTable class X`（启用多态 vtable）；
+        // 'novirtual' 等价 `@t.NoVTable class X`（非多态，字段展平嵌入）。
+        // 未写修饰时为 undefined（普通 class）。
+        viperClassModifier?: string;
     };
 }
 
@@ -1691,6 +1697,13 @@ export interface NameNode extends ParseNodeBase<ParseNodeType.Name> {
         // `T1: t.CTypedef = T2` 相同，但本写法不要求源码 import t，
         // 故合成 `t` 解析失败时同样静默退化为 Unknown（不报"未定义 t"）。
         isViperTypedef?: boolean;
+
+        // Viper 扩展：类型描述符 `const T` / `volatile T` 脱糖
+        // （见 parser._parseViperTypeDescriptorPrefix）时合成出来的 `CConst` /
+        // `CVolatile` 名：零长度、不对应源码字符。语义与手写 `t.CConst | T` 相同，
+        // 但脱糖目标是 builtins stub 中的别名，不要求源码 import t；
+        // 名字解析不到时静默退化为 Unknown。
+        isViperTypeDescriptor?: boolean;
     };
 }
 

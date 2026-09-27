@@ -3299,13 +3299,35 @@ export function isCStaticType(type: Type): boolean {
     return type.shared.name === 'CStatic' || type.shared.fullName === 't.CStatic';
 }
 
+// Viper 扩展：检测类型是否为 t.CVolatile（volatile 类型限定符）。
+// CVolatile 在联合类型中用于表示 volatile 修饰（如 CVolatile | CInt 表示 volatile int）。
+// 与 isCConstType 对称：语义上不影响数据类型，仅在 TypeSet 联合中充当描述符。
+export function isCVolatileType(type: Type): boolean {
+    if (!isClass(type)) {
+        return false;
+    }
+    return type.shared.name === 'CVolatile' || type.shared.fullName === 't.CVolatile';
+}
+
+// Viper 扩展：检测类型是否为 `t.CAttr`（`__attribute__` 属性标记）。
+// 注解里的属性标记（`T | t.attr.section(".x")`）与 `__attribute__(...) T` 修饰器
+// 都求值为 CAttr 实例：与 CConst / CVolatile 同族的修饰符——只携带编译期元数据，
+// 不参与类型检查（运算/下标/赋值按被修饰的基础类型处理），展示时也不作为联合成员。
+export function isViperAttrMarkerType(type: Type): boolean {
+    if (!isClass(type)) {
+        return false;
+    }
+    return type.shared.name === 'CAttr' || type.shared.fullName === 't.CAttr';
+}
+
 // Viper 扩展：检测类型是否为 C 修饰符/描述符（编译时元指令，非数据类型）。
 // 这些类型在联合类型中应被过滤，只保留实际数据类型进行类型检查。
 // 依据 t.py 中 position 属性：含 PREFIX 的为修饰符（存储类/类型限定符/前缀）。
 // 特例：CDefine/CPass 虽 position=BASE，但语义是编译时元指令，也归为修饰符。
 // 注意：CUnsigned/CUnsignedChar 等是数据类型（position=BASE），不是修饰符。
 // 修饰符列表：CInline, CStatic, CConst, CExtern, CVolatile, CRegister,
-//             CExport, CAuto, CPass, CDefine, State（State 等价 CExport | CExtern）
+//             CExport, CAuto, CPass, CDefine, State（State 等价 CExport | CExtern），
+//             CAttr（`__attribute__` 属性标记，见 isViperAttrMarkerType）
 export function isCModifierType(type: Type): boolean {
     if (!isClass(type)) {
         return false;
@@ -3322,7 +3344,8 @@ export function isCModifierType(type: Type): boolean {
         name === 'CAuto' ||
         name === 'CPass' ||
         name === 'CDefine' ||
-        name === 'State'
+        name === 'State' ||
+        name === 'CAttr'
     );
 }
 
@@ -4204,6 +4227,7 @@ export function combineTypes(subtypes: Type[], options?: CombineTypesOptions): T
                 !isCArrayType(subtype) &&
                 !isCConstType(subtype) &&
                 !isCStaticType(subtype) &&
+                !isCVolatileType(subtype) &&
                 !isCDefineType(subtype) &&
                 !ClassType.isBuiltIn(subtype, 'object')
             ) {

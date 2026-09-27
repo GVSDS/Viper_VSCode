@@ -619,6 +619,14 @@ export namespace Localizer {
             new ParameterizedString<{ name: string }>(
                 getRawString('Diagnostic.viperGlobalAssignmentWithoutGlobal')
             );
+        export const viperGlobalRedeclarationWithoutGlobal = () =>
+            new ParameterizedString<{ name: string }>(
+                getRawString('Diagnostic.viperGlobalRedeclarationWithoutGlobal')
+            );
+        export const viperGlobalRedeclarationWithGlobal = () =>
+            new ParameterizedString<{ name: string }>(
+                getRawString('Diagnostic.viperGlobalRedeclarationWithGlobal')
+            );
         export const importSymbolUnknown = () =>
             new ParameterizedString<{ name: string }>(getRawString('Diagnostic.importSymbolUnknown'));
         export const incompatibleMethodOverride = () =>
@@ -1189,6 +1197,15 @@ export namespace Localizer {
         export const unexpectedUnindent = () => getRawString('Diagnostic.unexpectedUnindent');
         export const viperModifierRequiresDef = () =>
             new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperModifierRequiresDef'));
+        export const viperTypeDescriptorRequiresType = () =>
+            new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperTypeDescriptorRequiresType'));
+        export const viperVolatileValueRequiresCall = () => getRawString('Diagnostic.viperVolatileValueRequiresCall');
+        export const viperVirtualModifierRequiresClassOrDef = () =>
+            new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperVirtualModifierRequiresClassOrDef'));
+        export const viperVirtualDefPlacement = () => getRawString('Diagnostic.viperVirtualDefPlacement');
+        export const viperNoVirtualDefPlacement = () => getRawString('Diagnostic.viperNoVirtualDefPlacement');
+        export const viperVirtualDefInNoVirtualClass = () =>
+            getRawString('Diagnostic.viperVirtualDefInNoVirtualClass');
         export const viperExternBodyInvalid = () =>
             new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperExternBodyInvalid'));
         export const viperLenNoLenMethod = () =>

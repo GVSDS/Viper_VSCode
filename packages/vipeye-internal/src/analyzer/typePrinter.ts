@@ -30,6 +30,7 @@ import {
     isTypeVarTuple,
     isUnknown,
     isUnpacked,
+    isViperAttrMarkerType,
     maxTypeRecursionCount,
     OverloadedType,
     SentinelLiteral,
@@ -572,6 +573,21 @@ function printTypeInternal(
                     return specialFormText;
                 }
 
+                // Viper 扩展：联合类型中的类型描述符按**前缀限定符**渲染，而不是
+                // 联合成员：`CConst | CPtr[int]` → `const rawptr[int]`、
+                // `CVolatile | int` → `volatile int`。见 printViperModifierPrefix。
+                const modifierPrefixText = printViperModifierPrefix(
+                    type,
+                    printTypeFlags,
+                    returnTypeCallback,
+                    uniqueNameMap,
+                    recursionTypes,
+                    recursionCount
+                );
+                if (modifierPrefixText !== undefined) {
+                    return modifierPrefixText;
+                }
+
                 // If we're using "|" notation, enclose callable subtypes in parens.
                 const updatedPrintTypeFlags =
                     printTypeFlags & PrintTypeFlags.PEP604
@@ -701,6 +717,113 @@ function printTypeInternal(
         }
 
         return '';
+    } finally {
+        recursionTypes.pop();
+    }
+}
+
+// Viper 扩展：联合类型中修饰符（类型描述符）对应的展示关键字。
+// Viper 用联合（TypeSet）表示「类型 + 描述符」，如 `CConst | CPtr[int]`（const int*）、
+// `CVolatile | int`（volatile int）。展示时须把它们当作**前缀限定符**，
+// 而不是联合成员，否则会暴露出内部表示（"CConst | rawptr[int]"）。
+// 仅覆盖有唯一 C 关键字的修饰符；State / CExport / CPass / CDefine
+// （声明标记、编译期元指令）另有语义，保持原样。
+function getViperModifierKeyword(type: Type): string | undefined {
+    if (!isClass(type)) {
+        return undefined;
+    }
+
+    switch (type.shared.name) {
+        case 'CConst':
+            return 'const';
+        case 'CVolatile':
+            return 'volatile';
+        case 'CStatic':
+            return 'static';
+        case 'CRegister':
+            return 'register';
+        case 'CAuto':
+            return 'auto';
+        case 'CInline':
+            return 'inline';
+        case 'CExtern':
+            return 'extern';
+        default:
+            return undefined;
+    }
+}
+
+// Viper 扩展：把联合类型渲染为「修饰符前缀 + 其余类型」。
+//   `CConst | CPtr[int]`      → `const rawptr[int]`
+//   `CVolatile | int`         → `volatile int`
+//   `CConst | CVolatile | int` → `const volatile int`（修饰符全部提到最前）
+//   `CConst | int | str`      → `const (int | str)`（其余多于一个时加括号，
+//                               避免前缀限定范围歧义）
+// 无修饰符（或全是修饰符）时返回 undefined，交回常规联合渲染。
+function printViperModifierPrefix(
+    type: UnionType,
+    printTypeFlags: PrintTypeFlags,
+    returnTypeCallback: FunctionReturnTypeCallback,
+    uniqueNameMap: UniqueNameMap,
+    recursionTypes: Type[],
+    recursionCount: number
+): string | undefined {
+    const modifierKeywords: string[] = [];
+    const remainingSubtypes: Type[] = [];
+    let sawAttrMarker = false;
+
+    for (const subtype of type.priv.subtypes) {
+        // Viper 扩展：`__attribute__` 属性标记（t.CAttr）在源码中没有对应关键字，
+        // 展示时直接丢弃：`CInt | t.attr.weak` → `int`。
+        if (isViperAttrMarkerType(subtype)) {
+            sawAttrMarker = true;
+            continue;
+        }
+
+        const keyword = getViperModifierKeyword(subtype);
+        if (keyword !== undefined) {
+            modifierKeywords.push(keyword);
+        } else {
+            remainingSubtypes.push(subtype);
+        }
+    }
+
+    if ((modifierKeywords.length === 0 && !sawAttrMarker) || remainingSubtypes.length === 0) {
+        return undefined;
+    }
+
+    if (recursionCount >= maxTypeRecursionCount) {
+        return undefined;
+    }
+
+    recursionTypes.push(type);
+    try {
+        let remainingText: string;
+        if (remainingSubtypes.length === 1) {
+            remainingText = printTypeInternal(
+                remainingSubtypes[0],
+                printTypeFlags,
+                returnTypeCallback,
+                uniqueNameMap,
+                recursionTypes,
+                recursionCount + 1
+            );
+        } else {
+            const parts = remainingSubtypes.map((subtype) =>
+                printTypeInternal(
+                    subtype,
+                    printTypeFlags,
+                    returnTypeCallback,
+                    uniqueNameMap,
+                    recursionTypes,
+                    recursionCount + 1
+                )
+            );
+            remainingText = `(${parts.join(' | ')})`;
+        }
+
+        const modifierText = modifierKeywords.join(' ');
+        return modifierText ? `${modifierText} ${remainingText}` : remainingText;
     } finally {
         recursionTypes.pop();
     }

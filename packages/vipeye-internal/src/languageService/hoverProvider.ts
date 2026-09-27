@@ -69,6 +69,7 @@ import {
     getTypeForToolTip,
     getWrappedFunctionType,
 } from './tooltipUtils';
+import { findViperAttributeContext, getViperAttributeSymbols } from './viperAttributeUtils';
 
 export interface HoverTextPart {
     // 该部分按代码块渲染（markdown 下加代码围栏，见 convertHoverResults）。
@@ -435,6 +436,49 @@ export class HoverProvider {
         return this._evaluator.printType(type, this._getPrintTypeOptions(options));
     }
 
+    // Viper 扩展：光标位于 `__attribute__(...)` 实参括号内时，列出该修饰器可用的
+    // 全部属性名（section / aligned / always_inline / weak 等）。
+    // 上下文识别与 `t.attr` 成员查找复用 viperAttributeUtils，与括号内补全同源。
+    private _getViperAttributeHover(offset: number): HoverResults | null {
+        if (!this._parseResults) {
+            return null;
+        }
+
+        const moduleNode = this._parseResults.parserOutput.parseTree;
+        if (!IsViperDialect(getFileInfo(moduleNode).executionEnvironment.dialect)) {
+            return null;
+        }
+
+        const context = findViperAttributeContext(this._parseResults.text, offset);
+        if (!context) {
+            return null;
+        }
+
+        const attributeInfo = getViperAttributeSymbols(this._evaluator, moduleNode);
+        if (!attributeInfo) {
+            return null;
+        }
+
+        const names = Array.from(attributeInfo.symbolTable.keys()).sort();
+
+        return {
+            parts: [
+                { text: '`__attribute__(...)` 可用属性名：' },
+                { text: names.join(' '), python: true },
+                {
+                    text:
+                        '\n\n带参数者写成调用，如 `section(".text.wo")` / `aligned(16)` / ' +
+                        '`format(printf, 1, 2)`；无参数者可直接写属性名（`packed`）或写调用（`packed()`）。' +
+                        '\n\n属性清单来自 `t.attr`（TransPyC 的 `lib/includes/t.py`）。',
+                },
+            ],
+            range: {
+                start: convertOffsetToPosition(context.nameStart, this._parseResults.tokenizerOutput.lines),
+                end: convertOffsetToPosition(context.openParen + 1, this._parseResults.tokenizerOutput.lines),
+            },
+        };
+    }
+
     private _getHoverResult(): HoverResults | null {
         throwIfCancellationRequested(this._token);
 
@@ -445,6 +489,14 @@ export class HoverProvider {
         const offset = convertPositionToOffset(this._position, this._parseResults.tokenizerOutput.lines);
         if (offset === undefined) {
             return null;
+        }
+
+        // Viper 扩展：光标位于 `__attribute__(...)` 实参括号内时，提示可用的全部属性名。
+        // 必须在常规 parse 树分派之前：`__attribute__(...)` 脱糖后原始调用节点不保留在
+        // parse 树中，光标位置（尤其实参为空/未写完时）没有可命中的节点。
+        const attributeHover = this._getViperAttributeHover(offset);
+        if (attributeHover) {
+            return attributeHover;
         }
 
         const node = ParseTreeUtils.findNodeByOffset(this._parseResults.parserOutput.parseTree, offset);

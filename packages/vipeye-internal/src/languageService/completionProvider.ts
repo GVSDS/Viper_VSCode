@@ -79,6 +79,7 @@ import { appendArray } from '../common/collectionUtils';
 import { ExecutionEnvironment } from '../common/configOptions';
 import * as debug from '../common/debug';
 import { fail } from '../common/debug';
+import { IsViperDialect } from '../common/dialect';
 import { ProgramView } from '../common/extensibility';
 import { fromLSPAny, toLSPAny } from '../common/lspUtils';
 import { convertOffsetToPosition, convertPositionToOffset } from '../common/positionUtils';
@@ -137,6 +138,7 @@ import {
 import { DocumentSymbolCollector } from './documentSymbolCollector';
 import { getImportFromTarget, getModuleNameCompletionSuggestions } from './importStatementCandidates';
 import { getAutoImportText, getDocumentationPartsForTypeAndDecl } from './tooltipUtils';
+import { findViperAttributeContext, getViperAttributeSymbols } from './viperAttributeUtils';
 
 namespace Keywords {
     const base: string[] = [
@@ -184,7 +186,39 @@ namespace Keywords {
 
     const python3_15: string[] = [...python3_10, 'lazy'];
 
-    export function forVersion(version: PythonVersion): string[] {
+    // Viper 扩展：Viper 方言专有关键字（Vipeye 仅支持 Viper，故一律并入补全）。
+    // CPython 的关键字表里没有这些词，但它们在 Viper 里都是合法的语句/声明前缀，
+    // 不并入就会"看不见"（如 define/typedef/const 等）：
+    //   - 硬关键字：define（宏函数，等价 def）、const / volatile（类型描述符前缀）；
+    //   - 软关键字：typedef（类型别名）；inline / export / extern / virtual /
+    //     novirtual（C 风格修饰）；enum / rnum / union / struct（类/枚举声明前缀）；
+    //     fn / fun / func / function（def 别名）。
+    //   - `__attribute__`：宏属性装饰器/注解修饰器（`@__attribute__(...)` /
+    //     `a: __attribute__(...) T`），非关键字（普通标识符），但写法特殊，
+    //     单独键入 `__a` 时若不列出就"看不见"。
+    const viper: string[] = [
+        'define',
+        'const',
+        'volatile',
+        'typedef',
+        'inline',
+        'export',
+        'extern',
+        'virtual',
+        'novirtual',
+        'enum',
+        'rnum',
+        'union',
+        'struct',
+        'fn',
+        'fun',
+        'func',
+        'function',
+        '__attribute__',
+    ];
+
+    /** 版本对应的 CPython 关键字。 */
+    function versionKeywords(version: PythonVersion): string[] {
         if (PythonVersion.isGreaterOrEqualTo(version, pythonVersion3_15)) {
             return python3_15;
         }
@@ -195,6 +229,10 @@ namespace Keywords {
             return python3_5;
         }
         return base;
+    }
+
+    export function forVersion(version: PythonVersion): string[] {
+        return [...versionKeywords(version), ...viper];
     }
 
     // Keywords that can only begin a statement and can never begin an expression,
@@ -1298,6 +1336,15 @@ export class CompletionProvider {
         const offset = convertPositionToOffset(this.position, this.parseResults.tokenizerOutput.lines);
         if (offset === undefined) {
             return undefined;
+        }
+
+        // Viper 扩展：`__attribute__(...)` 括号内提示属性名（t.attr 的属性方法）。
+        // 必须在常规 parse 树分派之前：`__attribute__(` 前缀会脱糖为
+        // `t.attr.X | 内层类型`，空实参时该节点不保留在 parse 树里，
+        // 光标位置没有可命中的节点，走常规流程会返回无关补全。
+        const attributeCompletions = this._getViperAttributeCompletions(offset);
+        if (attributeCompletions) {
+            return attributeCompletions;
         }
 
         let node = ParseTreeUtils.findNodeByOffset(this.parseResults.parserOutput.parseTree, offset);
@@ -3469,6 +3516,48 @@ export class CompletionProvider {
                 }
             }
         });
+    }
+
+    // Viper 扩展：光标位于 `__attribute__(...)` 括号内时，提示 `t.attr` 的属性名
+    // （section / aligned / always_inline 等；与 TPC/TPV 的 `_MakeTAttrMarker` 一致，
+    //  实参只用无前缀属性名，故这里只列 t.attr 直接的属性方法，不含 llvm 描述符类）。
+    // 上下文识别与 t.attr 查找见 viperAttributeUtils（与 hoverProvider 共用）。
+    private _getViperAttributeCompletions(offset: number): CompletionMap | undefined {
+        const moduleNode = this.parseResults.parserOutput.parseTree;
+        if (!IsViperDialect(AnalyzerNodeInfo.getFileInfo(moduleNode).executionEnvironment.dialect)) {
+            return undefined;
+        }
+
+        if (!findViperAttributeContext(this._fileContents, offset)) {
+            return undefined;
+        }
+
+        const attributeInfo = getViperAttributeSymbols(this.evaluator, moduleNode);
+        if (!attributeInfo) {
+            return undefined;
+        }
+
+        // 光标所在行的光标前文本，用于过滤已输入的部分。
+        const lineTextRange = this.parseResults.tokenizerOutput.lines.getItemAt(this.position.line);
+        const textOnLine = this._fileContents.substr(lineTextRange.start, lineTextRange.length);
+        const priorText = textOnLine.substr(0, this.position.character);
+        const priorWordIndex = priorText.search(/[\p{L}\p{N}\p{Pc}\p{Mn}\p{Mc}]+$/u);
+        const priorWord = priorWordIndex >= 0 ? priorText.substr(priorWordIndex) : '';
+
+        const completionMap = new CompletionMap();
+        attributeInfo.symbolTable.forEach((symbol, name) => {
+            if (completionMap.has(name)) {
+                return;
+            }
+            this.addSymbol(name, symbol, priorWord, completionMap, {
+                boundObjectOrClass: attributeInfo.attrClass,
+                declaredOnBoundObjectOrClass: true,
+                funcParensDisabled: false,
+                extraCommitChars: !!priorWord,
+            });
+        });
+
+        return completionMap;
     }
 
     private _addSymbols(node: ParseNode, priorWord: string, completionMap: CompletionMap) {

@@ -251,6 +251,17 @@ export class Parser {
     // Viper 扩展：正在解析 `[SIZE]T` 的元素类型（此时即使身处下标实参内，
     // 也允许再出现 `[SIZE]T`，使 `list[[2][3]int]` 这类嵌套合法）。
     private _isParsingViperBracketArrayElement = false;
+    // Viper 扩展：正在解析类型描述符（const / volatile）修饰的主体类型。
+    // 此时禁止在表达式层就地消费 C 指针后缀 `*`，使其统一冒泡到最外层
+    // _parseTypeAnnotation 应用 —— 保证 `const T*` 恒为 `(CConst | T)*`，
+    // 不因 `*` 之后是行尾还是下一行内容而在两条解析路径间摇摆
+    // （见 _isAtViperPointerTypeSuffix 对换行的处理）。
+    private _isParsingViperTypeDescriptorInner = false;
+    // Viper 扩展：当前所处的类声明形态，用于校验 vtable 修饰方法的出现位置：
+    //   `virtual def`   仅允许位于 class / virtual class 内；
+    //   `novirtual def` 允许位于 class / virtual class / novirtual class 内。
+    // 进入函数体（suite）时置为 undefined：方法体内的 def 不是类成员。
+    private _viperEnclosingClassKind: 'plain' | 'virtual' | 'novirtual' | undefined = undefined;
     private _isParsingQuotedText = false;
     private _isInFinallyBlock = false;
     private _isInFinallyLoop = false;
@@ -443,6 +454,38 @@ export class Parser {
                     modifierToken.start,
                     modifierToken.start + modifierToken.length
                 );
+                // Viper 扩展：`virtual class X` / `novirtual class X`（类级 vtable 标记），
+                // `virtual def f(...)` / `novirtual def f(...)`（方法级 vtable 标记）。
+                // 语义等价 `@t.CVTable class X` / `@t.NoVTable class X`（见 t.vpi），
+                // 仅记录在节点上供编译器使用；类型层无额外语义。
+                // 必须在下方通用「修饰关键字 + def」分支之前，否则方法级修饰的
+                // 位置校验（virtual def 不得在 novirtual class 内 / 类外）会被跳过。
+                if (modifierText === 'virtual' || modifierText === 'novirtual') {
+                    const nextKeywordType =
+                        this._peekToken(1).type === TokenType.Keyword
+                            ? (this._peekToken(1) as KeywordToken).keywordType
+                            : undefined;
+                    if (nextKeywordType === KeywordType.Class) {
+                        this._getNextToken();
+                        return this._parseClassDef(/* decorators */ undefined, modifierText);
+                    }
+                    if (nextKeywordType === KeywordType.Def) {
+                        this._validateViperVirtualMethodPlacement(modifierText, modifierToken);
+                        this._getNextToken();
+                        // 不传 defTokenOverride：`def` 关键字仍须由 _parseFunctionDef 消费。
+                        return this._parseFunctionDef(
+                            /* asyncToken */ undefined,
+                            /* decorators */ undefined,
+                            modifierText
+                        );
+                    }
+                    this._addSyntaxError(
+                        LocMessage.viperVirtualModifierRequiresClassOrDef().format({ name: modifierText }),
+                        modifierToken
+                    );
+                    this._getNextToken();
+                    return this._parseSimpleStatement();
+                }
                 if (
                     this._peekToken(1).type === TokenType.Keyword &&
                     (this._peekToken(1) as KeywordToken).keywordType === KeywordType.Def
@@ -464,6 +507,20 @@ export class Parser {
                         modifierText,
                         modifierToken
                     );
+                }
+                // Viper 扩展：`inline while cond:` / `inline for x in y:`（内联循环标记）。
+                // 内联是代码生成期的提示，类型层无额外语义，此处仅消费修饰关键字并
+                // 按普通 while / for 语句解析（高亮由 TextMate grammar 负责）。
+                if (modifierText === 'inline' && this._peekToken(1).type === TokenType.Keyword) {
+                    const nextKeywordType = (this._peekToken(1) as KeywordToken).keywordType;
+                    if (nextKeywordType === KeywordType.While) {
+                        this._getNextToken();
+                        return this._parseWhileStatement();
+                    }
+                    if (nextKeywordType === KeywordType.For) {
+                        this._getNextToken();
+                        return this._parseForStatement();
+                    }
                 }
                 this._addSyntaxError(
                     LocMessage.viperModifierRequiresDef().format({ name: modifierText }),
@@ -2213,11 +2270,18 @@ export class Parser {
                 extendRange(suite, this._tokenizerOutput!.tokens.getItemAt(this._tokenIndex - 1));
             }
         } else {
+            // Viper 扩展：函数体内 `virtual def` / `novirtual def` 不是类成员，
+            // 解析函数体期间清空所处的类形态，使嵌套 def 的位置校验按"不在类内"处理。
+            const wasEnclosingClassKind = this._viperEnclosingClassKind;
+            this._viperEnclosingClassKind = undefined;
+
             suite = this._parseSuite(/* isFunction */ true, this._parseOptions.skipFunctionAndClassBody, () => {
                 if (!functionTypeAnnotationToken) {
                     functionTypeAnnotationToken = this._getTypeAnnotationCommentText();
                 }
             });
+
+            this._viperEnclosingClassKind = wasEnclosingClassKind;
         }
 
         this._isInExceptionGroup = wasInExceptionGroup;
@@ -2611,6 +2675,35 @@ export class Parser {
                 return this._parseFunctionDef(undefined, decoratorList);
             } else if (nextToken.keywordType === KeywordType.Class) {
                 return this._parseClassDef(decoratorList);
+            } else if (nextToken.keywordType === KeywordType.ViperModifier) {
+                // Viper 扩展：装饰器之后的 vtable 修饰（如 `@Foo` + `virtual class X`
+                // / `virtual def f(...)`）。与 _parseStatement 的同名分支保持一致。
+                const modifierToken = this._peekToken();
+                const modifierText = this._fileContents!.slice(
+                    modifierToken.start,
+                    modifierToken.start + modifierToken.length
+                );
+                if (modifierText === 'virtual' || modifierText === 'novirtual') {
+                    const afterModifierKeywordType =
+                        this._peekToken(1).type === TokenType.Keyword
+                            ? (this._peekToken(1) as KeywordToken).keywordType
+                            : undefined;
+                    if (afterModifierKeywordType === KeywordType.Class) {
+                        this._getNextToken();
+                        return this._parseClassDef(decoratorList, modifierText);
+                    }
+                    if (afterModifierKeywordType === KeywordType.Def) {
+                        this._validateViperVirtualMethodPlacement(modifierText, modifierToken);
+                        this._getNextToken();
+                        return this._parseFunctionDef(undefined, decoratorList, modifierText);
+                    }
+                    this._addSyntaxError(
+                        LocMessage.viperVirtualModifierRequiresClassOrDef().format({ name: modifierText }),
+                        modifierToken
+                    );
+                }
+                // 其他修饰关键字（inline/export/extern）不在装饰器后支持，
+                // 保持原行为：落到下方 expectedAfterDecorator 报错。
             }
         }
 
@@ -2646,7 +2739,14 @@ export class Parser {
             }
         }
 
-        const decoratorNode = DecoratorNode.create(atOperator, expression);
+        // Viper 扩展：`@__attribute__(section(".x"), always_inline)` desugar 为
+        // `@c.Attribute(t.attr.section(".x"), t.attr.always_inline)`
+        // ——与 TPC/TPV 的 includes/ast/parser.vp `_DesugarMagicAttribute` 同形，
+        // class 与 def 共用（装饰器链统一走本函数）；其它装饰器原样返回。
+        const decoratorNode = DecoratorNode.create(
+            atOperator,
+            this._desugarViperMagicAttribute(expression)
+        );
 
         if (!this._consumeTokenIfType(TokenType.NewLine)) {
             this._addSyntaxError(LocMessage.expectedDecoratorNewline(), this._peekToken());
@@ -2681,8 +2781,28 @@ export class Parser {
         return afterName.type === TokenType.Operator && (afterName as OperatorToken).operatorType === OperatorType.Assign;
     }
 
+    // Viper 扩展：校验 vtable 修饰方法（`virtual def` / `novirtual def`）的出现位置。
+    //   - 必须位于类体内（模块级、函数体内均非法）；
+    //   - `virtual def` 不能位于 `novirtual class` 内（该形态的类不生成 vtable）。
+    private _validateViperVirtualMethodPlacement(modifierText: string, modifierToken: Token): void {
+        const enclosingClassKind = this._viperEnclosingClassKind;
+        if (!enclosingClassKind) {
+            this._addSyntaxError(
+                modifierText === 'virtual'
+                    ? LocMessage.viperVirtualDefPlacement()
+                    : LocMessage.viperNoVirtualDefPlacement(),
+                modifierToken
+            );
+            return;
+        }
+
+        if (modifierText === 'virtual' && enclosingClassKind === 'novirtual') {
+            this._addSyntaxError(LocMessage.viperVirtualDefInNoVirtualClass(), modifierToken);
+        }
+    }
+
     // classdef: 'class' NAME ['(' [arglist] ')'] suite
-    private _parseClassDef(decorators?: DecoratorNode[]): ClassNode {
+    private _parseClassDef(decorators?: DecoratorNode[], viperClassModifier?: string): ClassNode {
         const classToken = this._getKeywordToken(KeywordType.Class);
 
         let nameToken = this._getTokenIfIdentifier();
@@ -2714,12 +2834,20 @@ export class Parser {
             }
         }
 
+        // Viper 扩展：类体内的 vtable 修饰形态（供 `virtual def` / `novirtual def` 位置校验）。
+        const enclosingClassKind: 'plain' | 'virtual' | 'novirtual' =
+            viperClassModifier === 'virtual' ? 'virtual' : viperClassModifier === 'novirtual' ? 'novirtual' : 'plain';
+        const wasEnclosingClassKind = this._viperEnclosingClassKind;
+        this._viperEnclosingClassKind = enclosingClassKind;
+
         const suite = this._parseSuite(
             /* isFunction */ false,
             this._parseOptions.skipFunctionAndClassBody,
             /* postColonCallback */ undefined,
             /* allowTrailingIndent */ classToken.isViperEnum === true
         );
+
+        this._viperEnclosingClassKind = wasEnclosingClassKind;
 
         const classNode = ClassNode.create(classToken, NameNode.create(nameToken), suite, typeParameters);
         classNode.d.arguments = argList;
@@ -2730,6 +2858,11 @@ export class Parser {
         // Viper 扩展：`enum X:` 语法声明的枚举（tokenizer 在 class 关键字 token 上打标记）。
         if (classToken.isViperEnum) {
             classNode.d.isViperEnum = true;
+        }
+
+        // Viper 扩展：`virtual class X` / `novirtual class X` 的修饰关键字。
+        if (viperClassModifier) {
+            classNode.d.viperClassModifier = viperClassModifier;
         }
 
         if (decorators) {
@@ -3882,7 +4015,7 @@ export class Parser {
                 this._parseOptions.dialect === 'viper' &&
                 nextOperator === OperatorType.Multiply
             ) {
-                if (this._isAtViperPointerTypeSuffix()) {
+                if (!this._isParsingViperTypeDescriptorInner && this._isAtViperPointerTypeSuffix()) {
                     leftExpr = this._parseViperPointerTypeSuffix(leftExpr);
                     peekToken = this._peekToken();
                     nextOperator = this._peekOperatorType();
@@ -3986,6 +4119,16 @@ export class Parser {
             }
         }
 
+        // Viper 扩展：值表达式中的 `volatile` 前缀 —— `a: int = volatile f()` /
+        // `a: int = volatile 结构体()`。语义：该调用（函数调用或结构体构造的
+        // __new__ / __before_init__ / __init__）被标记为 volatile（阻止编译器优化，
+        // 加 LLVM volatile）。仅 LSP 侧解析（TPC/TPV 不处理该形态）：
+        // 消费 `volatile` 后必须紧跟「调用」形态，否则报语法错误；
+        // `volatile = 2` 这类裸用因下一 token 非表达式起点而不进入本分支，仍照旧失败。
+        if (this._isAtViperVolatileValuePrefix()) {
+            return this._parseViperVolatileValue();
+        }
+
         let atomExpression = this._parseAtom();
         if (atomExpression.nodeType === ParseNodeType.Error) {
             return atomExpression;
@@ -3993,6 +4136,17 @@ export class Parser {
 
         // Consume trailers.
         while (true) {
+            // Viper 扩展：`T*(x)` / `T**(x)` —— 星号串与基类型、'(' 均**紧贴**时按 C 风格
+            // 指针强转调用解析（判据与 TPC ExprParser._AtPtrSuffixCall 同源）。
+            // 先把星串消费为「指针类型后缀」，紧接的 '(' 由下一轮 trailer 按调用处理，
+            // 产物与既有 `(T*)x` 逐字同形：Call(func = 标记的指针后缀, args = 实参)。
+            // 因此 `T*(x)[0] = v` 这类后续下标（乃至赋值目标）自然成立——TPC 同样把
+            // `T*(x)` 解析成调用，故 `uint32*(info.vendor_id)[0] = res.ebx` 是合法赋值目标。
+            if (this._isAtViperPointerSuffixCastCall(atomExpression)) {
+                atomExpression = this._parseViperPointerTypeSuffix(atomExpression);
+                continue;
+            }
+
             // Is it a function call?
             const startOfTrailerToken = this._peekToken();
             if (this._consumeTokenIfType(TokenType.OpenParenthesis)) {
@@ -4409,7 +4563,30 @@ export class Parser {
         }
 
         if (nextToken.type === TokenType.Identifier) {
-            return NameNode.create(this._getNextToken() as IdentifierToken);
+            const identifierToken = this._getNextToken() as IdentifierToken;
+
+            // Viper 扩展：注解位置的裸 `callable` 等价 `Callable`（t.Callable /
+            // typing.Callable），支持 `callable[[A, B], R]`、`callable[..., R]`、
+            // `callable[[], R]`。**仅类型注解位置**脱糖：值位置的 `callable(x)`
+            // 仍是内置函数（isinstance 风格的 TypeIs 判定）。
+            // `Callable` 声明在 builtins stub 中（t.CTypedef = t.Callable），
+            // 故不要求源码显式 `import t`。
+            if (
+                this._parseOptions.dialect === 'viper' &&
+                this._isParsingTypeAnnotation &&
+                identifierToken.value === 'callable'
+            ) {
+                return NameNode.create(
+                    IdentifierToken.create(
+                        identifierToken.start,
+                        identifierToken.length,
+                        'Callable',
+                        identifierToken.comments
+                    )
+                );
+            }
+
+            return NameNode.create(identifierToken);
         }
 
         if (nextToken.type === TokenType.String || nextToken.type === TokenType.FStringStart) {
@@ -5122,10 +5299,13 @@ export class Parser {
             this._addSyntaxError(LocMessage.unpackedSubscriptIllegal(), startToken);
         }
 
-        let result = this._parseViperBracketArrayTypeIfNeeded();
+        // Viper 扩展：注解主体（类型描述符前缀 / 定长数组 / 普通类型表达式）。
+        let result = this._parseViperTypeAnnotationCore();
 
         // Viper 扩展：C 指针类型后缀 T* / T** / T***（须在还原 _isParsingTypeAnnotation 之前，
         // 使 _parseArithmeticTerm/_parseArithmeticFactor 的星号守卫仍生效）。
+        // 后缀统一在最外层应用，故 `const int*` 得到 `(CConst | int)*`
+        // （指针指向被描述符修饰的类型），与 `int*` 中 `*` 绑定到类型的位置一致。
         result = this._parseViperPointerTypeSuffix(result);
 
         if (isUnpack) {
@@ -5136,6 +5316,302 @@ export class Parser {
         this._hasTypeAnnotations = true;
 
         return result;
+    }
+
+    // Viper 扩展：注解主体 = 类型描述符前缀（const / volatile）+ 类型表达式。
+    // 与 _parseTypeAnnotation 分离，使 C 指针后缀 `*` 由调用方在最外层统一应用：
+    // `const int*` 的脱糖结果 `CConst | int` 先成形，再整体加一层指针后缀。
+    private _parseViperTypeAnnotationCore(): ExpressionNode {
+        const attributeNode = this._parseViperAttributePrefix();
+        if (attributeNode) {
+            return attributeNode;
+        }
+        const descriptorNode = this._parseViperTypeDescriptorPrefix();
+        if (descriptorNode) {
+            return descriptorNode;
+        }
+        return this._parseViperBracketArrayTypeIfNeeded();
+    }
+
+    // Viper 扩展：注解位置的 `__attribute__(...)` 修饰器前缀。
+    // 解析层脱糖为等价的联合类型注解，与手写 `T | t.attr.section(".x")` 的 AST 同形
+    // （编译器按 AST 扫描属性：TPC HandlesAssign._ExtractGlobalAttrs /
+    //   TPV TranslatorGenMixin._scan_global_tattr），从而完全复用既有属性标记语义：
+    //   __attribute__(section(".x")) const int  →  (t.attr.section(".x") | (CConst | int))
+    //   __attribute__(a, b) int                 →  ((t.attr.a | t.attr.b) | int)
+    // 与 const / volatile 同族：只作修饰，不改变数据类型。
+    // 语法与装饰器形态一致（实参用无前缀属性名，逐项脱糖为 `t.attr.<name>`；
+    // 已是 `t.attr.X` / `c.Attribute(...)` 形态的实参原样保留，允许混写）。
+    // 注意：与 GCC 的 `__attribute__((a, b))` 不同，Viper 只用**单层**括号。
+    private _parseViperAttributePrefix(): ExpressionNode | undefined {
+        if (this._parseOptions.dialect !== 'viper' || !this._isAtViperAttributePrefix(0)) {
+            return undefined;
+        }
+
+        const attributeToken = this._peekToken();
+        this._getNextToken(); // 消费 `__attribute__`
+        this._getNextToken(); // 消费 '('
+
+        const argListResult = this._parseArgList();
+        if (!this._consumeTokenIfType(TokenType.CloseParenthesis)) {
+            this._addSyntaxError(LocMessage.expectedCloseParen(), this._peekToken());
+            this._consumeTokensUntilType([TokenType.NewLine]);
+        }
+
+        const markers: ExpressionNode[] = [];
+        argListResult.args.forEach((arg) => {
+            if (arg.d.argCategory === ArgCategory.Simple) {
+                markers.push(this._makeViperAttrMarker(arg.d.valueExpr));
+            }
+        });
+
+        // 修饰器后必须跟类型（同 const / volatile 的硬关键字约束）。
+        const nextToken = this._peekToken();
+        if (!this._isViperTypeAtomStartToken(nextToken) && !this._isAtViperAttributePrefix(0)) {
+            this._addSyntaxError(
+                LocMessage.viperTypeDescriptorRequiresType().format({ name: '__attribute__' }),
+                attributeToken
+            );
+            return ErrorNode.create(attributeToken, ErrorExpressionCategory.MissingExpression);
+        }
+
+        // 递归解析被修饰的主体（支持 `__attribute__(...) const int`、
+        // `const __attribute__(...) int`、多个属性前缀等任意组合）。
+        const innerType = this._parseViperTypeAnnotationCore();
+
+        // 合成 '|' 链（'|' token 零长度，源码中不存在）：marker1 | marker2 | ... | inner
+        let modifierNode: ExpressionNode | undefined;
+        for (const marker of markers) {
+            if (!modifierNode) {
+                modifierNode = marker;
+                continue;
+            }
+            modifierNode = this._createBinaryOperationNode(
+                modifierNode,
+                marker,
+                this._createViperSyntheticBarToken(attributeToken),
+                OperatorType.BitwiseOr
+            );
+        }
+
+        if (!modifierNode) {
+            return innerType;
+        }
+
+        return this._createBinaryOperationNode(
+            modifierNode,
+            innerType,
+            this._createViperSyntheticBarToken(attributeToken),
+            OperatorType.BitwiseOr
+        );
+    }
+
+    // Viper 扩展：合成零长度的 '|' 算子 token（源码中不存在，仅承载位置信息）。
+    private _createViperSyntheticBarToken(anchorToken: Token): OperatorToken {
+        return OperatorToken.create(
+            anchorToken.start + anchorToken.length,
+            0,
+            OperatorType.BitwiseOr,
+            /* comments */ undefined
+        );
+    }
+
+    // Viper 扩展：当前（可带 offset）是否为注解位置的 `__attribute__(` 前缀。
+    // `__attribute__` 是普通标识符（非关键字），后必须紧邻 '('。
+    private _isAtViperAttributePrefix(offset: number): boolean {
+        const nameToken = this._peekToken(offset);
+        if (nameToken.type !== TokenType.Identifier) {
+            return false;
+        }
+        if (this._fileContents!.slice(nameToken.start, nameToken.start + nameToken.length) !== '__attribute__') {
+            return false;
+        }
+        return this._peekToken(offset + 1).type === TokenType.OpenParenthesis;
+    }
+
+    // Viper 扩展：把 `__attribute__(...)` 的实参脱糖为 `t.attr.<name>` 标记。
+    //   - `always_inline`（Name）      → `t.attr.always_inline`
+    //   - `section(".x")`（Call，callee 是 Name）→ `t.attr.section(".x")`
+    //   - 已是 `t.attr.X` / `c.Attribute(...)` 形态 → 原样保留（允许混写）
+    // 与 TPC/TPV 的 includes/ast/parser.vp `_MakeTAttrMarker` 逐条对应；
+    // 成员名复用实参自身的 token（真实位置），故属性名上的跳转/悬停仍指向 t.vpi。
+    private _makeViperAttrMarker(argExpr: ExpressionNode): ExpressionNode {
+        const attrRoot = MemberAccessNode.create(
+            NameNode.create(IdentifierToken.create(argExpr.start, 0, 't', /* comments */ undefined)),
+            NameNode.create(IdentifierToken.create(argExpr.start, 0, 'attr', /* comments */ undefined))
+        );
+
+        if (argExpr.nodeType === ParseNodeType.Name) {
+            return MemberAccessNode.create(attrRoot, NameNode.create(argExpr.d.token));
+        }
+
+        if (argExpr.nodeType === ParseNodeType.Call && argExpr.d.leftExpr.nodeType === ParseNodeType.Name) {
+            const inner = MemberAccessNode.create(attrRoot, NameNode.create(argExpr.d.leftExpr.d.token));
+            return CallNode.create(inner, argExpr.d.args, argExpr.d.trailingComma);
+        }
+
+        // 已是属性标记形态（t.attr.X / c.Attribute(...)）：原样保留。
+        return argExpr;
+    }
+
+    // Viper 扩展：把 `@__attribute__(...)` 装饰器脱糖为
+    // `@c.Attribute(t.attr.a, t.attr.b)`——与 TPC/TPV 的
+    // includes/ast/parser.vp `_DesugarMagicAttribute` 逐字段同形，因此 class 与 def
+    // 共用同一形态；其它装饰器原样返回。
+    private _desugarViperMagicAttribute(expr: ExpressionNode): ExpressionNode {
+        if (this._parseOptions.dialect !== 'viper' || expr.nodeType !== ParseNodeType.Call) {
+            return expr;
+        }
+
+        if (!this._isViperMagicAttributeCallee(expr.d.leftExpr)) {
+            return expr;
+        }
+
+        const attributeCallee = MemberAccessNode.create(
+            NameNode.create(IdentifierToken.create(expr.start, 0, 'c', /* comments */ undefined)),
+            NameNode.create(IdentifierToken.create(expr.start, 0, 'Attribute', /* comments */ undefined))
+        );
+
+        const newArgs = expr.d.args.map((arg) => {
+            if (arg.d.argCategory !== ArgCategory.Simple) {
+                return arg;
+            }
+            return ArgumentNode.create(undefined, this._makeViperAttrMarker(arg.d.valueExpr), ArgCategory.Simple);
+        });
+
+        return CallNode.create(attributeCallee, newArgs, expr.d.trailingComma);
+    }
+
+    // Viper 扩展：装饰器被调用者是否为 `__attribute__`（Name 形态，或 `X.__attribute__` 尾段形态）。
+    private _isViperMagicAttributeCallee(node: ExpressionNode): boolean {
+        if (node.nodeType === ParseNodeType.Name) {
+            return node.d.value === '__attribute__';
+        }
+        if (node.nodeType === ParseNodeType.MemberAccess) {
+            return node.d.member.d.value === '__attribute__';
+        }
+        return false;
+    }
+
+    // Viper 扩展：判定注解位置 `const` / `volatile` / `__attribute__(` 之后是否跟类型。
+    private _isViperTypeAtomStartToken(token: Token): boolean {
+        return (
+            token.type === TokenType.Identifier ||
+            token.type === TokenType.OpenBracket ||
+            (token.type === TokenType.Keyword &&
+                (token as KeywordToken).keywordType === KeywordType.ViperTypeDescriptor)
+        );
+    }
+
+    // Viper 扩展：当前是否为值表达式中的 `volatile <调用>` 前缀。
+    // 仅 `volatile` 有值位置用法（`const` 没有）；且下一 token 必须是表达式起点
+    // （标识符 / '('），否则不算（`volatile = 2`、`volatile: int` 等仍走原错误路径）。
+    private _isAtViperVolatileValuePrefix(): boolean {
+        if (this._parseOptions.dialect !== 'viper' || this._isParsingTypeAnnotation) {
+            return false;
+        }
+        const descriptorToken = this._peekToken();
+        if (
+            descriptorToken.type !== TokenType.Keyword ||
+            (descriptorToken as KeywordToken).keywordType !== KeywordType.ViperTypeDescriptor
+        ) {
+            return false;
+        }
+        if (
+            this._fileContents!.slice(descriptorToken.start, descriptorToken.start + descriptorToken.length) !==
+            'volatile'
+        ) {
+            return false;
+        }
+        const nextTokenType = this._peekToken(1).type;
+        return nextTokenType === TokenType.Identifier || nextTokenType === TokenType.OpenParenthesis;
+    }
+
+    // Viper 扩展：消费值位置的 `volatile` 前缀，返回被修饰的调用节点。
+    // 语义上等价于该调用本身（volatile 仅影响代码生成，不改变类型），故直接返回
+    // CallNode：`volatile f()` 的类型即 f 的返回类型、`volatile 结构体()` 即结构体实例。
+    // 非调用形态（如 `volatile x`）报语法错误但仍返回已解析的表达式以维持错误恢复。
+    private _parseViperVolatileValue(): ExpressionNode {
+        const volatileToken = this._getNextToken();
+        const innerExpression = this._parseAtomExpression();
+        if (innerExpression.nodeType !== ParseNodeType.Call) {
+            this._addSyntaxError(LocMessage.viperVolatileValueRequiresCall(), volatileToken);
+        }
+        return innerExpression;
+    }
+
+    // Viper 扩展：类型描述符前缀 `const T` / `volatile T`。
+    // 解析层脱糖为等价的联合类型注解 `CConst | T` / `CVolatile | T`，
+    // 与手写 `a: t.CConst | CInt` 的 AST 同形，从而完全复用既有 TypeSet
+    // 修饰符语义（类型求值、赋值兼容、运算跳过修饰符、hover、语义高亮均一致），
+    // 不引入第二套修饰机制。
+    //
+    // 硬关键字：const / volatile 是 Viper 保留字（tokenizer 生成
+    // KeywordType.ViperTypeDescriptor），语法上只允许「类型注解前缀」这一种用法，
+    // 其余位置（`const = 1`、`x.volatile`、注解中不跟类型等）由 parser 报语法错误。
+    //
+    // 脱糖目标 `CConst` / `CVolatile` 是 builtins stub 中的别名
+    // （见 typeshed-fallback/stdlib/builtins.vpi），故不要求源码 import t。
+    private _parseViperTypeDescriptorPrefix(): ExpressionNode | undefined {
+        if (this._parseOptions.dialect !== 'viper') {
+            return undefined;
+        }
+
+        const descriptorToken = this._peekToken();
+        if (
+            descriptorToken.type !== TokenType.Keyword ||
+            (descriptorToken as KeywordToken).keywordType !== KeywordType.ViperTypeDescriptor
+        ) {
+            return undefined;
+        }
+
+        const descriptorName = this._fileContents!.slice(
+            descriptorToken.start,
+            descriptorToken.start + descriptorToken.length
+        );
+        const memberName = descriptorName === 'const' ? 'CConst' : 'CVolatile';
+
+        // 硬关键字：紧随其后必须是类型原子的起点（标识符 / '[' / 另一个描述符 /
+        // `__attribute__(` 属性前缀），否则报语法错误（如 `const = 1`、`a: const`）。
+        const nextToken = this._peekToken(1);
+        const isTypeAtomStart =
+            this._isViperTypeAtomStartToken(nextToken) || this._isAtViperAttributePrefix(1);
+        if (!isTypeAtomStart) {
+            this._addSyntaxError(
+                LocMessage.viperTypeDescriptorRequiresType().format({ name: descriptorName }),
+                descriptorToken
+            );
+            this._getNextToken();
+            return ErrorNode.create(descriptorToken, ErrorExpressionCategory.MissingExpression);
+        }
+
+        // 消费描述符关键字。
+        this._getNextToken();
+
+        // 递归解析描述符修饰的主体：支持 `const volatile int`、`const [4]int`。
+        // 期间禁止在表达式层就地消费指针后缀 `*`（置 _isParsingViperTypeDescriptorInner），
+        // 使 `const int*` 恒为 `(CConst | int)*` —— 指针后缀由 _parseTypeAnnotation
+        // 统一在最外层应用（指针指向被描述符修饰的类型）。
+        const wasDescriptorInner = this._isParsingViperTypeDescriptorInner;
+        this._isParsingViperTypeDescriptorInner = true;
+        const innerType = this._parseViperTypeAnnotationCore();
+        this._isParsingViperTypeDescriptorInner = wasDescriptorInner;
+
+        // 合成描述符名：零长度、位置落在描述符关键字起点，不产生语义高亮
+        // （semanticTokenProvider 跳过 length <= 0 的名字），也不参与位置命中。
+        const modifierNameNode = NameNode.create(
+            IdentifierToken.create(descriptorToken.start, 0, memberName, /* comments */ undefined)
+        );
+        modifierNameNode.d.isViperTypeDescriptor = true;
+
+        // 合成 '|' 算子 token：源码中不存在，位置紧随描述符关键字，零长度。
+        const operatorToken = OperatorToken.create(
+            descriptorToken.start + descriptorToken.length,
+            0,
+            OperatorType.BitwiseOr,
+            /* comments */ undefined
+        );
+        return BinaryOperationNode.create(modifierNameNode, innerType, operatorToken, OperatorType.BitwiseOr);
     }
 
     // Viper 扩展：判定当前 '*'/'**' 串是否为类型注解内的 C 指针后缀。
@@ -5185,6 +5661,56 @@ export class Parser {
                 return (nextToken as OperatorToken).operatorType === OperatorType.Assign;
         }
         return false;
+    }
+
+    // Viper 扩展：判定当前 '*'/'**' 串是否为 `T*(x)` 形式的 C 风格指针强转调用。
+    // 判据（三条同时成立，与 TPC ExprParser._AtPtrSuffixCall 同源）：
+    //   1. base 是「类型原子」形态（Name / MemberAccess / Index）；
+    //   2. base 与星串**紧贴**（源码字符相邻，无空白/换行）；
+    //   3. 星串内部逐个紧贴，且其**紧贴**一个 '('。
+    // 为什么 '(' 不并入 _isAtViperPointerTypeSuffix 的「无右操作数位置」：`a * (b)` 是
+    // 合法乘法（'(' 可作乘法右操作数的起点）。故叠加「前驱是类型原子 + 两侧紧贴」两条，
+    // 使 `a * (b + c)`、`f(x) * (y)`、`(i + 1) * (j)` 仍按乘法解析。
+    private _isAtViperPointerSuffixCastCall(baseExpr: ExpressionNode): boolean {
+        if (this._parseOptions.dialect !== 'viper') {
+            return false;
+        }
+        switch (baseExpr.nodeType) {
+            case ParseNodeType.Name:
+            case ParseNodeType.MemberAccess:
+            case ParseNodeType.Index:
+                break;
+            default:
+                return false;
+        }
+
+        // base 与星串是否紧贴：用已消费的最后一个 token 的结束位置做判据。
+        const prevToken = this._peekToken(-1);
+        let starEndOffset = prevToken.start + prevToken.length;
+        let offset = 0;
+        let starCount = 0;
+        while (true) {
+            const token = this._peekToken(offset);
+            const operatorType =
+                token.type === TokenType.Operator ? (token as OperatorToken).operatorType : undefined;
+            if (operatorType !== OperatorType.Multiply && operatorType !== OperatorType.Power) {
+                break;
+            }
+            if (token.start !== starEndOffset) {
+                // base 与星串之间、或星串内部有空白：非 C 风格强转写法。
+                return false;
+            }
+            starEndOffset = token.start + token.length;
+            starCount += 1;
+            offset += 1;
+        }
+
+        if (starCount === 0) {
+            return false;
+        }
+
+        const nextToken = this._peekToken(offset);
+        return nextToken.type === TokenType.OpenParenthesis && nextToken.start === starEndOffset;
     }
 
     // Viper 扩展：定长数组类型语法 `[SIZE]T`（等价 t.CArray[T, SIZE]）与

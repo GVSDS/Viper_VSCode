@@ -161,6 +161,7 @@ import {
     Variance,
     combineTypes,
     isAnyOrUnknown,
+    isCDefineType,
     isClass,
     isClassInstance,
     isFunction,
@@ -1761,6 +1762,11 @@ export class Checker extends ParseTreeWalker {
 
     override visitTypeAnnotation(node: TypeAnnotationNode): boolean {
         this._evaluator.getType(node.d.annotation);
+
+        // Viper 扩展：函数内用类型注解重新声明模块级同名变量（`x: T` / `x: T = v`）
+        // → 「重复声明」（TypeError），无论是否声明 global/nonlocal。
+        this._validateViperGlobalRedeclaration(node);
+
         return true;
     }
 
@@ -2216,6 +2222,84 @@ export class Checker extends ParseTreeWalker {
             }),
             node.d.rightExpr
         );
+    }
+
+    // Viper 扩展：模块级已有同名**运行期变量**时，函数内不得再用**类型注解**声明同名变量。
+    // 与 TPV（TransPyV/App/lib/core/Gen/AssignGenMixin.vp 的「重复声明」检测）同口径，
+    // **无条件**失败（判据不含"类型是否一致"：注解类型即便与全局完全相同也是重复声明）：
+    //   ① 无 global/nonlocal 声明 → 会把全局遮蔽成局部，属重复声明；
+    //   ② 有 global/nonlocal 声明 → 注解与既有全局声明重复，属重复声明。
+    // 合法的两种写法：函数内 `global x` + **无注解**赋值 `x = v`；或换用不重名的局部名。
+    // 范围仅函数内——模块级自身的重复注解、类体成员声明都不检查（模块级由全局变量表登记，
+    // 本就不构成"遮蔽"）。
+    private _validateViperGlobalRedeclaration(node: TypeAnnotationNode) {
+        if (!IsViperDialect(this._fileInfo.executionEnvironment.dialect)) {
+            return;
+        }
+
+        const nameNode = node.d.valueExpr;
+        if (nameNode.nodeType !== ParseNodeType.Name) {
+            return;
+        }
+
+        // 仅「变量声明语句」：`x: T`（语句本身）与 `x: T = v`（赋值的左值）。
+        const parent = node.parent;
+        if (parent?.nodeType !== ParseNodeType.Assignment && parent?.nodeType !== ParseNodeType.StatementList) {
+            return;
+        }
+
+        const scope = getScopeForNode(node);
+        if (scope?.type !== ScopeType.Function) {
+            return;
+        }
+
+        const globalScope = scope.getGlobalScope().scope;
+        if (globalScope.type !== ScopeType.Module) {
+            return;
+        }
+
+        const moduleSymbol = globalScope.lookUpSymbol(nameNode.d.value);
+        if (!moduleSymbol || !this._isViperGlobalRuntimeVariable(moduleSymbol)) {
+            return;
+        }
+
+        const symbolWithScope = this._evaluator.lookUpSymbolRecursive(
+            nameNode,
+            nameNode.d.value,
+            /* honorCodeFlow */ false
+        );
+        const hasGlobalBinding =
+            !!symbolWithScope?.usesGlobalBinding || !!symbolWithScope?.usesNonlocalBinding;
+
+        this._evaluator.addDiagnostic(
+            DiagnosticRule.reportGeneralTypeIssues,
+            hasGlobalBinding
+                ? LocMessage.viperGlobalRedeclarationWithGlobal().format({ name: nameNode.d.value })
+                : LocMessage.viperGlobalRedeclarationWithoutGlobal().format({ name: nameNode.d.value }),
+            nameNode
+        );
+    }
+
+    // Viper 扩展：模块级符号是否为「运行期变量」（会占据全局存储、可被同名注解遮蔽）。
+    // 排除函数/类/导入别名/显式类型别名声明，以及不产生全局存储的编译期元指令：
+    //   - CDefine 宏常量：编译期展开，无全局变量（与 TPV 的模块变量表同口径）；
+    //   - CTypedef 别名：仅登记类型，不创建全局符号。
+    private _isViperGlobalRuntimeVariable(moduleSymbol: Symbol): boolean {
+        const declarations = moduleSymbol.getDeclarations();
+        const isVariable = declarations.some(
+            (decl) =>
+                decl.type === DeclarationType.Variable &&
+                !(
+                    decl.typeAnnotationNode?.nodeType === ParseNodeType.MemberAccess &&
+                    decl.typeAnnotationNode.d.member.d.value === 'CTypedef'
+                )
+        );
+
+        if (!isVariable) {
+            return false;
+        }
+
+        return !isCDefineType(this._evaluator.getEffectiveTypeOfSymbol(moduleSymbol));
     }
 
     // Verifies that the target of a nonlocal statement is not a PEP 695-style

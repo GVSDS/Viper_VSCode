@@ -400,6 +400,17 @@ class CVolatile(CType):
     pass
 
 
+class CAttr(CType):
+    """`__attribute__` 属性标记（编译期元数据，不改变数据类型）。
+
+    与 CConst / CVolatile 同族的修饰符：注解里写 `T | t.attr.section(".x")`
+    （编译器按 AST 扫描提取属性，见 t.attr）或 `__attribute__(section(".x")) T`
+    时，LSP 把属性标记求值为本类的实例——它只作修饰，不参与类型检查：
+    运算/下标/赋值都按被修饰的基础类型处理，展示时不作为联合成员暴露。
+    """
+    pass
+
+
 class CStatic(CType):
     """static 存储类。"""
     pass

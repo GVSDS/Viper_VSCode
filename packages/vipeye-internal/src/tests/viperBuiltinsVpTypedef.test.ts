@@ -442,7 +442,7 @@ def f() -> int:
 // 回归：完全不依赖工程 includes/builtins.vp —— C 定宽/最快/最小整型 typedef 已内建到
 // typeshed-fallback/stdlib/builtins.vpi。用于修"uint32 报未定义"在找回 builtins.vp
 // 失败的工程（如 Trae 中打开的文件集合/工作区根不同）里依然复现的问题。
-test('无 includes/builtins.vp 时，内建 builtins.vpi 提供 uint32/sizet/int8', () => {
+test('无 includes/builtins.vp 时，内建 builtins.vpi 提供 uint32/sizet/int8/uint/uchar', () => {
     const tempFile = new RealTempFile();
     const serviceProvider = createServiceProvider(
         createFromRealFileSystem(tempFile),
@@ -462,7 +462,7 @@ test('无 includes/builtins.vp 时，内建 builtins.vpi 提供 uint32/sizet/int
 def f(a: uint32, b: sizet, c: int8, d: uint64) -> uint32:
     return a
 
-def g(e: long, h: longlong, i: short, j: ushort, k: ulong, l: ulonglong) -> long:
+def g(e: long, h: longlong, i: short, j: ushort, k: ulong, l: ulonglong, m: uint, n: uchar) -> long:
     return e
 `,
         'utf8'
@@ -515,9 +515,19 @@ def g(e: long, h: longlong, i: short, j: ushort, k: ulong, l: ulonglong) -> long
         );
     }
 
-    // C 基本类型名：long → CLong，longlong → CLongLong，short/ushort/ulong/ulonglong
+    // C 基本类型名：long → CLong，longlong → CLongLong，short/ushort/ulong/ulonglong，
+    // uint → CUnsignedInt，uchar → CUnsignedChar
     const gTypes = types.get('g') ?? [];
-    for (const expected of ['CLong', 'CLongLong', 'CShort', 'CUnsignedShort', 'CUnsignedLong', 'CUnsignedLongLong']) {
+    for (const expected of [
+        'CLong',
+        'CLongLong',
+        'CShort',
+        'CUnsignedShort',
+        'CUnsignedLong',
+        'CUnsignedLongLong',
+        'CUnsignedInt',
+        'CUnsignedChar',
+    ]) {
         assert(
             gTypes.some((t) => t.includes(expected)),
             `g() 参数注解应包含 ${expected}，实际: ${JSON.stringify(gTypes)}`

@@ -259,8 +259,10 @@ import {
     getCPtrLevel,
     isCConstType,
     isCStaticType,
+    isCVolatileType,
     isCModifierType,
     isPureCModifierType,
+    isViperAttrMarkerType,
     isCEnumType,
     isCEnumSubclassType,
     isCTypeSubclassType,
@@ -3302,7 +3304,8 @@ export function createTypeEvaluator(
                     const typeContainsCPtr = findSubtype(type, (s) =>
                         isClassInstance(s) && isCPtrType(s)) !== undefined;
                     if (typeContainsCPtr && (
-                        isCConstType(subtype) || isCStaticType(subtype) || isCVoidType(subtype) ||
+                        isCConstType(subtype) || isCStaticType(subtype) || isCVolatileType(subtype) ||
+                        isCVoidType(subtype) ||
                         ClassType.isBuiltIn(subtype, 'int')
                     )) {
                         return UnknownType.create(isIncomplete);
@@ -3453,7 +3456,8 @@ export function createTypeEvaluator(
                     const typeContainsCPtr = findSubtype(type, (s) =>
                         isClassInstance(s) && isCPtrType(s)) !== undefined;
                     if (typeContainsCPtr && (
-                        isCConstType(subtype) || isCStaticType(subtype) || isCVoidType(subtype) ||
+                        isCConstType(subtype) || isCStaticType(subtype) || isCVolatileType(subtype) ||
+                        isCVoidType(subtype) ||
                         ClassType.isBuiltIn(subtype, 'int')
                     )) {
                         return UnknownType.create();
@@ -3891,6 +3895,8 @@ export function createTypeEvaluator(
         // Viper 扩展：禁止函数内部隐式写入全局变量（无 global 声明且无局部声明）。
         // 规则：
         //   1. 全局变量存在 + 局部再次声明赋值（无 global）→ 不报错（局部优先）
+        //      （注：**带类型注解**的局部再声明不适用本条——那属「重复声明」，
+        //        由 checker._validateViperGlobalRedeclaration 按 TPV 口径报 TypeError）
         //   2. 全局变量存在 + 局部无声明 + 有 global + 赋值 → 不报错
         //   3. 全局变量存在 + 局部无声明 + 无 global + 仅读取 → 不报错（读取处不检查）
         //   4. 全局变量存在 + 局部无声明 + 无 global + 赋值 → 报错
@@ -5367,6 +5373,12 @@ export function createTypeEvaluator(
                 // import t，合成 `t` 无法解析时同样静默退化为 Unknown；
                 // TypeAlias 识别只看注解成员名文本 'CTypedef'，不依赖 t 符号。
                 type = UnknownType.create();
+            } else if (node.d.isViperTypeDescriptor) {
+                // Viper 扩展：类型描述符 `const T` / `volatile T` 脱糖出的合成
+                // `CConst` / `CVolatile` 名（见 parser._parseViperTypeDescriptorPrefix）。
+                // 它们是 builtins stub 中的别名，正常 Viper 工程均可解析；
+                // 解析不到时静默退化为 Unknown，不报「未定义」（与 [SIZE]T 同一取舍）。
+                type = UnknownType.create();
             } else {
                 // Viper 扩展：前向引用支持（收紧版）。
                 // Viper 是 AOT 语言，函数/类的定义顺序无关（类似 C 语言的前向声明），
@@ -6073,6 +6085,19 @@ export function createTypeEvaluator(
     }
 
     function getTypeOfMemberAccess(node: MemberAccessNode, flags: EvalFlags): TypeResult {
+        // Viper 扩展：注解位置的 `t.attr.<name>`（如 `t.attr.llvm.nounwind`）属性标记
+        // 求值为 t.CAttr，避免其泄漏为联合成员（`CInt | nounwind`）。仅类型表达式
+        // 上下文拦截，保证成员补全（`t.attr.llvm.`）等值上下文路径不受影响。
+        if (
+            (flags & EvalFlags.TypeExpression) !== 0 &&
+            IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect)
+        ) {
+            const markerType = getViperAttributeMarkerType(node);
+            if (markerType) {
+                return { type: markerType };
+            }
+        }
+
         // Compute flags specifically for evaluating the left expression.
         let leftExprFlags = EvalFlags.MemberAccessBaseDefaults;
         leftExprFlags |=
@@ -8174,7 +8199,7 @@ export function createTypeEvaluator(
 
         // Viper 扩展：TypeSet 类型组合的下标访问语义。
         // Viper 中 `|` 表示类型组合（如 CConst | str = const char*），
-        // 对 TypeSet 中的修饰类型（CConst/CStatic/CPtr/CVoid/CDefine/CArray）跳过下标访问，
+        // 对 TypeSet 中的修饰类型（CConst/CStatic/CPtr/CVoid/CDefine/CArray/CAttr）跳过下标访问，
         // 让 combineTypes 只合并非修饰类型的结果（如 str/bytes 的下标返回 int/CChar）。
         const viperIndexFileInfo = AnalyzerNodeInfo.getFileInfo(node);
         const isViperTypeSetIndex =
@@ -8185,9 +8210,11 @@ export function createTypeEvaluator(
                     isClassInstance(subtype) &&
                     (isCConstType(subtype) ||
                         isCStaticType(subtype) ||
+                        isCVolatileType(subtype) ||
                         isCPtrType(subtype) ||
                         isCVoidType(subtype) ||
                         isCDefineType(subtype) ||
+                        isViperAttrMarkerType(subtype) ||
                         isCArrayType(subtype))
             );
 
@@ -8215,9 +8242,11 @@ export function createTypeEvaluator(
                     isClassInstance(concreteSubtype) &&
                     (isCConstType(concreteSubtype) ||
                         isCStaticType(concreteSubtype) ||
+                        isCVolatileType(concreteSubtype) ||
                         isCPtrType(concreteSubtype) ||
                         isCVoidType(concreteSubtype) ||
                         isCDefineType(concreteSubtype) ||
+                        isViperAttrMarkerType(concreteSubtype) ||
                         isCArrayType(concreteSubtype))
                 ) {
                     return undefined;
@@ -8808,7 +8837,8 @@ export function createTypeEvaluator(
             // 不报错，让 mapSubtypesExpandTypeVars 处理其他子类型时获得正确方法。
             if (
                 IsViperDialect(fileInfo.executionEnvironment.dialect) &&
-                (isCConstType(baseType) || isCStaticType(baseType) || isCPtrType(baseType) || isCVoidType(baseType) ||
+                (isCConstType(baseType) || isCStaticType(baseType) || isCVolatileType(baseType) ||
+                 isCPtrType(baseType) || isCVoidType(baseType) ||
                  isCDefineType(baseType) || isCArrayType(baseType))
             ) {
                 return { type: UnknownType.create() };
@@ -9412,6 +9442,61 @@ export function createTypeEvaluator(
         return undefined;
     }
 
+    // Viper 扩展：解析 `t.attr.<name>` / `t.attr.<name>(...)` 属性标记 → t.CAttr 实例。
+    //
+    // 形态（与 TransPyC HandlesAssign._TAttrName / TransPyV ClassGenBase._tattr_name
+    // 同判据：只看最外层属性名）：
+    //   t.attr.packed              （Attribute：t.attr.llvm.nounwind → 最外层 nounwind）
+    //   t.attr.section(".x")       （Call：取 func 的最外层属性名）
+    // 这类表达式出现在类型注解联合中（`T | t.attr.section(".x")`、
+    // `T | t.attr.llvm.nounwind`），或由 parser 从 `__attribute__(...)` 修饰器脱糖而来；
+    // 注解位置求值为 CAttr 标记——与 CConst / CVolatile 同族的修饰符
+    // （isViperAttrMarkerType → isCModifierType），只携带编译期元数据，
+    // 不参与类型检查（运算/下标/赋值按被修饰的基础类型处理），展示时也不泄漏为联合成员。
+    // 返回 undefined 表示该表达式不是 t.attr 属性标记。
+    function getViperAttributeMarkerType(node: ExpressionNode): Type | undefined {
+        let cur: ExpressionNode = node;
+        if (cur.nodeType === ParseNodeType.Call) {
+            cur = cur.d.leftExpr;
+        }
+        const members: string[] = [];
+        while (cur.nodeType === ParseNodeType.MemberAccess) {
+            members.unshift(cur.d.member.d.value);
+            cur = cur.d.leftExpr;
+        }
+        // 形态：<root>.attr.<name>[...]；至少两级成员且首段为 attr。
+        if (cur.nodeType !== ParseNodeType.Name || members.length < 2 || members[0] !== 'attr') {
+            return undefined;
+        }
+
+        const moduleSymbolWithScope = lookUpSymbolRecursive(cur, cur.d.value, /* honorCodeFlow */ true);
+        if (!moduleSymbolWithScope) {
+            return undefined;
+        }
+        const moduleType = getEffectiveTypeOfSymbolForUsage(
+            moduleSymbolWithScope.symbol,
+            /* usageNode */ undefined,
+            /* useLastDecl */ true
+        ).type;
+        if (!moduleType || !isModule(moduleType)) {
+            return undefined;
+        }
+
+        const attrMarkerClassSymbol = ModuleType.getField(moduleType, 'CAttr');
+        if (!attrMarkerClassSymbol) {
+            return undefined;
+        }
+        const attrMarkerClassType = getEffectiveTypeOfSymbolForUsage(
+            attrMarkerClassSymbol,
+            /* usageNode */ undefined,
+            /* useLastDecl */ true
+        ).type;
+        if (attrMarkerClassType && isInstantiableClass(attrMarkerClassType)) {
+            return convertToInstance(attrMarkerClassType);
+        }
+        return undefined;
+    }
+
     // Viper 扩展：判断调用节点是否为内置 enumerate 调用。
     // Viper 语义下 enumerate 的迭代元素类型按 for 原迭代逻辑计算
     //（str/bytes = i8* → t.CChar、CPtr[T] → T），索引类型为 t.CSizeT（size_t）。
@@ -9709,6 +9794,19 @@ export function createTypeEvaluator(
         flags: EvalFlags,
         inferenceContext: InferenceContext | undefined
     ): TypeResult {
+        // Viper 扩展：注解位置的 `t.attr.<name>(...)`（如 `t.attr.section(".x")`、
+        // 由 `__attribute__(...)` 修饰器脱糖而来）属性标记求值为 t.CAttr；
+        // 顺带跳过「类型注解中不允许调用」的 typeAnnotationCall 诊断。
+        if (
+            (flags & EvalFlags.TypeExpression) !== 0 &&
+            IsViperDialect(AnalyzerNodeInfo.getFileInfo(node).executionEnvironment.dialect)
+        ) {
+            const markerType = getViperAttributeMarkerType(node);
+            if (markerType) {
+                return { type: markerType };
+            }
+        }
+
         let baseTypeResult: TypeResult | undefined;
 
         // Check for the use of `type(x)` within a type annotation. This isn't
@@ -26687,7 +26785,7 @@ export function createTypeEvaluator(
         if (srcIsStrBytes) {
             const destVariants = isUnion(destType) ? destType.priv.subtypes : [destType];
             const hasCStringLike = destVariants.some((variant) =>
-                isCConstType(variant) || isCPtrType(variant) || isCVoidType(variant)
+                isCConstType(variant) || isCVolatileType(variant) || isCPtrType(variant) || isCVoidType(variant)
             );
             if (hasCStringLike) {
                 return true;

@@ -722,6 +722,92 @@ def test_builtins_asm_llvmir():
 });
 
 
+// Viper 扩展：C 风格内置 asm / LLVM IR 助记符 —— `__asm__` 等价 c.Asm，
+// `asminp`/`asmout` 等价 c.AsmInp/c.AsmOut，`__llvmir__` 等价 c.LLVMIR，
+// `irinp`/`irout` 等价 c.LInp/c.LOut，`ASM_DESCR` 免 `t.` 前缀；它们都是隐式
+// builtins，源码无需 `import c` / `import t` 即可直接使用（与 rawptr/uint32 同机制）。
+test('Viper 内置 __asm__ / asminp / asmout / __llvmir__ / irinp / irout / ASM_DESCR（免 c./t. 前缀）', () => {
+    const tempFile = new RealTempFile();
+    const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
+    const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
+    const configOptions = new ConfigOptions(projectRoot);
+    configOptions.internalTestMode = true;
+    configOptions.initializeTypeCheckingMode('standard');
+
+    const execEnv = new ExecutionEnvironment(
+        'python',
+        projectRoot,
+        configOptions.diagnosticRuleSet,
+        configOptions.defaultPythonVersion,
+        configOptions.defaultPythonPlatform,
+        [projectRoot],
+        /* skipNativeLibraries */ false,
+        /* defaultDialect */ 'viper'
+    );
+    configOptions.executionEnvironments = [execEnv];
+
+    // 刻意不写任何 import：新写法全靠隐式 builtins（与用户给的 outb 示例一致）。
+    const code = `def outb(port: uint16, value: uint8):
+    __asm__(f"""mov edx, {asminp(uint32(port), ASM_DESCR.REG_ANY)}
+
+mov eax, {asminp(uint32(value), ASM_DESCR.REG_ANY)}
+
+out dx, al""",
+        op = [ASM_DESCR.CLOBBER_RDX, ASM_DESCR.CLOBBER_RAX])
+
+def inb(port: uint16) -> uint8:
+    r: uint8 = 0
+    __asm__("in al, dx", out=[asmout(r, ASM_DESCR.OUTPUT_REG)], op=[ASM_DESCR.CLOBBER_RAX])
+    return r
+
+def with_inp(port: uint16):
+    __asm__(f"mov edx, {asminp(port, ASM_DESCR.REG_ANY)}", inp=[asminp(port, ASM_DESCR.REG_ANY)])
+
+def ir_ops(a: int, b: int) -> int:
+    # __llvmir__：内联 IR 模板串 + 结果类型（第二个位置参数）
+    r: int = __llvmir__(f"add i32 {irinp(a)}, {irinp(b)}", int)
+    # 输出操作数 + 破坏列表
+    __llvmir__(f"{irout(a)} = add i32 {irinp(a)}, {irinp(b)}", int,
+        out=[irout(a)], op=[ASM_DESCR.CLOBBER_MEMORY])
+    return r
+`;
+    const testDir = path.join(__dirname, '__viper_asm_intrinsics__');
+    const fs = require('fs');
+    fs.mkdirSync(testDir, { recursive: true });
+    const testFile = path.join(testDir, 'asm_intrinsics.vp');
+    fs.writeFileSync(testFile, code, 'utf8');
+
+    try {
+        const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
+        const program = new Program(importResolver, configOptions, serviceProvider);
+        const uri = UriEx.file(testFile);
+        program.setTrackedFiles([uri]);
+        while (program.analyze()) {
+            // 循环
+        }
+
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== asm_intrinsics.vp diagnostics ===');
+        diagnostics.forEach((d) => console.log(`  ${d}`));
+
+        const errors = diagnostics.filter(
+            (d) =>
+                d.startsWith('[category=0]') ||
+                (d.startsWith('[category=1]') && (d.includes('未定义') || d.includes('无法解析')))
+        );
+        assert.strictEqual(
+            errors.length,
+            0,
+            `__asm__/asminp/asmout/ASM_DESCR 不应报错或未定义：${JSON.stringify(diagnostics)}`
+        );
+
+    } finally {
+        fs.rmSync(testDir, { recursive: true, force: true });
+    }
+    serviceProvider.dispose();
+});
+
+
 test('Viper len 接受任意值并返回 t.SizeT', () => {
     const tempFile = new RealTempFile();
     const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);

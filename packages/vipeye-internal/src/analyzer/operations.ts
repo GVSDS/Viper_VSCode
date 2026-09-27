@@ -63,8 +63,10 @@ import {
     isClassInstance,
     isCConstType,
     isCDefineType,
+    isCModifierType,
     isCPtrType,
     isCStaticType,
+    isCVolatileType,
     isCTypeSubclassType,
     isCVoidType,
     isFunctionOrOverloaded,
@@ -123,6 +125,7 @@ export function validateBinaryOperation(
     leftTypeResult: TypeResult,
     rightTypeResult: TypeResult,
     errorNode: ExpressionNode,
+    leftExpression: ExpressionNode,
     inferenceContext: InferenceContext | undefined,
     diag: DiagnosticAddendum,
     options: BinaryOperationOptions
@@ -251,14 +254,11 @@ export function validateBinaryOperation(
         // `(T*)(x)`，结果类型为指针类型 CPtr[T] 的实例。
         // 左操作数为真值类型（int/float 等）时不受影响：`2 * 3`、`offset * 2`
         // 等真实乘法仍走正常路径。
-        if (
-            !type &&
-            IsViperDialect(getFileInfo(errorNode).executionEnvironment.dialect) &&
-            operator === OperatorType.Multiply &&
-            isInstantiableClass(leftType)
-        ) {
-            const typeArg = isClass(leftType) && !isClassInstance(leftType) ? convertToInstance(leftType) : leftType;
-            type = getViperCPtrTypeForTypeArg(evaluator, errorNode, typeArg);
+        if (!type && IsViperDialect(getFileInfo(errorNode).executionEnvironment.dialect) && operator === OperatorType.Multiply) {
+            const typeArg = getViperCastTypeArg(evaluator, leftExpression, leftType);
+            if (typeArg) {
+                type = getViperCPtrTypeForTypeArg(evaluator, errorNode, typeArg);
+            }
         }
 
         if (!type) {
@@ -404,7 +404,10 @@ export function getTypeOfBinaryOperation(
             adjustedLeftType = convertToInstantiable(evaluator.getNoneType());
         }
 
-        if (isUnionableType([adjustedLeftType, adjustedRightType])) {
+        if (
+            isUnionableType([adjustedLeftType, adjustedRightType]) ||
+            isViperTypeDescriptorUnion(node, adjustedLeftType, adjustedRightType)
+        ) {
             if (isInstantiableClass(adjustedLeftType)) {
                 adjustedLeftType = specializeWithDefaultTypeArgs(adjustedLeftType);
             }
@@ -470,6 +473,7 @@ export function getTypeOfBinaryOperation(
         { type: leftType, isIncomplete: leftTypeResult.isIncomplete },
         { type: rightType, isIncomplete: rightTypeResult.isIncomplete },
         node,
+        node.d.leftExpr,
         inferenceContext,
         diag,
         { isLiteralMathAllowed, isTupleAddAllowed }
@@ -673,6 +677,7 @@ export function getTypeOfAugmentedAssignment(
                                 { type: leftSubtypeUnexpanded, isIncomplete: leftTypeResult.isIncomplete },
                                 { type: rightSubtypeUnexpanded, isIncomplete: rightTypeResult.isIncomplete },
                                 node,
+                                node.d.leftExpr,
                                 inferenceContext,
                                 diag,
                                 { isLiteralMathAllowed, isTupleAddAllowed }
@@ -756,6 +761,15 @@ export function getTypeOfUnaryOperation(
             // 如 t.CInt、ast.AST），则 `T*` 是 C 指针类型表达式 CPtr[T]，而非对值的解引用。
             // 于是 `(T*)x`、`(T*)(x)`、`T*(x)` 中的括号内/实参里的 `T*` 都被求值为指针类型。
             // 只有真值（CPtr / str / bytes / 数值等）才走解引用路径。
+            //
+            // Viper 扩展：parser 标记的「指针类型后缀」节点（`_parseViperPointerTypeSuffix`
+            // 打上 isViperPointerTypeSuffix）在值上下文里一律是类型表达式，不做解引用。
+            // 多级指针 `T**`（AST = *(*T)）的外层 '*' 其操作数是内层已求值出的 CPtr[T]
+            // 实例（非可实例化类），若按上一条判据会落入解引用 → 得到 T，使
+            // `(T**)(x)` 的括号内类型退化成 T（报"T 的对象不可调用"）并丢失二级指针。
+            if (node.d.isViperPointerTypeSuffix) {
+                return getTypeOfViperPointerAnnotation(evaluator, node);
+            }
             if (isInstantiableClass(exprType)) {
                 return getTypeOfViperPointerAnnotation(evaluator, node);
             }
@@ -984,6 +998,7 @@ function getTypeOfViperPointerAnnotation(evaluator: TypeEvaluator, node: UnaryOp
     const innerType = innerResult.type;
     const resultTypes: Type[] = [];
     let sawInvalidType = false;
+    const isViperDialect = IsViperDialect(getFileInfo(node).executionEnvironment.dialect);
 
     mapSubtypes(innerType, (subtype) => {
         if (isAnyOrUnknown(subtype)) {
@@ -991,7 +1006,21 @@ function getTypeOfViperPointerAnnotation(evaluator: TypeEvaluator, node: UnaryOp
             return subtype;
         }
 
-        const typeArg = isClass(subtype) && !isClassInstance(subtype) ? convertToInstance(subtype) : subtype;
+        // Viper 扩展：类型描述符（const / volatile / static 等修饰符）不出现在指针
+        // 的类型参数里，原样保留在结果中：
+        //   `const int*`（AST = `(CConst | int)*`）→ `CConst | CPtr[int]`
+        // 与 Viper 惯用的 `CConst | CChar | CPtr`（const char*）表示一致，
+        // 避免产生 `CPtr[CConst] | CPtr[int]` 这类"指针的联合"。
+        if (isViperDialect && isClass(subtype) && isCModifierType(subtype)) {
+            resultTypes.push(subtype);
+            return subtype;
+        }
+
+        // Viper 扩展：`T*` 的 T 是裸模块名、且模块内有同名类时（见
+        // getViperModuleSameNameClass），取该类作为类型参数：
+        //   `bootinfo*(saved_rdi)` → CPtr[bootinfo]（而非 CPtr[Module]）。
+        const sameNameClass = getViperModuleSameNameClass(evaluator, node.d.expr, subtype);
+        const typeArg = sameNameClass ?? (isClass(subtype) && !isClassInstance(subtype) ? convertToInstance(subtype) : subtype);
         const cptrType = getViperCPtrTypeForTypeArg(evaluator, node, typeArg);
         if (cptrType) {
             resultTypes.push(cptrType);
@@ -1037,32 +1066,91 @@ function getTypeOfViperAddrOf(
 
 // 构造 CPtr[typeArg]（Viper 指针类型），通过 t 模块的 CPtr 泛型类特化。
 function getViperCPtrTypeForTypeArg(evaluator: TypeEvaluator, node: ParseNode, typeArg: Type): Type | undefined {
+    const cptrClass = getViperCPtrClass(evaluator, node);
+    if (cptrClass) {
+        return convertToInstance(ClassType.specialize(cptrClass, [typeArg]));
+    }
+    return undefined;
+}
+
+// 解析 Viper C 风格强转 `T*(x)` 左操作数 `T` 的被指向类型。
+//   - 常规：`T` 是可实例化类（t.CInt / bootinfo.bootinfo 等）→ 取其**实例**形态作为被指向类型；
+//   - 模块同名类：见 getViperModuleSameNameClass；
+//   - 其余（真值类型）返回 undefined，不兜底：交由常规算术校验给出真实报错。
+function getViperCastTypeArg(evaluator: TypeEvaluator, leftExpression: ExpressionNode, leftType: Type): Type | undefined {
+    if (isInstantiableClass(leftType)) {
+        return isClass(leftType) && !isClassInstance(leftType) ? convertToInstance(leftType) : leftType;
+    }
+
+    return getViperModuleSameNameClass(evaluator, leftExpression, leftType);
+}
+
+// Viper 扩展：裸名同时是「模块名」与「模块内同名类」时，取该类（实例形态）。
+// 典型场景（ViperOS VKernel/Kernel/main.vp）：`import bootinfo`（模块）与
+// bootinfo.vp 的 `class bootinfo` 同名，代码写作 `BootInfo = bootinfo*(saved_rdi)`。
+// TPC 的 struct 注册表按短名全局查找，故裸名 bootinfo 取到该结构体类；LSP 按
+// 「模块内同名类」等价还原。模块内没有同名类时返回 undefined（不兜底）。
+function getViperModuleSameNameClass(
+    evaluator: TypeEvaluator,
+    exprNode: ExpressionNode,
+    type: Type
+): Type | undefined {
+    if (!isModule(type) || exprNode.nodeType !== ParseNodeType.Name) {
+        return undefined;
+    }
+
+    const sameNameSymbol = ModuleType.getField(type, exprNode.d.value);
+    if (!sameNameSymbol) {
+        return undefined;
+    }
+
+    const memberType = evaluator.getEffectiveTypeOfSymbolForUsage(
+        sameNameSymbol,
+        /* usageNode */ undefined,
+        /* useLastDecl */ true
+    ).type;
+    return isInstantiableClass(memberType) ? convertToInstance(memberType) : undefined;
+}
+
+// 取 Viper 的 CPtr 泛型类（可实例化形式）。
+//   - 首选源码 `import t` 可见的 `t.CPtr`；
+//   - 回退到 builtins stub 的编译器内置 `rawptr`（等价 t.CPtr，见 builtins.vpi），
+//     使 `T*` / `&x` 指针语法在未 `import t` 的文件中同样可用
+//     （与 T* 注解、typedef、[SIZE]T 一致：不强制源码 import t）。
+function getViperCPtrClass(evaluator: TypeEvaluator, node: ParseNode): ClassType | undefined {
     const tSymbolWithScope = evaluator.lookUpSymbolRecursive(node, 't', /* honorCodeFlow */ true);
-    if (!tSymbolWithScope) {
-        return undefined;
+    if (tSymbolWithScope) {
+        const tEffectiveType = evaluator.getEffectiveTypeOfSymbolForUsage(
+            tSymbolWithScope.symbol,
+            /* usageNode */ undefined,
+            /* useLastDecl */ true
+        ).type;
+        if (isModule(tEffectiveType)) {
+            const cptrSymbol = ModuleType.getField(tEffectiveType, 'CPtr');
+            if (cptrSymbol) {
+                const cptrType = evaluator.getEffectiveTypeOfSymbolForUsage(
+                    cptrSymbol,
+                    /* usageNode */ undefined,
+                    /* useLastDecl */ true
+                ).type;
+                if (isInstantiableClass(cptrType)) {
+                    return cptrType;
+                }
+            }
+        }
     }
 
-    const tEffectiveType = evaluator.getEffectiveTypeOfSymbolForUsage(
-        tSymbolWithScope.symbol,
-        /* usageNode */ undefined,
-        /* useLastDecl */ true
-    ).type;
-    if (!isModule(tEffectiveType)) {
-        return undefined;
-    }
-
-    const cptrSymbol = ModuleType.getField(tEffectiveType, 'CPtr');
-    if (!cptrSymbol) {
-        return undefined;
-    }
-
-    const cptrType = evaluator.getEffectiveTypeOfSymbolForUsage(
-        cptrSymbol,
-        /* usageNode */ undefined,
-        /* useLastDecl */ true
-    ).type;
-    if (isInstantiableClass(cptrType)) {
-        return convertToInstance(ClassType.specialize(cptrType, [typeArg]));
+    // 回退：builtins 中的 rawptr（= t.CPtr）。
+    const rawptrSymbolWithScope = evaluator.lookUpSymbolRecursive(node, 'rawptr', /* honorCodeFlow */ true);
+    if (rawptrSymbolWithScope) {
+        const rawptrType = evaluator.getEffectiveTypeOfSymbolForUsage(
+            rawptrSymbolWithScope.symbol,
+            /* usageNode */ undefined,
+            /* useLastDecl */ true
+        ).type;
+        if (isInstantiableClass(rawptrType)) {
+            return rawptrType;
+        }
     }
 
     return undefined;
@@ -1118,6 +1206,57 @@ export function getTypeOfTernaryOperation(
     return { type: combineTypes(typesToCombine), isIncomplete, typeErrors };
 }
 
+// Viper 扩展：`X | t.CPtr` 的 Viper 语义是"指向 X 的指针"（X*）。combineTypes 里的
+// Struct | CPtr 折叠覆盖了 X 不是指针的情形；但当 X 自身就是指针时（如
+// `HANDLE = VOIDPTR = t.CPtr`，两侧在类型层完全同形，都是 type[CPtr[Unknown]]），
+// 类型层已无法区分"外层指针模板"与"被指向类型"，两者会被并成一级指针，使
+// `HANDLE | t.CPtr` 从 void**（void 的指针的指针）退化成 void*，于是取值
+// `&handle`（void**）传参/返回会被报"跨级指针隐式转换不允许"（误报）。
+// 此处按语法分辨：右操作数就是裸 CPtr 类（`t.CPtr` / `rawptr`）且左操作数已是指针
+// 形态时，直接把左操作数包一层指针（保持输入的实例 / 可实例化形态）。
+function maybeWrapViperCPtrUnion(
+    node: BinaryOperationNode,
+    flags: EvalFlags,
+    leftType: Type,
+    rightType: Type
+): Type | undefined {
+    // 只在类型表达式位置生效，值上下文的 `a | b` 不受影响。
+    if ((flags & EvalFlags.TypeExpression) === 0) {
+        return undefined;
+    }
+    if (!isViperBareCPtrClassReference(node.d.rightExpr)) {
+        return undefined;
+    }
+    // 右操作数须确实解析为 CPtr 类（挡住用户自定义的同名成员，如 `Foo.CPtr`）。
+    if (!isClass(rightType) || !isCPtrType(rightType)) {
+        return undefined;
+    }
+    // 左操作数须已是指针；否则交给 combineTypes 的 Struct | CPtr 折叠
+    // （如 `Scheduler | t.CPtr` → CPtr[Scheduler]、`CConst | CChar | CPtr` → const char*）。
+    if (!someSubtypes(leftType, (subtype) => isClass(subtype) && isCPtrType(subtype))) {
+        return undefined;
+    }
+
+    const isInstantiableForm = TypeBase.isInstantiable(leftType);
+    const pointee = isClass(leftType) && isInstantiableForm ? ClassType.cloneAsInstance(leftType) : leftType;
+    const template = TypeBase.isInstantiable(rightType) ? rightType : ClassType.cloneAsInstantiable(rightType);
+    const wrapped = ClassType.specialize(template, [pointee]);
+    return isInstantiableForm ? wrapped : ClassType.cloneAsInstance(wrapped);
+}
+
+/** Viper：右操作数是否是裸 CPtr 类引用（`t.CPtr` / `CPtr` / `rawptr`，不带下标实参）。 */
+function isViperBareCPtrClassReference(node: ExpressionNode): boolean {
+    const isCPtrName = (name: string) => name === 'CPtr' || name === 'rawptr';
+
+    if (node.nodeType === ParseNodeType.Name) {
+        return isCPtrName(node.d.value);
+    }
+    if (node.nodeType === ParseNodeType.MemberAccess) {
+        return node.d.member.nodeType === ParseNodeType.Name && isCPtrName(node.d.member.d.value);
+    }
+    return false;
+}
+
 function createUnionType(
     evaluator: TypeEvaluator,
     node: BinaryOperationNode,
@@ -1165,6 +1304,13 @@ function createUnionType(
         adjustedRightType,
         flags | EvalFlags.InstantiableType
     );
+
+    // Viper 扩展：`X | t.CPtr` 且 X 已是指针时，按"包一层指针"处理
+    // （见 maybeWrapViperCPtrUnion），此时结果不是联合类型，直接返回。
+    const wrappedPointerType = maybeWrapViperCPtrUnion(node, flags, adjustedLeftType, adjustedRightType);
+    if (wrappedPointerType) {
+        return { type: wrappedPointerType };
+    }
 
     let newUnion = combineTypes([adjustedLeftType, adjustedRightType], { skipElideRedundantLiterals: true });
 
@@ -1392,6 +1538,29 @@ function calcLiteralForBinaryOp(operator: OperatorType, leftType: Type, rightTyp
     return undefined;
 }
 
+// Viper 扩展：判断 `|` 是否为「类型描述符组合」（TypeSet），如
+//   `CConst | int`（const int）、`CConst | int*`（const int*，右侧求值为 CPtr[int] 实例）。
+// Python 的 `|` 走联合要求两侧同为可实例化类型；而 `T*` 求值出的是**实例**
+// （CPtr[int]），故 `CConst | int*` 会落到 `__or__` 分支并退化为 Unknown。
+// 描述符（const / volatile / static 等）本身只是编译期修饰，不含运行时 `__or__`，
+// 这里把「任一侧含描述符」的组合按联合处理，交由 combineTypes 归一。
+// 注：两侧同为可实例化类型的组合（如 CConst | CChar | CPtr）本就走 isUnionableType，
+//     不受此处影响。
+function isViperTypeDescriptorUnion(node: ParseNode, leftType: Type, rightType: Type): boolean {
+    if (!IsViperDialect(getFileInfo(node).executionEnvironment.dialect)) {
+        return false;
+    }
+
+    const containsDescriptor = (type: Type): boolean => {
+        if (isUnion(type)) {
+            return type.priv.subtypes.some((subtype) => isCModifierType(subtype));
+        }
+        return isCModifierType(type);
+    };
+
+    return containsDescriptor(leftType) || containsDescriptor(rightType);
+}
+
 function customMetaclassSupportsMethod(type: Type, methodName: string): boolean {
     if (!isInstantiableClass(type)) {
         return false;
@@ -1594,7 +1763,8 @@ function validateArithmeticOperation(
                     if (isViperDialect) {
                         if (
                             isCStaticType(leftSubtypeUnexpanded) || isCStaticType(rightSubtypeUnexpanded) ||
-                            isCConstType(leftSubtypeUnexpanded) || isCConstType(rightSubtypeUnexpanded)
+                            isCConstType(leftSubtypeUnexpanded) || isCConstType(rightSubtypeUnexpanded) ||
+                            isCVolatileType(leftSubtypeUnexpanded) || isCVolatileType(rightSubtypeUnexpanded)
                         ) {
                             return UnknownType.create(isIncomplete);
                         }

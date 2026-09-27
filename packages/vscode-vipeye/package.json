@@ -1,8 +1,8 @@
 {
-    "name": "vipeye",
+    "name": "vscode-vipeye",
     "displayName": "Vipeye",
     "description": "VS Code language support for Viper (LSP client)",
-    "version": "1.1.425",
+    "version": "1.1.426",
     "private": true,
     "license": "MIT",
     "author": {
@@ -330,6 +330,11 @@
                 "command": "viper.openVpjAsJson",
                 "title": "Open .vpj as JSON",
                 "category": "Viper"
+            },
+            {
+                "command": "viper.countLines",
+                "title": "Count Project LOC",
+                "category": "Viper"
             }
         ],
         "menus": {
@@ -390,6 +395,10 @@
                 {
                     "command": "viper.openVpjAsJson",
                     "when": "resourceExtname == .vpj"
+                },
+                {
+                    "command": "viper.countLines",
+                    "when": "resourceExtname == .vpj"
                 }
             ],
             "editor/title/context": [
@@ -404,6 +413,11 @@
                     "command": "viper.openVpjAsJson",
                     "when": "resourceExtname == .vpj",
                     "group": "1_open"
+                },
+                {
+                    "command": "viper.countLines",
+                    "when": "resourceExtname == .vpj",
+                    "group": "1_open@2"
                 }
             ],
             "view/title": [

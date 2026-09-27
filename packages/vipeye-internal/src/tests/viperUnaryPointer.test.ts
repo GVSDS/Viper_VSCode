@@ -46,7 +46,9 @@ import { OperatorType } from '../parser/tokenizerTypes';
 
 const TRANSPYC_INCLUDES = 'd:\\Users\\TermiNexus\\Desktop\\TransPyC\\includes';
 
-function buildProgramForCode(code: string) {
+// extraModuleFiles：额外写入同目录的模块文件（如 `bootinfo.vp`），并把该目录加入
+// 额外搜索路径，用于覆盖「import 同目录模块」的场景。不传时行为与原先完全一致。
+function buildProgramForCode(code: string, extraModuleFiles?: Record<string, string>) {
     const tempFile = new RealTempFile();
     const serviceProvider = createServiceProvider(createFromRealFileSystem(tempFile), new NullConsole(), tempFile);
     const projectRoot = UriEx.file(TRANSPYC_INCLUDES);
@@ -54,13 +56,27 @@ function buildProgramForCode(code: string) {
     configOptions.internalTestMode = true;
     configOptions.initializeTypeCheckingMode('standard');
 
+    const fs = require('fs');
+    const testDir = path.join(__dirname, '__unary_ptr__');
+    fs.mkdirSync(testDir, { recursive: true });
+    if (extraModuleFiles) {
+        for (const [name, content] of Object.entries(extraModuleFiles)) {
+            fs.writeFileSync(path.join(testDir, name), content, 'utf8');
+        }
+    }
+
+    const extraPaths = [projectRoot];
+    if (extraModuleFiles) {
+        extraPaths.push(UriEx.file(testDir));
+    }
+
     const execEnv = new ExecutionEnvironment(
         'python',
         projectRoot,
         configOptions.diagnosticRuleSet,
         configOptions.defaultPythonVersion,
         configOptions.defaultPythonPlatform,
-        [projectRoot],
+        extraPaths,
         /* skipNativeLibraries */ false,
         /* defaultDialect */ 'viper'
     );
@@ -69,9 +85,6 @@ function buildProgramForCode(code: string) {
     const importResolver = new ImportResolver(serviceProvider, configOptions, new FullAccessHost(serviceProvider));
     const program = new Program(importResolver, configOptions, serviceProvider);
 
-    const fs = require('fs');
-    const testDir = path.join(__dirname, '__unary_ptr__');
-    fs.mkdirSync(testDir, { recursive: true });
     const testFile = path.join(testDir, 'unary_ptr.vp');
     fs.writeFileSync(testFile, code, 'utf8');
 
@@ -190,10 +203,10 @@ v: t.CInt = sp.a
 
 def test_interop(x: t.CInt):
     q: t.CInt* = &x
-    v: t.CInt = *q
+    vq: t.CInt = *q
 
 def test_double_deref(pp: t.CInt**):
-    v: t.CInt = *(*pp)
+    vpp: t.CInt = *(*pp)
 
 def make_ptr(x: t.CInt) -> t.CInt*:
     return &x
@@ -612,6 +625,185 @@ def f(ptr_raw: t.CUInt64T, offset: uint64) -> int:
     serviceProvider.dispose();
 });
 
+// Viper：`T*(x)` 中 T 为「模块名同名类」时的强转。
+// 背景（用户报的误报）：ViperOS VKernel/Kernel/main.vp `BootInfo = bootinfo*(saved_rdi)`，
+// 其中 `import bootinfo`（模块）与 bootinfo.vp 的 `class bootinfo` 同名。TPC 的 struct
+// 注册表按短名全局查找，故裸名 bootinfo 取到该结构体类；此前 LSP 把裸名解析成模块，
+// 报「类型 Module("bootinfo") 和 ulong 不支持运算符 *」。
+// 锁定：模块内存在同名类时按强转折叠为 CPtr[bootinfo]（与限定名 bootinfo.bootinfo* 同型）；
+// 星串两侧带空白的 `plainmod * (v)`（非 C 风格强转写法）仍是真实乘法并报运算符错误。
+test('Viper T*(x) 强转：T 为「模块名同名类」（import bootinfo + class bootinfo）', () => {
+    const code = `import t
+from stdint import *
+import bootinfo
+import plainmod
+
+def _start() -> int:
+    saved_rdi: ulong
+    p = bootinfo*(saved_rdi)
+    q = bootinfo.bootinfo*(saved_rdi)
+    r = bootinfo.memory_map_entry*(saved_rdi)
+    return 0
+
+def _bad() -> int:
+    v: ulong
+    w = plainmod * (v)
+    return 0
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgramForCode(code, {
+        'bootinfo.vp':
+            'class memory_map_entry:\n    Base: int = 0\n\n\nclass bootinfo:\n    MemmapAddr: int = 0\n',
+        'plainmod.vp': 'X: int = 0\n\ndef helper() -> int:\n    return 0\n',
+    });
+
+    const evaluator = program.evaluator as TypeEvaluator | undefined;
+    assert(evaluator, 'evaluator not available');
+    const ev = evaluator;
+
+    const rhsTypes: { line: number; type: string }[] = [];
+    class RhsCollector extends ParseTreeWalker {
+        override visitAssignment(node: AssignmentNode) {
+            const line = convertOffsetToPosition(node.d.rightExpr.start, parseResults.parserOutput.lines).line + 1;
+            const type = ev.getType(node.d.rightExpr);
+            rhsTypes.push({ line, type: type ? program.printType(type) : '(undefined)' });
+            return true;
+        }
+    }
+    new RhsCollector().walk(parseResults.parserOutput.parseTree);
+
+    console.log('=== 模块同名类强转右值类型 ===');
+    rhsTypes.forEach((r) => console.log(`  L${r.line}: ${r.type}`));
+
+    // 裸模块名（L8）与限定名（L9）同为 CPtr[bootinfo]
+    for (const line of [8, 9]) {
+        const entry = rhsTypes.find((r) => r.line === line);
+        assert(entry, `强转右值类型未找到 (L${line})`);
+        assert(
+            entry.type.includes('rawptr') && entry.type.includes('bootinfo'),
+            `L${line} 应为 CPtr[bootinfo]（rawptr[bootinfo]），实际: ${entry.type}`
+        );
+    }
+    const bareModule = rhsTypes.find((r) => r.line === 8);
+    const qualified = rhsTypes.find((r) => r.line === 9);
+    assert.strictEqual(bareModule?.type, qualified?.type, '裸模块名与限定名强转结果类型应一致');
+
+    // L10：模块内其它类（memory_map_entry）同样可强转
+    const entryType = rhsTypes.find((r) => r.line === 10);
+    assert(
+        entryType && entryType.type.includes('rawptr') && entryType.type.includes('memory_map_entry'),
+        `L10 应为 CPtr[memory_map_entry]，实际: ${entryType?.type}`
+    );
+
+    // 诊断：唯一允许的错误是 _bad 里 `plainmod * (v)`（星串两侧有空白 → 仍是真实乘法）
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    console.log('=== 诊断 ===');
+    diagnostics.forEach((d) => console.log(`  ${d}`));
+    const operatorErrors = diagnostics.filter((d) => d.includes('不支持运算符'));
+    assert.strictEqual(
+        operatorErrors.length,
+        1,
+        `应且仅应报 1 处运算符错误（plainmod * (v) 为真实乘法）: ${JSON.stringify(operatorErrors)}`
+    );
+    assert(
+        operatorErrors[0].includes('[line=15]'),
+        `运算符错误应落在 plainmod * (v) 所在行（L15）: ${JSON.stringify(operatorErrors)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
+// Viper：`T*(x)` 解析为**调用**（与 TPC ExprParser._AtPtrSuffixCall 同形），
+// 故强转结果可继续参与 trailer：`T*(x)[i] = v` 是合法赋值目标。
+// 背景（用户报的误报）：ViperOS VKernel/Kernel/drivers/core/cpu/cpu.vp:232
+//   `uint32*(info.vendor_id)[0] = res.ebx`
+// 此前 LSP 把 `*` 当二元乘法（右操作数 `(info.vendor_id)[0]`），整个乘法表达式
+// 落在赋值左侧 → 报「表达式不能是赋值目标」。
+// 判据与 TPC 一致：base 是类型原子 + 星串两侧**紧贴**（无空白）；带空白的
+// `a * (b)` / `(a) * (b)` 仍是乘法。
+test('Viper T*(x)[i] = v：强转结果作为赋值目标（cpu.vp vendor_id 写法）', () => {
+    const code = `import t
+from stdint import *
+
+class cpu_info:
+    vendor_id: [13]char
+
+def get_info(info: cpu_info*, value: uint32) -> int:
+    uint32*(info.vendor_id)[0] = value
+    uint32*(info.vendor_id)[1] = value
+    first: uint32 = uint32*(info.vendor_id)[0]
+    return 0
+
+def spaced(a: t.CInt, b: t.CInt) -> int:
+    m: t.CInt = a * (b)
+    n: t.CInt = (a) * (b)
+    return 0
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgramForCode(code);
+
+    const evaluator = program.evaluator as TypeEvaluator | undefined;
+    assert(evaluator, 'evaluator not available');
+    const ev = evaluator;
+
+    // 收集「赋值目标 = 强转调用下标」的形状与强转类型
+    const castTargets: { line: number; funcIsPtrSuffix: boolean; castType: string; targetType: string }[] = [];
+    class CastTargetCollector extends ParseTreeWalker {
+        override visitAssignment(node: AssignmentNode) {
+            const target = node.d.leftExpr;
+            if (target.nodeType === ParseNodeType.Index) {
+                const leftExpr = target.d.leftExpr;
+                if (leftExpr.nodeType === ParseNodeType.Call) {
+                    const castType = ev.getType(leftExpr);
+                    const targetType = ev.getType(target);
+                    castTargets.push({
+                        line: convertOffsetToPosition(node.start, parseResults.parserOutput.lines).line + 1,
+                        funcIsPtrSuffix: !!(
+                            leftExpr.d.leftExpr.nodeType === ParseNodeType.UnaryOperation &&
+                            (leftExpr.d.leftExpr as UnaryOperationNode).d.isViperPointerTypeSuffix
+                        ),
+                        castType: castType ? program.printType(castType) : '(undefined)',
+                        targetType: targetType ? program.printType(targetType) : '(undefined)',
+                    });
+                }
+            }
+            return true;
+        }
+    }
+    new CastTargetCollector().walk(parseResults.parserOutput.parseTree);
+
+    console.log('=== T*(x)[i] = v 形状 ===');
+    castTargets.forEach((c) =>
+        console.log(`  L${c.line} ptrSuffixFunc=${c.funcIsPtrSuffix} cast=${c.castType} target=${c.targetType}`)
+    );
+
+    // L8/L9：赋值目标为「强转调用 + 下标」，callee 是指针类型后缀
+    for (const line of [8, 9]) {
+        const entry = castTargets.find((c) => c.line === line);
+        assert(entry, `L${line} 赋值目标不是「强转调用下标」形状`);
+        assert(entry.funcIsPtrSuffix, `L${line} 的 callee 应为指针类型后缀节点`);
+        assert(
+            entry.castType.includes('rawptr') && entry.castType.includes('uint32'),
+            `L${line} 强转类型应为 CPtr[uint32]，实际: ${entry.castType}`
+        );
+        assert(entry.targetType.includes('uint32'), `L${line} 赋值目标类型应为 uint32，实际: ${entry.targetType}`);
+    }
+
+    // 诊断：`uint32*(info.vendor_id)[0] = value` 不得报「表达式不能是赋值目标」，
+    // 也不得有其它 category=0/1；带空白的乘法仍走真实乘法（此处类型相符，无报错）
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    console.log('=== 诊断 ===');
+    diagnostics.forEach((d) => console.log(`  ${d}`));
+    const hardErrors = diagnostics.filter((d) => d.includes('category=0') || d.includes('category=1'));
+    assert.strictEqual(
+        hardErrors.length,
+        0,
+        `T*(x)[i] = v 不应产生错误/警告: ${JSON.stringify(hardErrors)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
 // Viper：`(T)x` 强转（括号内普通类型名 + 裸值），语义 = 调用形式 `T(x)` 的强转结果。
 // 与已支持的 `(T)(x)` 调用式强转对照；真实乘法 `(a)*b` / `(a) * (b)` 不受影响。
 test('Viper (T)x 强转：括号内普通类型名 + 裸值', () => {
@@ -839,6 +1031,95 @@ def test_str_arith(fmt: str) -> int:
     assert(
         !diagnostics.some((d) => d.includes('不支持运算符')),
         `str 指针算术/下标不应报运算符错误: ${JSON.stringify(diagnostics)}`
+    );
+
+    program.dispose();
+    serviceProvider.dispose();
+});
+
+// Viper：双级指针强转 `(T**)x` / `(T**)(x)`（C 风格二级指针），以及 `T**` 注解/下标。
+// 背景：`T**` 的 AST 是嵌套一元 '*'（*(*T)），值上下文求值时外层 '*' 的操作数已是
+// 内层求出的 CPtr[T] 实例（非可实例化类），若按「解引用」处理会把括号内类型退化成 T，
+// 报"T 的对象不可调用"并丢失二级指针语义（用户真实写法：
+// `slot_l: ast.AST** = (ast.AST**)(uint64(data_l) + li_l * elem_sz_l)`）。
+// 修复后 parser 标记的指针类型后缀节点（isViperPointerTypeSuffix）在值上下文一律
+// 按类型表达式求值，故 `(T**)x` 与 `(T**)(x)` 均得到 CPtr[CPtr[T]]。
+test('Viper 双级指针强转 (T**)x / (T**)(x)', () => {
+    const code = `import t
+from stdint import *
+
+class Node:
+    kind: int
+
+def f(data_l: t.CPtr, li_l: sizet, elem_sz_l: sizet, elem_dst_l: Node*) -> Node*:
+    slot_l: Node** = (Node**)(uint64(data_l) + li_l * elem_sz_l)
+    slot_l[0] = elem_dst_l
+    c1: Node** = (Node**)data_l
+    c2: Node** = (Node**)(data_l)
+    c3 = (Node**)data_l
+    single: Node* = (Node*)data_l
+    return elem_dst_l
+`;
+    const { program, configOptions, parseResults, uri, serviceProvider } = buildProgramForCode(code);
+
+    const evaluator = program.evaluator as TypeEvaluator | undefined;
+    assert(evaluator, 'evaluator not available');
+    const ev = evaluator;
+
+    const rhsTypes: { line: number; type: string }[] = [];
+    const indexTypes: { line: number; type: string }[] = [];
+    class TypeCollector extends ParseTreeWalker {
+        override visitAssignment(node: AssignmentNode) {
+            const line = convertOffsetToPosition(node.d.rightExpr.start, parseResults.parserOutput.lines).line + 1;
+            const type = ev.getType(node.d.rightExpr);
+            rhsTypes.push({ line, type: type ? program.printType(type) : '(undefined)' });
+            return true;
+        }
+        override visitIndex(node: IndexNode) {
+            const type = ev.getType(node as any);
+            indexTypes.push({
+                line: convertOffsetToPosition(node.start, parseResults.parserOutput.lines).line + 1,
+                type: type ? program.printType(type) : '(undefined)',
+            });
+            return true;
+        }
+    }
+    new TypeCollector().walk(parseResults.parserOutput.parseTree);
+
+    console.log('=== 双级指针强转右值类型 ===');
+    rhsTypes.forEach((r) => console.log(`  L${r.line}: ${r.type}`));
+    indexTypes.forEach((i) => console.log(`  L${i.line} [0]: ${i.type}`));
+
+    // L8：完整写法 → rawptr[rawptr[Node]]
+    const slotRhs = rhsTypes.find((r) => r.line === 8);
+    assert(slotRhs, `slot_l 右值未找到 (L8)`);
+    assert.strictEqual(slotRhs.type, 'rawptr[rawptr[Node]]', `L8 应为二级指针，实际: ${slotRhs.type}`);
+
+    // L9：`slot_l[0]` → rawptr[Node]（一级指针元素）
+    const slotElem = indexTypes.find((i) => i.line === 9);
+    assert(slotElem, `slot_l[0] 未找到 (L9)`);
+    assert.strictEqual(slotElem.type, 'rawptr[Node]', `L9 应为一级指针元素，实际: ${slotElem.type}`);
+
+    // L10/L11/L12：三种二级强转写法 → rawptr[rawptr[Node]]
+    for (const line of [10, 11, 12]) {
+        const entry = rhsTypes.find((r) => r.line === line);
+        assert(entry, `二级强转右值未找到 (L${line})`);
+        assert.strictEqual(entry.type, 'rawptr[rawptr[Node]]', `L${line} 应为二级指针，实际: ${entry.type}`);
+    }
+
+    // L13：一级强转对照 → rawptr[Node]
+    const singleRhs = rhsTypes.find((r) => r.line === 13);
+    assert(singleRhs, `一级强转右值未找到 (L13)`);
+    assert.strictEqual(singleRhs.type, 'rawptr[Node]', `L13 应为一级指针，实际: ${singleRhs.type}`);
+
+    // 不得有 category=0（错误）/ category=1（警告）诊断
+    const diagnostics = getDiagnostics(program, configOptions, uri);
+    console.log('=== 诊断 ===');
+    diagnostics.forEach((d) => console.log(`  ${d}`));
+    const errorsAndWarnings = diagnostics.filter((d) => d.includes('category=0') || d.includes('category=1'));
+    assert(
+        errorsAndWarnings.length === 0,
+        `双级指针强转不应产生错误/警告: ${JSON.stringify(errorsAndWarnings)}`
     );
 
     program.dispose();

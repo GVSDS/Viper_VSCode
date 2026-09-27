@@ -154,6 +154,8 @@ export const enum KeywordType {
     Yield,
     // Viper 扩展：inline/export/extern 等 C 风格修饰关键字（必须与 def 搭配）。
     ViperModifier,
+    // Viper 扩展：类型描述符 const / volatile（硬关键字，只能作为类型注解前缀）。
+    ViperTypeDescriptor,
 }
 
 export const softKeywords = [

@@ -47,7 +47,19 @@
                 },
                 {
                     "name": "storage.modifier.viper",
-                    "match": "\\b(inline|export|extern)\\b(?=\\s+(?:def|fn|fun|func|function)\\b|\\s+[A-Za-z_][A-Za-z0-9_]*|[ \\t]*$)"
+                    "match": "\\b(inline|export|extern)\\b(?=\\s+(?:def|fn|fun|func|function|while|for)\\b|\\s+[A-Za-z_][A-Za-z0-9_]*|[ \\t]*$)"
+                },
+                {
+                    "name": "storage.modifier.viper",
+                    "match": "\\b(virtual|novirtual)\\b(?=\\s+(?:class|def|fn|fun|func|function)\\b)"
+                },
+                {
+                    "name": "storage.modifier.viper",
+                    "match": "\\b(const|volatile)\\b(?=\\s+[A-Za-z_][A-Za-z0-9_]*|\\s*\\[)"
+                },
+                {
+                    "name": "storage.modifier.viper",
+                    "match": "\\b__attribute__(?=\\s*\\()"
                 },
                 {
                     "name": "storage.type.class.viper",

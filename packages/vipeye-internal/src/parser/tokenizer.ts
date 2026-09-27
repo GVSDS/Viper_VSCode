@@ -646,6 +646,8 @@ enum MagicsKind {
 // Viper 扩展：C 风格修饰/声明关键字处理。
 // Viper 支持将 C 修饰/声明语义写成语句前缀关键字：
 //   inline/export/extern def f(...)         —— 修饰关键字，必须与 def 搭配
+//   virtual/novirtual class Foo             —— 类级 vtable 声明标记
+//   virtual/novirtual def f(...)            —— 方法级 vtable 声明标记（须在类内）
 //   fn/fun/func/function f(...)             —— def 的别名
 //   enum/rnum class|struct Foo              —— 跳过前缀关键字（后续 class 正常解析）
 //   enum Foo:                               —— 等价 `class Foo(t.CEnum):`（枚举）
@@ -656,8 +658,8 @@ enum MagicsKind {
 // 返回 'classEnum'：把 enum 当作 class 关键字，并标记为 Viper 枚举
 //   （等价 `class Foo(t.CEnum)`，analyzer 会赋予 CEnum 枚举语义）；
 // 返回 'def'：把 fn/fun/func/function 当作 def 关键字；
-// 返回 'viperModifier'：inline/export/extern 生成修饰关键字 token，由 parser
-//   判断是否与 def 搭配（搭配则跳过并记录，单独使用则报错）；
+// 返回 'viperModifier'：inline/export/extern/virtual/novirtual 生成修饰关键字
+//   token，由 parser 判断搭配是否合法（单独使用则报错）；
 // undefined：按普通标识符处理（变量名、成员名、导入名、`state:` 注解等）。
 function getViperStatementKeywordAction(
     text: string,
@@ -667,8 +669,14 @@ function getViperStatementKeywordAction(
     precededByViperModifier: boolean
 ): 'skip' | 'class' | 'classEnum' | 'def' | 'viperModifier' | undefined {
     const nextWord = peekViperKeywordWord(text, identifierEnd);
-    if (name === 'inline' || name === 'export' || name === 'extern') {
-        // 修饰关键字仅在语句起始处生效，避免误伤 `self.inline` 等成员名。
+    if (
+        name === 'inline' ||
+        name === 'export' ||
+        name === 'extern' ||
+        name === 'virtual' ||
+        name === 'novirtual'
+    ) {
+        // 修饰关键字仅在语句起始处生效，避免误伤 `self.inline` / `self.virtual` 等成员名。
         if (!isViperAtStatementStart(text, identifierStart)) {
             return undefined;
         }
@@ -676,7 +684,7 @@ function getViperStatementKeywordAction(
         if (isViperNextCharColon(text, identifierEnd)) {
             return undefined;
         }
-        // 一律生成修饰关键字 token，由 parser 判断是否与 def 搭配。
+        // 一律生成修饰关键字 token，由 parser 判断搭配是否合法。
         return 'viperModifier';
     }
     if (name === 'fn' || name === 'fun' || name === 'func' || name === 'function') {
@@ -1504,6 +1512,16 @@ export class Tokenizer {
                 this._tokens.push(KeywordToken.create(start, length, keywordType, this._getComments()));
             } else {
                 const value = this._internIdentifier(text, start, end, length);
+                // Viper 扩展：类型描述符 const / volatile 是硬关键字（Viper 方言保留字），
+                // 出现在任何位置都生成关键字 token，不再作为普通标识符 ——
+                // 由此 `const = 1` / `x.volatile` 之类误用会在 parser 层直接报语法错误，
+                // 而正确的用法只有「类型注解前缀」（见 parser._parseViperTypeDescriptorPrefix）。
+                if (value === 'const' || value === 'volatile') {
+                    this._tokens.push(
+                        KeywordToken.create(start, length, KeywordType.ViperTypeDescriptor, this._getComments())
+                    );
+                    return true;
+                }
                 // Viper 扩展：C 风格修饰/声明关键字。
                 // inline/export/extern 生成修饰关键字 token（parser 判断是否配 def）；
                 // enum/rnum/struct 在语句起始且后跟类名时按 class 关键字处理；

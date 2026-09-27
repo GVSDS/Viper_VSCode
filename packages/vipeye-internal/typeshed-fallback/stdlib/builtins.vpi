@@ -31,10 +31,16 @@ from _typeshed import (
     SupportsRichComparisonT,
     SupportsWrite,
 )
-from collections.abc import Awaitable, Callable, Iterable, Iterator, MutableSet, Reversible, Set as AbstractSet, Sized
+from collections.abc import Awaitable, Iterable, Iterator, MutableSet, Reversible, Set as AbstractSet, Sized
 from io import BufferedRandom, BufferedReader, BufferedWriter, FileIO, TextIOWrapper
 from os import PathLike
 from types import CellType, CodeType, EllipsisType, GenericAlias, NotImplementedType, TracebackType
+
+# Viper 扩展：ASM_DESCR 免 `t.` 前缀直接可用 —— 内联汇编的约束 / 破坏描述符常量类
+# （等价 t.ASM_DESCR，见本文件末尾 __asm__ / asminp / asmout 一节）。
+# 写成 `X as X` 的冗余别名形式：stub 文件里 `from m import X` 默认不对外再导出，
+# 只有冗余别名才构成显式 re-export（PEP 484 对 .pyi 的规则）。
+from t import ASM_DESCR as ASM_DESCR
 
 # mypy crashes if any of {ByteString, Sequence, MutableSequence, Mapping, MutableMapping}
 # are imported from collections.abc in builtins.pyi
@@ -2734,6 +2740,49 @@ def LOut(expr: Any, constraint: Any = None) -> Any:
     """LLVM IR 输出操作数标记（等价 c.LOut）。"""
     ...
 
+# --- Viper 扩展：C 风格内置 asm 助记符（免 c./t. 前缀） ---
+# 与 C 的写法对齐，源码里可直接写 `__asm__(...)` / `asminp(...)` / `asmout(...)` /
+# `ASM_DESCR.XXX`，不必 `import c` 或加 `t.` 前缀：
+#   - `__asm__` 等价 c.Asm（声明式内联汇编，参数为模板串 + inp/out/op 关键字）；
+#   - `asminp` / `asmout` 等价 c.AsmInp / c.AsmOut（操作数标记，constraint 取
+#     ASM_DESCR 上的约束常量）；
+#   - `ASM_DESCR` 见本文件顶部 `from t import ASM_DESCR`。
+# 原有 Asm / AsmInp / AsmOut（以及 c.* / t.ASM_DESCR）写法保持可用。
+
+def __asm__(asm: str, *args: Any, inp: Any = None, out: Any = None, op: Any = None) -> Any:
+    """内联汇编（等价 c.Asm）。inp 为输入操作数描述符列表，out 为输出操作数
+    描述符列表，op 为破坏描述符列表。"""
+    ...
+
+def asminp(expr: Any, constraint: Any = None) -> Any:
+    """汇编输入操作数标记（等价 c.AsmInp）。constraint 为寄存器约束
+    （如 ASM_DESCR.REG_ANY）。"""
+    ...
+
+def asmout(expr: Any, constraint: Any = None) -> Any:
+    """汇编输出操作数标记（等价 c.AsmOut）。constraint 为寄存器约束
+    （如 ASM_DESCR.OUTPUT_REG）。"""
+    ...
+
+# --- Viper 扩展：LLVM IR 内置助记符（免 c. 前缀） ---
+# 与 C 风格 asm 助记符同一套机制，只是针对内联 LLVM IR：
+#   - `__llvmir__` 等价 c.LLVMIR（模板串 + 可选结果类型等位置参数 + inp/out/op）；
+#   - `irinp` / `irout` 等价 c.LInp / c.LOut（操作数标记）。
+# 原有 LLVMIR / LInp / LOut（以及 c.*）写法保持可用。
+
+def __llvmir__(ir: str, *args: Any, inp: Any = None, out: Any = None, op: Any = None) -> Any:
+    """内联 LLVM IR（等价 c.LLVMIR）。ir 为 IR 模板串，其后可跟结果类型等位置参数；
+    inp/out/op 为操作数描述符列表。"""
+    ...
+
+def irinp(expr: Any, constraint: Any = None) -> Any:
+    """LLVM IR 输入操作数标记（等价 c.LInp）。"""
+    ...
+
+def irout(expr: Any, constraint: Any = None) -> Any:
+    """LLVM IR 输出操作数标记（等价 c.LOut）。"""
+    ...
+
 # --- Viper 扩展：编译器内置裸指针类型 rawptr ---
 # rawptr 是编译器内置类型（TPC/TPV 双端，语法保留字，不可重定义）：
 #   rawptr[T] 固定表示"裸指针，指向原始类型 T"（等价 t.CPtr[T]），
@@ -2742,6 +2791,23 @@ def LOut(expr: Any, constraint: Any = None) -> Any:
 # 项目 includes/builtins.vp 是否声明；编译器侧解析 rawptr 时优先走内置
 # 路径并忽略本声明（见 TransPyC TypeAnnotationResolver / SymbolExtractor）。
 rawptr: t.CTypedef = t.CPtr
+
+# --- Viper 扩展：类型描述符 const / volatile 的脱糖目标 ---
+# `const T` / `volatile T` 由 parser 脱糖为 `CConst | T` / `CVolatile | T`
+# （见 parser._parseViperTypeDescriptorPrefix）。这两个名字声明在 builtins stub 中，
+# 使脱糖结果对任意 Viper 工程均可解析 —— 与 T* 指针注解一致，不要求源码
+# 显式 `import t`（t.CConst / t.CVolatile 需要 import t 才可见）。
+# 值语义即 t.CConst / t.CVolatile 本身（TypeSet 修饰符，不改变数据类型）。
+CConst:   t.CTypedef = t.CConst
+CVolatile: t.CTypedef = t.CVolatile
+
+# --- Viper 扩展：注解位置的小写 callable 等价 t.Callable ---
+# `callable[[A, B], R]` / `callable[..., R]` / `callable[[], R]` 由 parser 在
+# **注解位置**脱糖为同名大写的 `Callable[...]`（见 parser._parseAtom），
+# 值位置的 `callable(x)` 仍是内置函数（本别名只在类型位置生效）。
+# `Callable` 在此声明，使脱糖结果对任意 Viper 工程均可解析 —— 与 rawptr /
+# CConst 一致，不要求源码显式 `import t`（t.Callable 需要 import t 才可见）。
+Callable: t.CTypedef = t.Callable
 
 # --- Viper 扩展：C 定宽/最快/最小整型 typedef（镜像 TransPyC includes/builtins.vp） ---
 # 这些 typedef 由编译器内置的 includes/builtins.vp 提供。LSP 侧原先只靠
@@ -2756,6 +2822,8 @@ rawptr: t.CTypedef = t.CPtr
 # 语言内置名称，无需 import）。C 的 "long long" / "unsigned long long" 含空格、
 # 不能作标识符，Viper 写作 longlong / ulonglong。
 short:     t.CTypedef = t.CShort
+uint:      t.CTypedef = t.CUnsignedInt
+uchar:     t.CTypedef = t.CUnsignedChar
 long:      t.CTypedef = t.CLong
 longlong:  t.CTypedef = t.CLongLong
 ushort:    t.CTypedef = t.CUnsignedShort

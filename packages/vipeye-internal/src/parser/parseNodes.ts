@@ -1704,6 +1704,14 @@ export interface NameNode extends ParseNodeBase<ParseNodeType.Name> {
         // 但脱糖目标是 builtins stub 中的别名，不要求源码 import t；
         // 名字解析不到时静默退化为 Unknown。
         isViperTypeDescriptor?: boolean;
+
+        // Viper 扩展：`__attribute__` 脱糖（见 parser._desugarViperMagicAttribute /
+        // _makeViperAttrMarker）时合成出来的 `t` / `c` **模块根**名：零长度、
+        // 不对应源码字符。编译器的属性识别是 AST 级的（不要求源码 import t / import c），
+        // 故这里也允许隐式解析：该名在词法作用域链上取不到时回退到 builtins 作用域
+        // 的同名绑定（builtins.vpi 通过 `from t import ...` / `from c import ...`
+        // 绑定了它们），而不是报"未定义 t"。
+        isViperImplicitModule?: boolean;
     };
 }
 

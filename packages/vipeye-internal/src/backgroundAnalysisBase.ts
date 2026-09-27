@@ -11,6 +11,8 @@ import { MessageChannel, MessagePort, Worker, parentPort, threadId, workerData }
 
 import {
     AnalysisCompleteCallback,
+    AnalysisProgress,
+    AnalysisProgressCallback,
     AnalysisResults,
     RequiringAnalysisCount,
     analyzeProgram,
@@ -51,6 +53,7 @@ import { ProgramView } from './common/extensibility';
 export interface IBackgroundAnalysis extends Disposable {
     setProgramView(program: Program): void;
     setCompletionCallback(callback?: AnalysisCompleteCallback): void;
+    setAnalysisProgressCallback(callback?: AnalysisProgressCallback): void;
     setImportResolver(importResolver: ImportResolver): void;
     setConfigOptions(configOptions: ConfigOptions): void;
     setTrackedFiles(fileUris: Uri[]): void;
@@ -84,6 +87,9 @@ export class BackgroundAnalysisBase implements IBackgroundAnalysis {
 
     private _worker: Worker | undefined;
     private _onAnalysisCompletion: AnalysisCompleteCallback = nullCallback;
+    private _onAnalysisProgress: AnalysisProgressCallback = () => {
+        /* empty */
+    };
     private _messageChannel: MessageChannel;
 
     protected program: ProgramView | undefined;
@@ -113,6 +119,14 @@ export class BackgroundAnalysisBase implements IBackgroundAnalysis {
 
     setCompletionCallback(callback?: AnalysisCompleteCallback) {
         this._onAnalysisCompletion = callback ?? nullCallback;
+    }
+
+    setAnalysisProgressCallback(callback?: AnalysisProgressCallback) {
+        this._onAnalysisProgress =
+            callback ??
+            (() => {
+                /* empty */
+            });
     }
 
     setImportResolver(importResolver: ImportResolver) {
@@ -322,6 +336,11 @@ export class BackgroundAnalysisBase implements IBackgroundAnalysis {
                 break;
             }
 
+            case 'analysisProgress': {
+                this._onAnalysisProgress(deserialize<AnalysisProgress>(msg.data));
+                break;
+            }
+
             default:
                 debug.fail(`${msg.requestType} is not expected. Message structure: ${JSON.stringify(msg)}`);
         }
@@ -341,6 +360,11 @@ export class BackgroundAnalysisBase implements IBackgroundAnalysis {
         switch (msg.requestType) {
             case 'analysisResult': {
                 this._onAnalysisCompletion(convertAnalysisResults(deserialize(msg.data)));
+                break;
+            }
+
+            case 'analysisProgress': {
+                this._onAnalysisProgress(deserialize<AnalysisProgress>(msg.data));
                 break;
             }
 
@@ -607,13 +631,25 @@ export abstract class BackgroundAnalysisRunnerBase extends BackgroundThreadBase 
     protected handleResumeAnalysis(port: MessagePort, token: CancellationToken) {
         // Report results at the interval of the max analysis time.
         const maxTime = { openFilesTimeInMs: 50, noOpenFilesTimeInMs: 200 };
+
+        // Viper 扩展：把逐文件的分析进度回传前台（节流到 50ms 一次，避免
+        // 大量文件时 IPC 消息过密）。收尾那次（done）一定要发。
+        let lastProgressSent = 0;
         const moreToAnalyze = analyzeProgram(
             this.program,
             maxTime,
             this._configOptions,
             (result) => this.onAnalysisCompletion(port, result),
             this.getConsole(),
-            token
+            token,
+            (progress) => {
+                const now = Date.now();
+                if (!progress.done && now - lastProgressSent < 50) {
+                    return;
+                }
+                lastProgressSent = now;
+                this.onAnalysisProgress(port, progress);
+            }
         );
 
         if (moreToAnalyze) {
@@ -770,6 +806,14 @@ export abstract class BackgroundAnalysisRunnerBase extends BackgroundThreadBase 
         port.postMessage({ requestType: 'analysisResult', data: serialize(result) });
     }
 
+    /**
+     * Viper 扩展：把「正在分析哪个文件 / 已分析多少」回传前台线程，
+     * 由 languageServerBase 转成 `viper/analysisStatus` 通知给客户端状态栏。
+     */
+    protected onAnalysisProgress(port: MessagePort, progress: AnalysisProgress) {
+        port.postMessage({ requestType: 'analysisProgress', data: serialize(progress) });
+    }
+
     private _onMessageWrapper(msg: BackgroundRequest) {
         try {
             return this.onMessage(msg);
@@ -881,7 +925,7 @@ export interface BackgroundRequest {
     sharedUsageBuffer?: SharedArrayBuffer;
 }
 
-export type BackgroundResponseKind = 'log' | 'analysisResult' | 'analysisPaused' | 'analysisDone';
+export type BackgroundResponseKind = 'log' | 'analysisResult' | 'analysisProgress' | 'analysisPaused' | 'analysisDone';
 
 export interface BackgroundResponse {
     requestType: BackgroundResponseKind;

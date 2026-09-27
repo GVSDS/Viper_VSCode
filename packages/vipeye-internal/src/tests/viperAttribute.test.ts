@@ -325,6 +325,64 @@ def f() -> int:
     }
 });
 
+test('__attribute__ 不要求 import t / import c（隐式模块根）', () => {
+    const code = `@__attribute__(section(".text.wo"), always_inline)
+def decorated(a: int) -> int:
+    return a
+
+@__attribute__(packed, aligned(16))
+class Packed:
+    x: int
+
+AttrConst: __attribute__(section(".PRVERSN")) const int = 1
+`;
+    const { program, configOptions, uri, serviceProvider, testDir } = buildProgramForCode(code, '__viper_attribute_noimport__');
+
+    try {
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== __attribute__ 免 import 诊断 ===');
+        diagnostics.forEach((d) => console.log(`  L${d.line} [category=${d.category}] ${d.message}`));
+
+        const realDiagnostics = diagnostics.filter((d) => d.category === 0 || d.category === 1);
+        assert.strictEqual(
+            realDiagnostics.length,
+            0,
+            `__attribute__ 脱糖出的 t / c 不应报未定义：${JSON.stringify(realDiagnostics)}`
+        );
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        require('fs').rmSync(testDir, { recursive: true, force: true });
+    }
+});
+
+test('隐式模块根只作用于 __attribute__ 脱糖：手写裸 t / c 仍报未定义', () => {
+    const code = `Bad: t.CInt = 1
+
+def use_c() -> int:
+    return c.SomeThing
+`;
+    const { program, configOptions, uri, serviceProvider, testDir } = buildProgramForCode(
+        code,
+        '__viper_attribute_implicit_scope__'
+    );
+
+    try {
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== 手写裸 t / c 诊断 ===');
+        diagnostics.forEach((d) => console.log(`  L${d.line} [category=${d.category}] ${d.message}`));
+
+        const undefinedT = diagnostics.filter((d) => d.message.includes('未定义') && d.message.includes('t'));
+        const undefinedC = diagnostics.filter((d) => d.message.includes('未定义') && d.message.includes('c'));
+        assert(undefinedT.length > 0, `手写裸 t 应仍报未定义：${JSON.stringify(diagnostics)}`);
+        assert(undefinedC.length > 0, `手写裸 c 应仍报未定义：${JSON.stringify(diagnostics)}`);
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        require('fs').rmSync(testDir, { recursive: true, force: true });
+    }
+});
+
 test('hover 在 __attribute__(...) 括号内提示全部属性名', () => {
     // 第 2 行第 22 列落在实参 `section` 上。
     const code = `import t

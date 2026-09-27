@@ -52,7 +52,7 @@ import {
     isFile,
     tryStat,
 } from '../common/uri/uriUtils';
-import { AnalysisCompleteCallback } from './analysis';
+import { AnalysisCompleteCallback, AnalysisProgressCallback } from './analysis';
 import {
     BackgroundAnalysisProgram,
     BackgroundAnalysisProgramFactory,
@@ -338,6 +338,14 @@ export class AnalyzerService {
     setCompletionCallback(callback: AnalysisCompleteCallback | undefined): void {
         this._onCompletionCallback = callback;
         this._backgroundAnalysisProgram.setCompletionCallback(callback);
+    }
+
+    /**
+     * Viper 扩展：注册分析进度回调（逐文件上报「正在分析哪个文件」），
+     * 由 languageServerBase 转成客户端状态栏进度通知。
+     */
+    setAnalysisProgressCallback(callback: AnalysisProgressCallback | undefined): void {
+        this._backgroundAnalysisProgram.setAnalysisProgressCallback(callback);
     }
 
     setOptions(commandLineOptions: CommandLineOptions): void {

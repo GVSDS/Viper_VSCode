@@ -37,6 +37,26 @@ export interface RequiringAnalysisCount {
     cells: number;
 }
 
+/**
+ * Viper 扩展：分析进度的快照，供 LSP 客户端在状态栏显示
+ * 「C:\xxx\1.vp (4/90) 0.04% loading...」这类进度信息。
+ */
+export interface AnalysisProgress {
+    /** 当前正在分析的文件路径（文件系统路径，Windows 下形如 C:\xxx\1.vp）。 */
+    currentFile: string | undefined;
+
+    /** 已分析的用户文件数。 */
+    analyzed: number;
+
+    /** 需要分析的用户文件总数。 */
+    total: number;
+
+    /** 是否已分析完毕（true 表示可以收起状态栏进度项）。 */
+    done: boolean;
+}
+
+export type AnalysisProgressCallback = (progress: AnalysisProgress) => void;
+
 export type AnalysisCompleteCallback = (results: AnalysisResults) => void;
 
 export function analyzeProgram(
@@ -45,7 +65,8 @@ export function analyzeProgram(
     configOptions: ConfigOptions,
     callback: AnalysisCompleteCallback | undefined,
     console: ConsoleInterface,
-    token: CancellationToken
+    token: CancellationToken,
+    progressCallback?: AnalysisProgressCallback
 ): boolean {
     let moreToAnalyze = false;
 
@@ -55,7 +76,17 @@ export function analyzeProgram(
         throwIfCancellationRequested(token);
 
         const duration = new Duration();
-        moreToAnalyze = program.analyze(maxTime, token);
+        // 逐文件上报进度（analyze 每检查完一个文件就回一次），
+        // 让客户端状态栏能实时反映「正在分析哪个文件」。
+        moreToAnalyze = program.analyze(
+            maxTime,
+            token,
+            progressCallback ? () => progressCallback({ ...program.getAnalysisProgress(), done: false }) : undefined
+        );
+
+        if (progressCallback) {
+            progressCallback({ ...program.getAnalysisProgress(), done: !moreToAnalyze });
+        }
 
         const requiringAnalysisCount = program.getFilesToAnalyzeCount();
 

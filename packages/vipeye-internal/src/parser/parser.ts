@@ -5435,9 +5435,11 @@ export class Parser {
     //   - 已是 `t.attr.X` / `c.Attribute(...)` 形态 → 原样保留（允许混写）
     // 与 TPC/TPV 的 includes/ast/parser.vp `_MakeTAttrMarker` 逐条对应；
     // 成员名复用实参自身的 token（真实位置），故属性名上的跳转/悬停仍指向 t.vpi。
+    // 根 `t` 是合成的「隐式模块根」（见 _createViperImplicitModuleName），
+    // 不要求源码 `import t`。
     private _makeViperAttrMarker(argExpr: ExpressionNode): ExpressionNode {
         const attrRoot = MemberAccessNode.create(
-            NameNode.create(IdentifierToken.create(argExpr.start, 0, 't', /* comments */ undefined)),
+            this._createViperImplicitModuleName(argExpr.start, 't'),
             NameNode.create(IdentifierToken.create(argExpr.start, 0, 'attr', /* comments */ undefined))
         );
 
@@ -5454,6 +5456,17 @@ export class Parser {
         return argExpr;
     }
 
+    // Viper 扩展：合成 zero-length 的「隐式模块根」名（`t` / `c`）。
+    // `__attribute__` 的脱糖节点里引用 `t` / `c`，但**不要求源码 import t / import c**
+    // —— 与编译器一致（TPC/TPV 的属性识别是 AST 级的，不看符号是否可见）。
+    // 该名在词法作用域里解析不到时，typeEvaluator 会回退到 builtins 作用域的同名
+    // 模块绑定（见 NameNode.d.isViperImplicitModule）。
+    private _createViperImplicitModuleName(start: number, name: string): NameNode {
+        const nameNode = NameNode.create(IdentifierToken.create(start, 0, name, /* comments */ undefined));
+        nameNode.d.isViperImplicitModule = true;
+        return nameNode;
+    }
+
     // Viper 扩展：把 `@__attribute__(...)` 装饰器脱糖为
     // `@c.Attribute(t.attr.a, t.attr.b)`——与 TPC/TPV 的
     // includes/ast/parser.vp `_DesugarMagicAttribute` 逐字段同形，因此 class 与 def
@@ -5468,7 +5481,7 @@ export class Parser {
         }
 
         const attributeCallee = MemberAccessNode.create(
-            NameNode.create(IdentifierToken.create(expr.start, 0, 'c', /* comments */ undefined)),
+            this._createViperImplicitModuleName(expr.start, 'c'),
             NameNode.create(IdentifierToken.create(expr.start, 0, 'Attribute', /* comments */ undefined))
         );
 

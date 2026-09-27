@@ -19,6 +19,8 @@ import {
     Position,
     ProgressLocation,
     Range,
+    StatusBarAlignment,
+    StatusBarItem,
     TextEditor,
     TextEditorEdit,
     Uri,
@@ -80,6 +82,41 @@ function isDevelopmentCopyLoaded(): boolean {
             )
         );
     });
+}
+
+/**
+ * 服务端 `viper/analysisStatus` 通知的载荷，对应 vipeye-internal 的
+ * `AnalysisProgress`（依赖图构建 / import 分析阶段的逐文件进度）。
+ */
+interface AnalysisStatusNotification {
+    /** 当前正在分析的文件路径（Windows 下形如 C:\xxx\1.vp）。 */
+    currentFile: string | undefined;
+
+    /** 已分析的用户文件数。 */
+    analyzed: number;
+
+    /** 需要分析的用户文件总数。 */
+    total: number;
+
+    /** 分析是否已结束（true 时收起状态栏进度项）。 */
+    done: boolean;
+}
+
+/**
+ * 左下角状态栏的分析进度项：显示 `C:\xxx\1.vp (4/90) 4.44% loading...`。
+ * 依赖图构建 / import 分析期间没有其他可见反馈，用户无法区分「插件在忙」
+ * 与「插件卡死」，故这里给出实时进度；分析结束后自动隐藏。
+ */
+function UpdateAnalysisStatusItem(item: StatusBarItem, progress: AnalysisStatusNotification): void {
+    if (progress.done || progress.total <= 0) {
+        item.hide();
+        return;
+    }
+
+    const percent = Math.min(100, (progress.analyzed / progress.total) * 100).toFixed(2);
+    item.text = `$(sync~spin) ${progress.currentFile ?? '...'} (${progress.analyzed}/${progress.total}) ${percent}% loading...`;
+    item.tooltip = `Viper：正在分析 ${progress.total} 个文件（依赖图构建 / import 分析）`;
+    item.show();
 }
 
 export async function activate(context: ExtensionContext) {
@@ -184,6 +221,16 @@ export async function activate(context: ExtensionContext) {
     // Create the language client and start the client.
     const client = new LanguageClient('vipeye', 'Vipeye', serverOptions, clientOptions);
     languageClient = client;
+
+    // 左下角状态栏的分析进度项：显示正在分析哪个文件（`... (4/90) 4.44% loading...`），
+    // 让用户知道依赖图构建 / import 分析是否在进行，而不是卡死了。
+    const analysisStatusItem = window.createStatusBarItem(StatusBarAlignment.Left, 100);
+    context.subscriptions.push(analysisStatusItem);
+    context.subscriptions.push(
+        client.onNotification('viper/analysisStatus', (progress: AnalysisStatusNotification) => {
+            UpdateAnalysisStatusItem(analysisStatusItem, progress);
+        })
+    );
 
     // Register our custom commands.
     const textEditorCommands = [Commands.orderImports];

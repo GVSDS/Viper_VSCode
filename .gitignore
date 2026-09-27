@@ -143,6 +143,8 @@ packages/vipeye-internal/src/tests/__viper_attribute__/
 packages/vipeye-internal/src/tests/__viper_attribute_completion__/
 packages/vipeye-internal/src/tests/__viper_attribute_hover__/
 packages/vipeye-internal/src/tests/__viper_attribute_prefix__/
+packages/vipeye-internal/src/tests/__viper_attribute_noimport__/
+packages/vipeye-internal/src/tests/__viper_attribute_implicit_scope__/
 packages/vipeye-internal/src/tests/__viper_volatile__/
 packages/vipeye-internal/src/tests/__viper_volatile_bad__/
 packages/vipeye-internal/src/tests/__viper_callable__/

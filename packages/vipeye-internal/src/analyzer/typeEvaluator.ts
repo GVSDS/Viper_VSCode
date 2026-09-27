@@ -5379,6 +5379,23 @@ export function createTypeEvaluator(
                 // 它们是 builtins stub 中的别名，正常 Viper 工程均可解析；
                 // 解析不到时静默退化为 Unknown，不报「未定义」（与 [SIZE]T 同一取舍）。
                 type = UnknownType.create();
+            } else if (node.d.isViperImplicitModule) {
+                // Viper 扩展：`__attribute__` 脱糖出的「隐式模块根」名 `t` / `c`
+                // （见 parser._createViperImplicitModuleName）。源码里并不存在这两个
+                // 名字，也不要求源码 `import t` / `import c` —— 编译器对属性的识别是
+                // AST 级的，同样不看符号可见性。故在词法作用域里取不到时回退到
+                // builtins 作用域的同名绑定；仍取不到才报未定义。
+                const implicitModuleType = getViperImplicitModuleType(node, name);
+                if (implicitModuleType) {
+                    type = implicitModuleType;
+                } else {
+                    addDiagnostic(
+                        DiagnosticRule.reportUndefinedVariable,
+                        LocMessage.symbolIsUndefined().format({ name }),
+                        node
+                    );
+                    type = UnknownType.create();
+                }
             } else {
                 // Viper 扩展：前向引用支持（收紧版）。
                 // Viper 是 AOT 语言，函数/类的定义顺序无关（类似 C 语言的前向声明），
@@ -9442,12 +9459,41 @@ export function createTypeEvaluator(
         return undefined;
     }
 
+    // Viper 扩展：解析 `__attribute__` 脱糖出的「隐式模块根」名（`t` / `c`）。
+    // 这类名字源码里并不存在（见 parser._createViperImplicitModuleName），也不要求
+    // 源码 `import t` / `import c` —— 编译器对属性的识别是 AST 级的，同样不看符号
+    // 可见性。故在词法作用域里取不到时沿 scope 链（含 builtins 作用域）查找同名绑定：
+    // builtins.vpi 通过 `from t import ...` / `from c import ...` 绑定了 `t` / `c`，
+    // 但 import-only 绑定对下游不可见（isExternallyHidden），故这里直接查符号表，
+    // 而不是走 lookUpSymbolRecursive。
+    // 用户源码里手写的裸 `t` / `c` 不带该标记，仍照旧报未定义。
+    function getViperImplicitModuleType(node: ParseNode, name: string): Type | undefined {
+        let scope = ScopeUtils.getScopeForNode(node);
+        while (scope) {
+            const symbol = scope.lookUpSymbol(name);
+            if (symbol) {
+                const effectiveType = getEffectiveTypeOfSymbolForUsage(
+                    symbol,
+                    /* usageNode */ undefined,
+                    /* useLastDecl */ true
+                ).type;
+                if (effectiveType) {
+                    return effectiveType;
+                }
+            }
+            scope = scope.parent;
+        }
+        return undefined;
+    }
+
     // Viper 扩展：解析 `t.attr.<name>` / `t.attr.<name>(...)` 属性标记 → t.CAttr 实例。
     //
     // 形态（与 TransPyC HandlesAssign._TAttrName / TransPyV ClassGenBase._tattr_name
     // 同判据：只看最外层属性名）：
     //   t.attr.packed              （Attribute：t.attr.llvm.nounwind → 最外层 nounwind）
     //   t.attr.section(".x")       （Call：取 func 的最外层属性名）
+    // 根 `t` 可以是手写的（需 import t）或 `__attribute__` 脱糖出的隐式模块根
+    // （isViperImplicitModule，不要求 import）。
     // 这类表达式出现在类型注解联合中（`T | t.attr.section(".x")`、
     // `T | t.attr.llvm.nounwind`），或由 parser 从 `__attribute__(...)` 修饰器脱糖而来；
     // 注解位置求值为 CAttr 标记——与 CConst / CVolatile 同族的修饰符
@@ -9470,14 +9516,17 @@ export function createTypeEvaluator(
         }
 
         const moduleSymbolWithScope = lookUpSymbolRecursive(cur, cur.d.value, /* honorCodeFlow */ true);
-        if (!moduleSymbolWithScope) {
-            return undefined;
+        let moduleType: Type | undefined;
+        if (moduleSymbolWithScope) {
+            moduleType = getEffectiveTypeOfSymbolForUsage(
+                moduleSymbolWithScope.symbol,
+                /* usageNode */ undefined,
+                /* useLastDecl */ true
+            ).type;
+        } else if (cur.d.isViperImplicitModule) {
+            // `__attribute__` 脱糖出的隐式 `t`：源码未 import t 时回退到 builtins 绑定。
+            moduleType = getViperImplicitModuleType(cur, cur.d.value);
         }
-        const moduleType = getEffectiveTypeOfSymbolForUsage(
-            moduleSymbolWithScope.symbol,
-            /* usageNode */ undefined,
-            /* useLastDecl */ true
-        ).type;
         if (!moduleType || !isModule(moduleType)) {
             return undefined;
         }

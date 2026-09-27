@@ -84,7 +84,7 @@ import {
 } from 'vscode-languageserver';
 
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { AnalysisResults } from './analyzer/analysis';
+import { AnalysisProgress, AnalysisResults } from './analyzer/analysis';
 import { BackgroundAnalysisProgram, InvalidatedReason } from './analyzer/backgroundAnalysisProgram';
 import { ImportResolver } from './analyzer/importResolver';
 import { MaxAnalysisTime } from './analyzer/program';
@@ -369,7 +369,17 @@ export abstract class LanguageServerBase implements LanguageServerInterface, Dis
         });
 
         service.setCompletionCallback((results) => this.onAnalysisCompletedHandler(service.fs, results));
+        service.setAnalysisProgressCallback((progress) => this.sendAnalysisStatus(progress));
         return service;
+    }
+
+    /**
+     * Viper 扩展：把「正在分析哪个文件 / 已分析多少 / 共多少」通知给客户端，
+     * 供其在左下角状态栏显示 `C:\xxx\1.vp (4/90) 0.04% loading...`，
+     * 让用户能判断语言服务是在工作还是卡死。
+     */
+    protected sendAnalysisStatus(progress: AnalysisProgress) {
+        this.connection.sendNotification('viper/analysisStatus', progress);
     }
 
     async getWorkspaces(): Promise<Workspace[]> {

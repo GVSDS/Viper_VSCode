@@ -17,7 +17,7 @@ import { ServiceProvider } from '../common/serviceProvider';
 import '../common/serviceProviderExtensions';
 import { Range } from '../common/textRange';
 import { Uri } from '../common/uri/uri';
-import { AnalysisCompleteCallback, analyzeProgram } from './analysis';
+import { AnalysisCompleteCallback, AnalysisProgressCallback, analyzeProgram } from './analysis';
 import { ImportResolver } from './importResolver';
 import { MaxAnalysisTime, OpenFileOptions, Program } from './program';
 import { TypeStubWriter } from './typeStubWriter';
@@ -33,6 +33,7 @@ export class BackgroundAnalysisProgram {
     private _program: Program;
     private _disposed = false;
     private _onAnalysisCompletion: AnalysisCompleteCallback | undefined;
+    private _onAnalysisProgress: AnalysisProgressCallback | undefined;
     private _preEditAnalysis: IBackgroundAnalysis | undefined;
 
     constructor(
@@ -157,6 +158,11 @@ export class BackgroundAnalysisProgram {
         this._backgroundAnalysis?.setCompletionCallback(callback);
     }
 
+    setAnalysisProgressCallback(callback?: AnalysisProgressCallback) {
+        this._onAnalysisProgress = callback;
+        this._backgroundAnalysis?.setAnalysisProgressCallback(callback);
+    }
+
     startAnalysis(token: CancellationToken): boolean {
         if (this._backgroundAnalysis) {
             this._backgroundAnalysis.startAnalysis(token);
@@ -169,7 +175,8 @@ export class BackgroundAnalysisProgram {
             this._configOptions,
             this._onAnalysisCompletion,
             this._serviceProvider.console(),
-            token
+            token,
+            this._onAnalysisProgress
         );
     }
 

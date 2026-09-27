@@ -160,6 +160,10 @@ export class Program {
     private _editModeTracker = new EditModeTracker();
     private _sourceFileFactory: ISourceFileFactory;
 
+    // Viper 扩展：LSP 状态栏进度所需的「当前正在分析的文件路径」。
+    // 在 analyze() 的循环里逐文件更新，见 getAnalysisProgress()。
+    private _currentAnalysisFilePath: string | undefined;
+
     // Viper 扩展：includes/builtins.vp（真实源码，非 .vpi 存根）的 typedef 符号
     // 合并状态。key =（typeshed builtins 存根 + 执行环境 + 被分析文件目录），
     // 避免对同一环境/目录下的文件重复扫描/合并；不同目录或不同执行环境会各自尝试。
@@ -714,7 +718,11 @@ export class Program {
     // whether the method needs to be called again to complete the
     // analysis. In interactive mode, the timeout is always limited
     // to the smaller value to maintain responsiveness.
-    analyze(maxTime?: MaxAnalysisTime, token: CancellationToken = CancellationToken.None): boolean {
+    analyze(
+        maxTime?: MaxAnalysisTime,
+        token: CancellationToken = CancellationToken.None,
+        onProgress?: () => void
+    ): boolean {
         return this._runEvaluatorWithCancellationToken(token, () => {
             const elapsedTime = new Duration();
 
@@ -727,6 +735,8 @@ export class Program {
 
                 // Check the open files.
                 for (const sourceFileInfo of openFiles) {
+                    this._currentAnalysisFilePath = sourceFileInfo.uri.getFilePath();
+                    onProgress?.();
                     if (this._checkTypes(sourceFileInfo)) {
                         if (elapsedTime.getDurationInMilliseconds() > effectiveMaxTime) {
                             return true;
@@ -751,6 +761,8 @@ export class Program {
                         continue;
                     }
 
+                    this._currentAnalysisFilePath = sourceFileInfo.uri.getFilePath();
+                    onProgress?.();
                     if (this._checkTypes(sourceFileInfo)) {
                         if (elapsedTime.getDurationInMilliseconds() > effectiveMaxTime) {
                             return true;
@@ -761,6 +773,22 @@ export class Program {
 
             return false;
         });
+    }
+
+    /**
+     * Viper 扩展：返回分析进度的快照，供 LSP 客户端在状态栏显示
+     * 「正在分析哪个文件 / 已分析多少 / 共多少个用户文件」。
+     * 计数与 AnalysisResults.requiringAnalysisCount 同源（都走 getFilesToAnalyzeCount），
+     * 因此百分比不会与实际分析进度脱节。
+     */
+    getAnalysisProgress(): { currentFile: string | undefined; analyzed: number; total: number } {
+        const total = this.getUserFileCount();
+        const pending = this.getFilesToAnalyzeCount().files;
+        return {
+            currentFile: this._currentAnalysisFilePath,
+            analyzed: Math.min(total, Math.max(0, total - pending)),
+            total,
+        };
     }
 
     // Performs parsing and analysis of a single file in the program. If the file is not part of

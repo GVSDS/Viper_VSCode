@@ -12,7 +12,6 @@
  * 没有可命中的节点。
  */
 
-import { ScopeType } from '../analyzer/scope';
 import { getScopeForNode } from '../analyzer/scopeUtils';
 import { Symbol, SymbolTable } from '../analyzer/symbol';
 import { TypeEvaluator } from '../analyzer/typeEvaluatorTypes';
@@ -77,12 +76,15 @@ export function getViperAttributeSymbols(
     evaluator: TypeEvaluator,
     scopeNode: ParseNode
 ): { symbolTable: SymbolTable; attrClass: ClassType } | undefined {
-    const scope = getScopeForNode(scopeNode);
-    if (!scope || scope.type !== ScopeType.Module) {
-        return undefined;
+    // 取 `t` 模块：优先本文件的 `import t`，否则沿 scope 链回退到 builtins 作用域
+    // （builtins.vpi 通过 `from t import ...` 绑定了 `t`）—— 与 `__attribute__`
+    // 脱糖出的隐式 `t` 一致（源码不 import t 时属性名补全/悬停仍应可用）。
+    let scope = getScopeForNode(scopeNode);
+    let tSymbol: Symbol | undefined;
+    while (scope && !tSymbol) {
+        tSymbol = scope.lookUpSymbol('t');
+        scope = scope.parent;
     }
-
-    const tSymbol = scope.lookUpSymbol('t');
     if (!tSymbol) {
         return undefined;
     }

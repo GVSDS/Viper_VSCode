@@ -2,6 +2,12 @@ import _ast
 import _sitebuiltins
 import _typeshed
 import sys
+# Viper 扩展：`__attribute__` 脱糖出的隐式模块根 `c` / `t`
+# （见 parseNodes.NameNode.d.isViperImplicitModule）。这两个 import 是
+# import-only 绑定（isExternallyHidden），普通名字解析查不到，仅供
+# typeEvaluator.getViperImplicitModuleType 直接查 symbolTable 时回退使用，
+# 因此源码里手写裸 `t` / `c` 仍然照旧报未定义。
+import c
 import t
 import types
 from _collections_abc import dict_items, dict_keys, dict_values

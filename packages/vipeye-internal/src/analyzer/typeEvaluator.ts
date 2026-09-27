@@ -8858,6 +8858,26 @@ export function createTypeEvaluator(
 
         const magicMethodName = getIndexAccessMagicMethodName(usage);
 
+        // Viper 扩展：`t.CArray[T, N]` 的元素访问语义（C 的 `arr[i]`）。
+        // CArray 在 vpi 存根里声明为 `class CArray(CType, Generic[T, N])`，
+        // 但 Viper 侧 `TypeVar(...)` 不产出可替换的类型变量（其类型参数落到
+        // 合成参数 `__P0/__P1`，见 buildTypeParamsFromTypeArgs），因此
+        // `def __getitem__(self, index: int) -> T` 的返回类型无法具体化 →
+        // 下标恒为 Unknown，进而 `buf[i].field` 误报「无法解析类型上的成员访问」。
+        // 按 C 语义直接取第一个类型实参（元素类型），与 CPtr 分支读
+        // `baseType.priv.typeArgs[0]` 同法，不依赖 TypeVar 替换。
+        const viperArrayFileInfo = AnalyzerNodeInfo.getFileInfo(node);
+        if (
+            IsViperDialect(viperArrayFileInfo.executionEnvironment.dialect) &&
+            usage.method === 'get' &&
+            isClassInstance(baseType) &&
+            isCArrayType(baseType) &&
+            baseType.priv.typeArgs &&
+            baseType.priv.typeArgs.length > 0
+        ) {
+            return { type: makeTopLevelTypeVarsConcrete(baseType.priv.typeArgs[0]) };
+        }
+
         // Viper 扩展：CPtr[T] 指针下标解引用语义。
         // 当对 CPtr[T] 实例执行下标访问 ptr[i] 时（模拟 C 语言的 ptr[i] = *(ptr + i)）：
         // 1. 如果 T 本身有 __getitem__/__setitem__/__delitem__，优先调用 T 的方法

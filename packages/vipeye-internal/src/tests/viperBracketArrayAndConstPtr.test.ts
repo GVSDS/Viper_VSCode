@@ -21,6 +21,9 @@
  *    **只是修饰**，跳过即可：`path: const str` 可 `for ch in path:` 迭代，
  *    不再误报「“CConst”不可迭代 / 未定义 __iter__」（判据须认 str / bytes，
  *    不能只认 CPtr，见 viperTypeContainsPointer）。
+ * ④ `[SIZE]StructT` / `t.CArray[StructT, N]` 的元素访问能解析出元素类型：
+ *    `buf[i].field` 不再报「无法解析类型上的成员访问」，成员名可高亮
+ *    （Viper 侧按 C 语义直接取 CArray 的第一个类型实参，不依赖 TypeVar 替换）。
  *
  * 运行：npx jest src/tests/viperBracketArrayAndConstPtr.test.ts --runInBand
  */
@@ -90,6 +93,35 @@ function getDiagnostics(program: Program, configOptions: ConfigOptions, uri: any
         col: diag.range ? diag.range.start.character + 1 : -1,
         message: diag.message as string,
     }));
+}
+
+/** 语义 token：解码相对编码，返回 Map<line(0-based), {text, tokenType}[]>。 */
+function getSemanticTokens(program: Program, uri: any): Map<number, { text: string; tokenType: number }[]> {
+    const { SemanticTokenProvider } = require('../languageService/semanticTokenProvider');
+    const { LogTracker } = require('../common/logTracker');
+    const provider = new SemanticTokenProvider(new LogTracker());
+    const result = provider.provideFull(program, uri);
+    assert(result, 'no semantic tokens produced');
+
+    const lines = program.getSourceFile(uri)!.getParseResults()!.text.split('\n');
+    const map = new Map<number, { text: string; tokenType: number }[]>();
+    let cursorLine = 0;
+    let cursorChar = 0;
+    for (let i = 0; i < result.data.length; i += 5) {
+        const deltaLine = result.data[i];
+        cursorLine += deltaLine;
+        cursorChar = deltaLine === 0 ? cursorChar + result.data[i + 1] : result.data[i + 1];
+        const length = result.data[i + 2];
+        const entry = {
+            text: (lines[cursorLine] || '').substring(cursorChar, cursorChar + length),
+            tokenType: result.data[i + 3],
+        };
+        if (!map.has(cursorLine)) {
+            map.set(cursorLine, []);
+        }
+        map.get(cursorLine)!.push(entry);
+    }
+    return map;
 }
 
 test('[SIZE]T 的 SIZE 支持整型常量运算（乘法/减法/移位/字面量）', () => {
@@ -291,6 +323,72 @@ def walk_parts(parts: const t.CPtr) -> int:
             notIterableDiags.length,
             0,
             `const 指针（const str 等）应可迭代，不应报不可迭代：${JSON.stringify(diagnostics)}`
+        );
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        require('fs').rmSync(testDir, { recursive: true, force: true });
+    }
+});
+
+/*
+ * ④ `[SIZE]StructT` 数组的元素访问（ViperOS VKernel/Kernel/drivers/input/keyboard/keyboard.vp）：
+ *      kbd_buf: [KBD_BUF_SIZE]usb_kbd_event
+ *      kbd_buf[kbd_buf_head].modifier
+ *    CArray 在 vpi 存根里是 `class CArray(CType, Generic[T, N])`，但 Viper 侧
+ *   `TypeVar(...)` 不产出可替换的类型变量（类型参数落到合成参数 `__P0/__P1`），
+ *   故 `__getitem__ -> T` 无法具体化 → 下标恒为 Unknown → `.modifier` 报
+ *   「无法解析类型上的成员访问」且该成员名拿不到 property 语义 token（不高亮）。
+ */
+test('[SIZE]StructT 数组的元素访问能解析出元素类型（成员可高亮）', () => {
+    const code = `import t
+
+KBD_BUF_SIZE: int = 16
+
+class usb_kbd_event:
+    modifier:   uint8
+    keycode:    uint8
+    event_type: uint8
+
+kbd_buf: [KBD_BUF_SIZE]usb_kbd_event
+explicit: t.CArray[usb_kbd_event, KBD_BUF_SIZE]
+
+kbd_buf_head: int = 0
+
+def touch():
+    m: uint8 = kbd_buf[kbd_buf_head].modifier
+    n: uint8 = explicit[0].keycode
+    e: usb_kbd_event = kbd_buf[0]
+`;
+    const { program, configOptions, uri, serviceProvider, testDir } = buildProgramForCode(
+        code,
+        '__viper_carray_element__'
+    );
+
+    try {
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== [SIZE]StructT 元素访问诊断 ===');
+        diagnostics.forEach((d) => console.log(`  L${d.line}:${d.col} [category=${d.category}] ${d.message}`));
+
+        const real = diagnostics.filter((d) => d.category === 0 || d.category === 1);
+        assert.strictEqual(
+            real.length,
+            0,
+            `数组元素成员访问不应报错：${JSON.stringify(real)}`
+        );
+
+        // 成员名拿到语义 token（Viper 类字段解析到 VariableDeclaration → variable(3)，
+        // 与普通结构体字段一致）—— 即「高亮」；修前是 undefined(11)（默认白色）。
+        const tokensByLine = getSemanticTokens(program, uri);
+        const memberLine = tokensByLine.get(15) || [];
+        console.log('=== `kbd_buf[kbd_buf_head].modifier` 所在行语义 token ===');
+        memberLine.forEach((t) => console.log(`  [${t.tokenType}] ${t.text}`));
+        const modifierToken = memberLine.find((t) => t.text === 'modifier');
+        assert(modifierToken, `该行应有 modifier 的语义 token：${JSON.stringify(memberLine)}`);
+        assert.strictEqual(
+            modifierToken!.tokenType,
+            3,
+            `modifier 应为 variable(3) 语义 token（未解析时是 undefined(11)），实际 ${modifierToken!.tokenType}`
         );
     } finally {
         program.dispose();

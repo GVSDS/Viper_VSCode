@@ -4,9 +4,11 @@
  */
 
 import * as path from 'path';
-import { commands, ExtensionContext, ProgressLocation, window, workspace } from 'vscode';
+import { commands, ExtensionContext, OutputChannel, ProgressLocation, Uri, window, workspace } from 'vscode';
 import { EnvironmentManager } from './environmentManager';
 import { EnvironmentTool } from './environmentTool';
+import { CountProjectLoc, FormatLocReport, LocReport } from './lineCounter';
+import { LocReportView } from './locReportView';
 import { ProjectManager } from './projectManager';
 import { ToolchainManager } from './toolchainManager';
 import { ViperCheckResult, ViperEnvironment } from './types';
@@ -24,6 +26,10 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
     const vetChannel = window.createOutputChannel('Vipeye VET');
     const environmentTool = new EnvironmentTool(context.globalStorageUri.fsPath, vetChannel);
     const environments = new EnvironmentManager(context.globalState);
+
+    // LOC 统计输出通道（右键 .vpj → 统计该工程源目录下所有已知语言的行数）。
+    const locChannel = window.createOutputChannel('Viper LOC');
+    context.subscriptions.push(locChannel);
 
     // 初始扫描项目文件。
     await projects.DiscoverProjects();
@@ -148,6 +154,9 @@ export async function activate(context: ExtensionContext): Promise<ViperApiImpl>
             }
             // 用默认文本编辑器打开，绕过自定义 webview 编辑器。
             await window.showTextDocument(target, { preview: false });
+        }),
+        RegisterCommandSafe(context, 'viper.countLines', async (uri?: unknown) => {
+            await CountProjectLocCommand(context, projects, locChannel, IsUri(uri) ? uri : undefined);
         })
     );
 
@@ -381,4 +390,68 @@ function ShowProjectInfoCommand(projects: ProjectManager): void {
     channel.clear();
     channel.appendLine(lines.join('\n'));
     channel.show();
+}
+
+/** 判断命令参数是否为 Uri（右键菜单传入的第一个参数）。 */
+function IsUri(value: unknown): value is Uri {
+    return !!value && typeof value === 'object' && typeof (value as Uri).fsPath === 'string';
+}
+
+/** 取本命令要统计的工程文件：右键传入的 .vpj → 当前活动编辑器（是 .vpj 时）。 */
+function ResolveProjectFile(uri?: Uri): Uri | undefined {
+    const isProjectFile = (candidate: Uri | undefined): boolean =>
+        !!candidate && path.extname(candidate.fsPath).toLowerCase() === '.vpj';
+
+    if (isProjectFile(uri)) {
+        return uri;
+    }
+    const activeUri = window.activeTextEditor?.document.uri;
+    return isProjectFile(activeUri) ? activeUri : undefined;
+}
+
+/**
+ * 「统计项目 LOC」：右键 .vpj → 统计该工程源目录（source_dir，通常为 App）下
+ * 所有已知语言（.vp/.vpi/.vpnci/.vpj/.def）的文件数与行数，
+ * 结果在 Webview 面板里以进度条 + 图表 + 明细表展示（另存一份纯文本到输出通道）。
+ * 未传文件参数（命令面板）时退回当前工作区已加载的工程。
+ */
+async function CountProjectLocCommand(
+    context: ExtensionContext,
+    projects: ProjectManager,
+    channel: OutputChannel,
+    uri?: Uri
+): Promise<void> {
+    const projectFile = ResolveProjectFile(uri);
+    // 右键的 .vpj 可能不是 DiscoverProjects 留下（每个工作区只保留最后一个）的那个，
+    // 故按点击的文件重新解析，保证统计的就是被点中的工程。
+    const project = projectFile ? projects.LoadProject(projectFile) : projects.GetProject();
+    if (!project) {
+        void window.showWarningMessage('未找到 Viper 工程：请对 .vpj 文件使用本命令。');
+        return;
+    }
+
+    const view = LocReportView.Show(context);
+    view.StartRun(project.Name, project.ProjectFile, project.SourceDir);
+
+    let report: LocReport;
+    try {
+        report = await CountProjectLoc(project.SourceDir, [project.BuildDir], (progress) => {
+            view.ReportProgress(progress);
+        });
+    } catch (error) {
+        view.ReportError(`统计失败：${error instanceof Error ? error.message : String(error)}`);
+        return;
+    }
+
+    // 纯文本一份留档（便于复制），主力展示在 Webview。
+    channel.clear();
+    channel.appendLine(FormatLocReport(report, project.Name, project.ProjectFile));
+
+    view.ReportResult({ ...report, ProjectName: project.Name, ProjectFile: project.ProjectFile });
+
+    if (report.Total.FileCount > 0) {
+        void window.showInformationMessage(
+            `LOC：${report.Total.CodeLines} 行代码 / ${report.Total.TotalLines} 行（${report.Total.FileCount} 个文件，注释率 ${(report.Total.CommentRate * 100).toFixed(1)}%）`
+        );
+    }
 }

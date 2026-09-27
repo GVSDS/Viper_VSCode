@@ -5892,7 +5892,15 @@ export class Parser {
 
         let sizeExpr: ExpressionNode | undefined;
         if (this._peekTokenType() !== TokenType.CloseBracket) {
+            // SIZE 是**值表达式**（数组长度），不是类型表达式：期间必须关掉
+            // _isParsingTypeAnnotation。否则 `[N * M]T` 里的 `*` 会被
+            // _parseArithmeticTerm 的「类型注解中停止解析（交给指针后缀处理）」
+            // 分支吞掉，导致 `]` 找不到（误报「[ 未关闭」），并把残留的
+            // `* M]T` 当解包运算符继续解析（误报「类型表达式中不允许使用解包运算符」）。
+            const wasParsingTypeAnnotation = this._isParsingTypeAnnotation;
+            this._isParsingTypeAnnotation = false;
             sizeExpr = this._parseTestExpression(/* allowAssignmentExpression */ false);
+            this._isParsingTypeAnnotation = wasParsingTypeAnnotation;
         }
 
         const closeBracketToken = this._peekToken();

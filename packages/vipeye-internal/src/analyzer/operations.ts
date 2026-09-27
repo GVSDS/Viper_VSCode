@@ -432,7 +432,7 @@ export function getTypeOfBinaryOperation(
         // Exempt "|" because it might be a union operation involving unknowns.
         // Viper 是 AOT 静态语言，类型表达式中的算术/位运算用于编译时常量
         // （如 t.CArray[T, MAX_ORDER + 1] 的数组长度），放行不报 binaryOperationNotAllowed。
-        if (node.d.operator !== OperatorType.BitwiseOr) {
+        if (node.d.operator !== OperatorType.BitwiseOr && !isViperIntegerConstantArithmetic(node, leftType, rightType)) {
             evaluator.addDiagnostic(DiagnosticRule.reportInvalidTypeForm, LocMessage.binaryOperationNotAllowed(), node);
             return { type: UnknownType.create() };
         }
@@ -897,6 +897,38 @@ export function getTypeOfUnaryOperation(
     return { type, isIncomplete, magicMethodDeprecationInfo: deprecatedInfo };
 }
 
+// Viper 扩展：类型表达式里的**编译期整型常量运算**放行（不报 binaryOperationNotAllowed）。
+// Viper 是 AOT 静态语言，数组长度等类型参数就是编译期整型常量表达式：
+//   `x: t.CArray[t.CUInt8T, MAX_ORDER + 1]`
+//   `part_types: [MAX_VOLUMES * MAX_PARTITIONS]uint8`（`[SIZE]T` 脱糖为 t.CArray[T, SIZE]）
+// 判据：两侧都是 Viper 整型（含整型字面量），且运算符属于算术/位运算集合。
+// 其他情况（如类名相加、比较运算）仍按原逻辑报错。
+function isViperIntegerConstantArithmetic(node: BinaryOperationNode, leftType: Type, rightType: Type): boolean {
+    if (!IsViperDialect(getFileInfo(node).executionEnvironment.dialect)) {
+        return false;
+    }
+    if (!isViperIntegerType(leftType) || !isViperIntegerType(rightType)) {
+        return false;
+    }
+
+    switch (node.d.operator) {
+        case OperatorType.Add:
+        case OperatorType.Subtract:
+        case OperatorType.Multiply:
+        case OperatorType.Power:
+        case OperatorType.Divide:
+        case OperatorType.FloorDivide:
+        case OperatorType.Mod:
+        case OperatorType.LeftShift:
+        case OperatorType.RightShift:
+        case OperatorType.BitwiseAnd:
+        case OperatorType.BitwiseXor:
+            return true;
+        default:
+            return false;
+    }
+}
+
 // Viper 扩展：C 指针算术的结果类型。
 //   - `p + n` / `p - n` / `n + p`（p 为 str/bytes，即 char*；n 为整数或 char）
 //     → 结果仍是指针 p 的类型（类型不变）
@@ -939,9 +971,20 @@ function getTypeOfViperDeref(
 ): TypeResult {
     const resultTypes: Type[] = [];
     let sawNonPointer = false;
+    const isViperDialect = IsViperDialect(getFileInfo(node).executionEnvironment.dialect);
 
     mapSubtypes(exprType, (subtype) => {
         if (isAnyOrUnknown(subtype)) {
+            resultTypes.push(subtype);
+            return subtype;
+        }
+
+        // Viper 扩展：类型描述符（const / volatile / static 等修饰符）不是指针，
+        // 原样保留在结果里，不算「非指针类型」：
+        //   `lfn: const str`（AST = `CConst | str`）→ `*lfn` = `CConst | char`
+        // 可写性另由赋值侧判定（typeEvaluator.assignTypeToExpression 的
+        // 「解引用赋值」分支拒绝 const 指针），故这里只放行、不报错。
+        if (isViperDialect && isClass(subtype) && isCModifierType(subtype)) {
             resultTypes.push(subtype);
             return subtype;
         }

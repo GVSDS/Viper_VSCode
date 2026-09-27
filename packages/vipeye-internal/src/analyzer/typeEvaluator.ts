@@ -4910,6 +4910,21 @@ export function createTypeEvaluator(
                     target.d.operator === OperatorType.Multiply &&
                     IsViperDialect(AnalyzerNodeInfo.getFileInfo(target).executionEnvironment.dialect)
                 ) {
+                    // Viper 扩展：const 指针（如 `lfn: const str` = `CConst | str`）指向只读
+                    // 数据 —— 解引用**读**允许（见 operations.getTypeOfViperDeref），
+                    // 解引用**赋值**必须报错（C 语义）。
+                    const pointerType = getTypeOfExpression(target.d.expr).type;
+                    if (isViperConstPointerType(pointerType)) {
+                        addDiagnostic(
+                            DiagnosticRule.reportGeneralTypeIssues,
+                            LocMessage.viperConstDerefAssignment().format({
+                                type: printType(pointerType),
+                            }),
+                            target
+                        );
+                        break;
+                    }
+
                     // 解引用目标类型 = p 指向的类型（getTypeOfViperDeref）。
                     const derefTypeResult = getTypeOfExpression(target);
                     assignType(derefTypeResult.type, typeResult.type, expectedTypeDiagAddendum);
@@ -9514,6 +9529,29 @@ export function createTypeEvaluator(
     function isViperStaticSymbolFromOtherFile(symbol: Symbol, fileInfo: AnalyzerFileInfo): boolean {
         const fileUri = fileInfo.fileUri.toString();
         return symbol.getDeclarations().some((decl) => isViperStaticDeclaration(decl) && decl.uri.toString() !== fileUri);
+    }
+
+    // Viper 扩展：判定类型是否为「const 指针」（如 `lfn: const str` 的 `CConst | str`）。
+    // 判据：**既含 CConst 修饰符子类型，又含指针类子类型**（str / bytes / CPtr / void*）。
+    // 要求两者同时成立，是为了不把 `const int` 这类非指针的 const 也算进来
+    // （那种情况本身会由解引用的「非指针类型不支持 *」报错）。
+    // 用途：`*p = value` 的 const 只读校验（只允许解引用读，不允许解引用赋值）。
+    function isViperConstPointerType(type: Type): boolean {
+        let hasConstModifier = false;
+        let hasPointer = false;
+        mapSubtypes(type, (subtype) => {
+            if (isClass(subtype) && isCConstType(subtype)) {
+                hasConstModifier = true;
+            } else if (
+                (isClassInstance(subtype) &&
+                    (isCPtrType(subtype) || ClassType.isBuiltIn(subtype, ['str', 'bytes']))) ||
+                (isClass(subtype) && isCVoidType(subtype))
+            ) {
+                hasPointer = true;
+            }
+            return subtype;
+        });
+        return hasConstModifier && hasPointer;
     }
 
     // Viper 扩展：解析 `t.attr.<name>` / `t.attr.<name>(...)` 属性标记 → t.CAttr 实例。

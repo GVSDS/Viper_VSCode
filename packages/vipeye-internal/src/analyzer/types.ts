@@ -3515,11 +3515,12 @@ const _viperCTypeSizeMap = new Map<string, number>([
 
 // Viper 扩展：判断 CType 子类之间的隐式转换是否合法。
 // 规则：
-//   1. 整数 → 整数：srcSize <= destSize 允许（低向高或同级），否则不允许
-//   2. 浮点 → 浮点：srcSize <= destSize 允许
+//   1. 整数 → 整数：允许所有方向（C 语义，高向低可安全降级）
+//   2. 浮点 → 浮点：允许所有方向
 //   3. 整数 → 浮点：destSize >= srcSize 允许（无损）
 //   4. 浮点 → 整数：不允许（有损）
-//   5. 同级指针（都是 CPtr 子类）：允许不同类型转换
+//   5. 指针 → 指针（都是 CPtr 子类）：级数必须相同，且 **pointee 必须兼容**
+//      （见 isViperCPtrPointeeAssignable）——不再无条件允许
 //   6. 不同级（一个是指针，另一个不是）：不允许
 //   7. 未知位宽：保守允许（避免误报）
 export function canImplicitlyConvertCType(srcType: Type, destType: Type): boolean {
@@ -3530,18 +3531,30 @@ export function canImplicitlyConvertCType(srcType: Type, destType: Type): boolea
     const srcName = srcType.shared.name;
     const destName = destType.shared.name;
 
+    // Viper 扩展：指针 → 指针（都是 CPtr 子类）的 pointee 兼容性检查。
+    // 必须放在下面的「同名即允许」快捷判断**之前**：CPtr↔CPtr 的 shared.name
+    // 都是 'CPtr'，否则会因同名而无条件通过（pointee 类型完全不看）。
+    if (isCPtrType(srcType) && isCPtrType(destType)) {
+        return isViperCPtrPointeeAssignable(destType, srcType);
+    }
+
     // 同类型，允许
     if (srcName === destName) {
         return true;
     }
 
-    // 指针规则：同级指针（都是 CPtr 子类）允许，不同级不允许
-    const srcIsPtr = isCPtrType(srcType);
-    const destIsPtr = isCPtrType(destType);
-    if (srcIsPtr && destIsPtr) {
+    // Viper 扩展：单级指针 ↔ void*（CVoid）语义（C 惯例）。
+    // 任意对象指针可隐式转为 void*，void* 也可隐式转回任意对象指针。
+    // 多级指针（如 Node** → void*）仍禁止，与跨级指针守卫口径一致。
+    if (isCPtrType(srcType) && getCPtrLevel(srcType) === 1 && isCVoidType(destType)) {
         return true;
     }
-    if (srcIsPtr !== destIsPtr) {
+    if (isCVoidType(srcType) && isCPtrType(destType) && getCPtrLevel(destType) === 1) {
+        return true;
+    }
+
+    // 指针规则（剩余情况只剩「一侧指针、一侧非指针」）：不允许
+    if (isCPtrType(srcType) !== isCPtrType(destType)) {
         return false;
     }
 
@@ -3582,6 +3595,97 @@ export function canImplicitlyConvertCType(srcType: Type, destType: Type): boolea
 
     // 其他情况（void 等），保守允许
     return true;
+}
+
+// Viper 扩展：pointee 是否为「数值标量」——C 整数 / C 浮点 / 内置 int|float|
+// double|char|bool，即用户口径的「基本类型」。
+// 非基本类型（结构体、类等）的指针**禁止**隐式互转（见 isViperCPtrPointeeAssignable）。
+function isViperNumericScalarPointee(type: Type): boolean {
+    if (!isClassInstance(type)) {
+        return false;
+    }
+    if (ClassType.isBuiltIn(type, ['int', 'float', 'double', 'char', 'bool'])) {
+        return true;
+    }
+    const name = type.shared.name;
+    return _viperCIntegerTypeNames.has(name) || _viperCFloatTypeNames.has(name);
+}
+
+// Viper 扩展：把 pointee 规范化为可比较的「核心类型」：
+//   1. 去掉联合里的 C 修饰符（CConst / CVolatile / CStatic / ...）：
+//      如 `volatile int`（= CVolatile | int）→ int；
+//   2. 统一为**实例形态**：`type[ParamNode]`（类对象）与 ParamNode（实例）
+//      是同一个类，须可比。
+function normalizeViperPointeeType(type: Type): Type {
+    let core: Type = type;
+    if (isUnion(core)) {
+        const nonModifiers = core.priv.subtypes.filter((subtype) => !(isClass(subtype) && isCModifierType(subtype)));
+        if (nonModifiers.length === 1) {
+            core = nonModifiers[0];
+        }
+    }
+    if (isInstantiableClass(core)) {
+        core = ClassType.cloneAsInstance(core);
+    }
+    return core;
+}
+
+// Viper 扩展：两个 CPtr 之间是否允许隐式转换（指针 → 指针）。
+// 规则（2026-09-28 收紧，原先「同级即无条件允许」）：
+//   1. 级数必须相同（getCPtrLevel）——不同级一律拒绝；
+//   2. 任一侧 pointee 是 void*（CVoid）或未定（rawptr = CPtr[未特化]，其实参是
+//      类自身的 TypeVar）→ 允许（void* 通用指针语义，malloc 等场景依赖它）；
+//   3. pointee 规范化后完全相同 → 允许；
+//   4. 两侧 pointee 都是数值标量（基本类型）→ 按 T 的隐式转换规则
+//      （整数/浮点全方向、整数→浮点需位宽≥、浮点→整数禁止）；
+//   5. 结构体（非基本类型）：仅允许「源类派生自目标类」的**上转型**
+//      （如 MemBuddy* → MemManager*，真实代码 memhub/requests 依赖），
+//      其余（不相关的两个结构体、向下转型）一律拒绝。
+function isViperCPtrPointeeAssignable(destPtr: ClassType, srcPtr: ClassType): boolean {
+    if (getCPtrLevel(destPtr) !== getCPtrLevel(srcPtr)) {
+        return false;
+    }
+
+    const rawDestPointee =
+        destPtr.priv.typeArgs && destPtr.priv.typeArgs.length > 0 ? destPtr.priv.typeArgs[0] : undefined;
+    const rawSrcPointee = srcPtr.priv.typeArgs && srcPtr.priv.typeArgs.length > 0 ? srcPtr.priv.typeArgs[0] : undefined;
+
+    // 未定 pointee（裸 rawptr / CPtr 无实参）→ 通用指针，允许。
+    // 注意：裸 `rawptr`（= t.CPtr 未特化）的实参是**类自身的 TypeVar**，不是
+    // UnknownType（getCPtrLevel 视其为 1 级），故这里必须一并认 TypeVar。
+    if (!rawDestPointee || !rawSrcPointee || isTypeVar(rawDestPointee) || isTypeVar(rawSrcPointee)) {
+        return true;
+    }
+
+    const destPointee = normalizeViperPointeeType(rawDestPointee);
+    const srcPointee = normalizeViperPointeeType(rawSrcPointee);
+
+    // void* 通用指针（任一侧）→ 允许。
+    if (isCVoidType(destPointee) || isCVoidType(srcPointee)) {
+        return true;
+    }
+    if (isUnknown(destPointee) || isUnknown(srcPointee)) {
+        return true;
+    }
+    // pointee 完全相同 → 允许。
+    if (isTypeSame(destPointee, srcPointee)) {
+        return true;
+    }
+    // 仅「基本类型（数值标量）」之间按 T 的隐式转换规则放行。
+    if (isViperNumericScalarPointee(destPointee) && isViperNumericScalarPointee(srcPointee)) {
+        return canImplicitlyConvertCType(srcPointee, destPointee);
+    }
+    // 结构体等非基本类型：仅允许上转型（源类派生自目标类）。
+    // 注意：isDerivedFrom 的比较必须在**可实例化形态**下进行（类的 baseClasses
+    // 存的是 instantiable 基类，与实例形态混比会因 instance/instantiable 差异误判）。
+    if (isClassInstance(destPointee) && isClassInstance(srcPointee)) {
+        const srcForCompare = ClassType.cloneAsInstantiable(srcPointee);
+        const destForCompare = ClassType.cloneAsInstantiable(destPointee);
+        const inheritanceChain: InheritanceChain = [];
+        return ClassType.isDerivedFrom(srcForCompare, destForCompare, inheritanceChain);
+    }
+    // 其余（如联合 pointee）→ 禁止隐式转换。
+    return false;
 }
 
 export function isAny(type: Type): type is AnyType {

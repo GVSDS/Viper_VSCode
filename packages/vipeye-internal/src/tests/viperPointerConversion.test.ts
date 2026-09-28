@@ -13,8 +13,8 @@
  *      - pointee 任一侧是 void* / 未定（`rawptr`）→ 允许；
  *      - pointee 相同 → 允许；
  *      - pointee 都是基本类型（数值标量）→ 按 T 的隐式转换规则；
- *      - 结构体（非基本类型）→ 仅允许「源类派生自目标类」的上转型，
- *        不相关的结构体、向下转型一律禁止；
+ *      - 结构体（非基本类型）→ 仅允许**同一继承体系内**的转换（上转型 + 下转型），
+ *        不相关的结构体、结构体 ↔ 基本类型一律禁止；
  *      - 单级指针 ↔ void*（CVoid）双向允许；多级（如 Node** → void*）禁止。
  *
  * 运行：npx jest src/tests/viperPointerConversion.test.ts --runInBand
@@ -266,6 +266,73 @@ def take_void_of(p: t.CVoid) -> None:
             lines,
             [36, 46, 49],
             `应且仅应报 L36（Node*→Other*）、L46（Node*→uint64*）、L49（Node**→void*）：${JSON.stringify(
+                diagnostics.filter((d) => d.category === 0 || d.category === 1)
+            )}`
+        );
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        require('fs').rmSync(testDir, { recursive: true, force: true });
+    }
+});
+
+test('同一继承体系内的结构体指针双向转换（上转型 / 下转型），不相关结构体仍拒绝', () => {
+    // 下转型的真实依赖：TransPyV/App/lib/core/Gen/Call/CallGenDispatch.vp:824
+    //   len_arg_node: ast.AST* = cargs.get(0)
+    //   ..._is_list_builtin_receiver(pool, len_val, len_cls_nm, "__len__", len_arg_node)
+    //   形参声明为 cl: rawptr[ast.Call]（Call 派生自 AST）
+    // Viper 指针运行期不带静态类型（都是 i8*），同一继承体系内的 reinterpret 是
+    // 既有代码的常规写法，故 `AST* → Call*`（下转型）与 `Call* → AST*`（上转型）都放行。
+    const code = `import t
+
+class AST:
+    kind: int
+
+class Call(AST):
+    callee: int
+
+class Other:
+    w: int
+
+def take_call(cl: rawptr[Call]) -> int:
+    return 0
+
+def take_ast(n: rawptr[AST]) -> int:
+    return 0
+
+def take_other(o: rawptr[Other]) -> int:
+    return 0
+
+def downcast(n: rawptr[AST]) -> int:
+    return take_call(n)
+
+def upcast(c: rawptr[Call]) -> int:
+    return take_ast(c)
+
+def unrelated(n: rawptr[AST]) -> int:
+    return take_other(n)
+`;
+    const { program, configOptions, uri, testDir, serviceProvider } = buildProgramForCode(
+        code,
+        '__viper_ptr_hierarchy__'
+    );
+
+    try {
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== 继承体系指针诊断 ===');
+        diagnostics
+            .filter((d) => d.category === 0 || d.category === 1)
+            .forEach((d) => console.log(`  L${d.line} [cat=${d.category}] ${d.message}`));
+
+        // 允许：L22（AST* → Call*，下转型）、L25（Call* → AST*，上转型）
+        // 拒绝：L28（AST* → Other*，不相关结构体）
+        const lines = hardErrorLines(program, configOptions, uri);
+        console.log('=== 报错行 ===');
+        lines.forEach((l) => console.log(`  L${l}`));
+        assert.deepStrictEqual(
+            lines,
+            [28],
+            `应且仅应报 L28（AST*→Other*，不相关结构体）：${JSON.stringify(
                 diagnostics.filter((d) => d.category === 0 || d.category === 1)
             )}`
         );

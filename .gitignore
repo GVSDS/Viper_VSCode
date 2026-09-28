@@ -148,6 +148,7 @@ packages/vipeye-internal/src/tests/__viper_attribute_implicit_scope__/
 packages/vipeye-internal/src/tests/__viper_attribute_unknown__/
 packages/vipeye-internal/src/tests/__viper_ptr_unary__/
 packages/vipeye-internal/src/tests/__viper_ptr_convert__/
+packages/vipeye-internal/src/tests/__viper_ptr_hierarchy__/
 packages/vipeye-internal/src/tests/__viper_vtable_assign_ok__/
 packages/vipeye-internal/src/tests/__viper_vtable_assign_bad__/
 packages/vipeye-internal/src/tests/__viper_vtable_assign_plain__/

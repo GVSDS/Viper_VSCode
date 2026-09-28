@@ -3676,9 +3676,10 @@ function isViperREnumRootClass(classType: ClassType): boolean {
 //   3.5. 同一 REnum 家族（根 ↔ 变体，见 isViperREnumFamilyPointee）→ 允许；
 //   4. 两侧 pointee 都是数值标量（基本类型）→ 按 T 的隐式转换规则
 //      （整数/浮点全方向、整数→浮点需位宽≥、浮点→整数禁止）；
-//   5. 结构体（非基本类型）：仅允许「源类派生自目标类」的**上转型**
-//      （如 MemBuddy* → MemManager*，真实代码 memhub/requests 依赖），
-//      其余（不相关的两个结构体、向下转型）一律拒绝。
+//   5. 结构体（非基本类型）：仅允许**同一继承体系内**的转换 —— 上转型
+//      （MemBuddy* → MemManager*，真实代码 memhub/requests 依赖）与下转型
+//      （AST* → Call*，CallGenDispatch.vp:824 依赖）都放行；
+//      不相关的两个结构体（Node* → Other*）、结构体 ↔ 基本类型一律拒绝。
 function isViperCPtrPointeeAssignable(destPtr: ClassType, srcPtr: ClassType): boolean {
     if (getCPtrLevel(destPtr) !== getCPtrLevel(srcPtr)) {
         return false;
@@ -3717,14 +3718,17 @@ function isViperCPtrPointeeAssignable(destPtr: ClassType, srcPtr: ClassType): bo
     if (isViperNumericScalarPointee(destPointee) && isViperNumericScalarPointee(srcPointee)) {
         return canImplicitlyConvertCType(srcPointee, destPointee);
     }
-    // 结构体等非基本类型：仅允许上转型（源类派生自目标类）。
+    // 结构体等非基本类型：仅允许**同一继承体系内**的转换（上转型 + 下转型）。
     // 注意：isDerivedFrom 的比较必须在**可实例化形态**下进行（类的 baseClasses
     // 存的是 instantiable 基类，与实例形态混比会因 instance/instantiable 差异误判）。
     if (isClassInstance(destPointee) && isClassInstance(srcPointee)) {
         const srcForCompare = ClassType.cloneAsInstantiable(srcPointee);
         const destForCompare = ClassType.cloneAsInstantiable(destPointee);
         const inheritanceChain: InheritanceChain = [];
-        return ClassType.isDerivedFrom(srcForCompare, destForCompare, inheritanceChain);
+        return (
+            ClassType.isDerivedFrom(srcForCompare, destForCompare, inheritanceChain) ||
+            ClassType.isDerivedFrom(destForCompare, srcForCompare, inheritanceChain)
+        );
     }
     // 其余（如联合 pointee）→ 禁止隐式转换。
     return false;

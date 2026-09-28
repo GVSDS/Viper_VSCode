@@ -24,6 +24,10 @@
  * ④ `[SIZE]StructT` / `t.CArray[StructT, N]` 的元素访问能解析出元素类型：
  *    `buf[i].field` 不再报「无法解析类型上的成员访问」，成员名可高亮
  *    （Viper 侧按 C 语义直接取 CArray 的第一个类型实参，不依赖 TypeVar 替换）。
+ * ⑤ `[SIZE]T` 脱糖出的合成 `t` 名**不要求源码 `import t`**：文件没 `import t` 时
+ *    回退到 builtins 作用域的 `t` 模块（与 `T*` 的 rawptr 回退同口径），否则
+ *    `coroutines: [8]Coroutine` 会整条塌成 Unknown，`m.coroutines[i].rsp` 报
+ *    「无法解析类型上的成员“rsp”访问」且 `.rsp` 拿不到语义 token（黄标）。
  *
  * 运行：npx jest src/tests/viperBracketArrayAndConstPtr.test.ts --runInBand
  */
@@ -389,6 +393,69 @@ def touch():
             modifierToken!.tokenType,
             3,
             `modifier 应为 variable(3) 语义 token（未解析时是 undefined(11)），实际 ${modifierToken!.tokenType}`
+        );
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        require('fs').rmSync(testDir, { recursive: true, force: true });
+    }
+});
+
+/*
+ * ⑤ `[SIZE]T` 数组不要求源码 `import t`（ViperOS 协程调度器场景）：
+ *      class CoroutineManager:
+ *          coroutines: [8]Coroutine
+ *      m: CoroutineManager* = _coro_mgr_ptr
+ *      m.coroutines[prev_cid].rsp
+ *    合成 `t` 名（见 parser._parseViperBracketArrayType）解析不到时原先直接降级为
+ *    Unknown，导致 `coroutines` 字段类型整条塌成 Unknown → `m.coroutines[i].rsp`
+ *    报「无法解析类型上的成员“rsp”访问」，`.rsp` 也随之不高亮。修复后回退到
+ *    builtins 作用域的 `t` 模块（与 `T*` 的 rawptr 回退同口径），无 import 也成立。
+ */
+test('无 import t 时 [SIZE]StructT 数组仍解析元素类型（.rsp 可高亮）', () => {
+    const code = `class Coroutine:
+    rsp: uint64
+    cid: int
+
+class CoroutineManager:
+    current_cid: int
+    coroutines: [8]Coroutine
+
+_coro_mgr_ptr: CoroutineManager* = None
+
+def f() -> uint64:
+    m: CoroutineManager* = _coro_mgr_ptr
+    prev_cid: int = m.current_cid
+    return m.coroutines[prev_cid].rsp
+`;
+    const { program, configOptions, uri, serviceProvider, testDir } = buildProgramForCode(
+        code,
+        '__viper_bracket_array_no_import_t__'
+    );
+
+    try {
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== 无 import t 的 [SIZE]T 元素访问诊断 ===');
+        diagnostics.forEach((d) => console.log(`  L${d.line}:${d.col} [category=${d.category}] ${d.message}`));
+
+        const real = diagnostics.filter((d) => d.category === 0 || d.category === 1);
+        assert.strictEqual(
+            real.length,
+            0,
+            `无 import t 时数组元素成员访问不应报错：${JSON.stringify(real)}`
+        );
+
+        // `.rsp`（第 14 行，0-based 13）应拿到 variable(3) 语义 token —— 即「高亮」。
+        const tokensByLine = getSemanticTokens(program, uri);
+        const rspLine = tokensByLine.get(13) || [];
+        console.log('=== `m.coroutines[prev_cid].rsp` 所在行语义 token ===');
+        rspLine.forEach((t) => console.log(`  [${t.tokenType}] ${t.text}`));
+        const rspToken = rspLine.find((t) => t.text === 'rsp');
+        assert(rspToken, `该行应有 rsp 的语义 token：${JSON.stringify(rspLine)}`);
+        assert.strictEqual(
+            rspToken!.tokenType,
+            3,
+            `rsp 应为 variable(3) 语义 token（未解析时是 undefined(11)），实际 ${rspToken!.tokenType}`
         );
     } finally {
         program.dispose();

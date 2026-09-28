@@ -156,6 +156,7 @@ packages/vipeye-internal/src/tests/__viper_const_ptr_index__/
 packages/vipeye-internal/src/tests/__viper_const_ptr_iter__/
 packages/vipeye-internal/src/tests/__viper_variadic_noimport__/
 packages/vipeye-internal/src/tests/__viper_carray_element__/
+packages/vipeye-internal/src/tests/__viper_bracket_array_no_import_t__/
 packages/vipeye-internal/src/tests/__viper_export_extern__/
 
 # perfCompare.py cached commit bundles

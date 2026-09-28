@@ -5396,9 +5396,13 @@ export function createTypeEvaluator(
             } else if (node.d.isViperBracketArraySynthetic) {
                 // Viper 扩展：`[SIZE]T` 数组语法脱糖出的合成 `t` 名
                 // （见 parser._parseViperBracketArrayType）。源文件未 import t 时
-                // 该名无法解析，静默退化为 Unknown（不报"未定义 t"），
-                // 数组类型语义随之退化；正常 Viper 源码均带 import t。
-                type = UnknownType.create();
+                // 该名在词法作用域里解析不到，此时**回退到 builtins 作用域的同名模块
+                // 绑定**（与 `T*` 的 rawptr 回退、`__attribute__` 的隐式模块根同口径，
+                // 见 getViperImplicitModuleType）：否则 `coroutines: [8]Coroutine`
+                // 这类数组字段注解会整体退化成 Unknown，其元素成员访问
+                // （`m.coroutines[i].rsp`）随之解析不出来。
+                // 仍取不到才静默退化为 Unknown（不报"未定义 t"）。
+                type = getViperImplicitModuleType(node, name) ?? UnknownType.create();
             } else if (node.d.isViperTypedef) {
                 // Viper 扩展：`typedef T1 = T2` 脱糖出的合成 `t` 名
                 // （见 parser._parseViperTypedefStatement）。该写法不要求源码

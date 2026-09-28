@@ -138,7 +138,11 @@ import {
 import { DocumentSymbolCollector } from './documentSymbolCollector';
 import { getImportFromTarget, getModuleNameCompletionSuggestions } from './importStatementCandidates';
 import { getAutoImportText, getDocumentationPartsForTypeAndDecl } from './tooltipUtils';
-import { findViperAttributeContext, getViperAttributeSymbols } from './viperAttributeUtils';
+import {
+    findViperAttributeContext,
+    getViperAttributeSymbols,
+    getViperUndeclaredAttributeNames,
+} from './viperAttributeUtils';
 
 namespace Keywords {
     const base: string[] = [
@@ -3555,6 +3559,16 @@ export class CompletionProvider {
                 declaredOnBoundObjectOrClass: true,
                 funcParensDisabled: false,
                 extraCommitChars: !!priorWord,
+            });
+        });
+
+        // 属性名是编译器级开放集合：`t.attr` 未声明、但 codegen 支持的名字
+        // （如 stackrealign）也要列出（见 viperAttributeUtils）。
+        getViperUndeclaredAttributeNames(attributeInfo).forEach((name) => {
+            this.addNameToCompletions(name, CompletionItemKind.Function, priorWord, completionMap, {
+                funcParensDisabled: false,
+                extraCommitChars: !!priorWord,
+                itemDetail: '__attribute__ 属性名（编译器 codegen 支持）',
             });
         });
 

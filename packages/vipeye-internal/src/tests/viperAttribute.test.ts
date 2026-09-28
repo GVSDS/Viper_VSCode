@@ -10,7 +10,8 @@
  *   ③ 注解联合里的属性标记 `T | t.attr.<name>` / `T | t.attr.llvm.<name>`
  *      求值为 t.CAttr（修饰符），不参与类型检查、展示不泄漏
  *   ④ 值位置 `volatile f()` / `volatile 结构体()`（标记调用为 volatile）
- *   ⑤ `__attribute__(` 括号内的属性名补全
+ *   ⑤ `__attribute__(` 括号内的属性名补全/悬停（含 `t.attr` 未声明、但编译器 codegen
+ *      支持的 `stackrealign`）
  *   ⑥ 属性名是编译器级开放集合：未声明在 `t.attr` 的名字（如 `stackrealign`）
  *      也按 function 高亮，且不报「无法访问属性」
  * 负例：`volatile = 2` / `const = 1` / `volatile 1`（非调用）仍须报错。
@@ -309,7 +310,8 @@ Attr: __attribute__() int = 1
         const labels: string[] = completions.items.map((item) => item.label);
         console.log(`=== __attribute__ 补全项 ${labels.length} 项：${labels.slice(0, 20).join(', ')} ===`);
 
-        for (const name of ['section', 'always_inline', 'aligned', 'packed', 'weak', 'noinline']) {
+        // 已声明的属性名 + 编译器 codegen 支持但 `t.attr` 未声明的 stackrealign
+        for (const name of ['section', 'always_inline', 'aligned', 'packed', 'weak', 'noinline', 'stackrealign']) {
             assert(labels.indexOf(name) >= 0, `__attribute__ 补全缺少属性 ${name}：${JSON.stringify(labels)}`);
         }
         // llvm 描述符类不是 __attribute__ 的属性名（属注解联合用法），不应出现在此处
@@ -431,7 +433,8 @@ Attr: __attribute__(section(".x")) const int = 1
         const text = typeof hover.contents === 'string' ? hover.contents : (hover.contents as any).value;
         console.log(`=== hover 内容（前 200 字）===\n${text.slice(0, 200)}`);
 
-        for (const name of ['section', 'always_inline', 'aligned', 'packed', 'weak']) {
+        // 已声明的属性名 + 编译器 codegen 支持但 `t.attr` 未声明的 stackrealign
+        for (const name of ['section', 'always_inline', 'aligned', 'packed', 'weak', 'stackrealign']) {
             assert(text.includes(name), `hover 应列出属性 ${name}：${text.slice(0, 300)}`);
         }
     } finally {

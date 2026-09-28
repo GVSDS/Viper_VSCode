@@ -6,6 +6,9 @@
  * 由 completionProvider（括号内属性名补全）与 hoverProvider（括号内属性名提示）共用，
  * 避免两处各写一份 `t.attr` 查找逻辑导致口径漂移。
  *
+ * 属性名是编译器级的**开放集合**，故清单 = `t.attr` 已声明的名字 ∪ 编译器 codegen
+ * 支持但未声明的名字（见 VIPER_UNDECLARED_ATTRIBUTE_NAMES），不能只依赖存根声明。
+ *
  * 为什么用文本扫描定位上下文：`__attribute__(...)` 在 parser 里会被脱糖
  * （装饰器 → `@c.Attribute(t.attr.X, ...)`；注解修饰器 → `t.attr.X | 内层类型`），
  * 原始调用节点不保留在 parse 树中，光标位置（尤其实参为空或拼写未完成时）
@@ -23,6 +26,32 @@ export interface ViperAttributeContext {
     nameStart: number;
     /** `__attribute__` 名字之后 `(` 的 offset（光标必须在其右侧才算在括号内）。 */
     openParen: number;
+}
+
+// 编译器（TransPyV）codegen 支持、但 `class attr` 里**未声明**的属性名。
+//
+// 属性名是编译器级的**开放集合**：TransPyV 的 codegen 映射里支持的名字不一定都
+// 声明在 `t.attr`（TransPyC 的 `lib/includes/t.py` / LSP 存根 `t.vpi` 的
+// `class attr` 两边一致，都没有 `stackrealign`）。补全/悬停若只枚举 `t.attr`，
+// 这类名字就看不到，故在此显式补齐。
+// 来源：TransPyC/TransPyV/App/lib/core/Gen/Func/FuncGenBase.vp（`attr_name ==
+//   "stackrealign"` → LLVM `"stackrealign"` 属性）；
+// 真实用例：ViperOS `VKernel/Kernel/main.vp`
+//   `@__attribute__(section(".text.startup"), aligned(16), stackrealign)`。
+export const VIPER_UNDECLARED_ATTRIBUTE_NAMES: readonly string[] = ['stackrealign'];
+
+// 补全/悬停用的**属性名全集**：`t.attr` 已声明的名字 ∪ 上面补齐的未声明名字，
+// 排序去重。属性名是开放集合，不能只依赖 `t.attr` 的声明。
+export function getViperAttributeNames(attributeInfo: { symbolTable: SymbolTable }): string[] {
+    const names = new Set<string>(attributeInfo.symbolTable.keys());
+    VIPER_UNDECLARED_ATTRIBUTE_NAMES.forEach((name) => names.add(name));
+    return Array.from(names).sort();
+}
+
+// `t.attr` 里**未声明**、只在编译器 codegen 里支持的属性名（补全时单独注入，
+// 已声明的走符号表，避免重复）。
+export function getViperUndeclaredAttributeNames(attributeInfo: { symbolTable: SymbolTable }): string[] {
+    return VIPER_UNDECLARED_ATTRIBUTE_NAMES.filter((name) => !attributeInfo.symbolTable.has(name));
 }
 
 // 判断 `offset` 是否位于 `__attribute__(...)` 的实参括号内，是则返回上下文。

@@ -69,7 +69,7 @@ import {
     getTypeForToolTip,
     getWrappedFunctionType,
 } from './tooltipUtils';
-import { findViperAttributeContext, getViperAttributeSymbols } from './viperAttributeUtils';
+import { findViperAttributeContext, getViperAttributeNames, getViperAttributeSymbols } from './viperAttributeUtils';
 
 export interface HoverTextPart {
     // 该部分按代码块渲染（markdown 下加代码围栏，见 convertHoverResults）。
@@ -459,7 +459,7 @@ export class HoverProvider {
             return null;
         }
 
-        const names = Array.from(attributeInfo.symbolTable.keys()).sort();
+        const names = getViperAttributeNames(attributeInfo);
 
         return {
             parts: [
@@ -469,7 +469,7 @@ export class HoverProvider {
                     text:
                         '\n\n带参数者写成调用，如 `section(".text.wo")` / `aligned(16)` / ' +
                         '`format(printf, 1, 2)`；无参数者可直接写属性名（`packed`）或写调用（`packed()`）。' +
-                        '\n\n属性清单来自 `t.attr`（TransPyC 的 `lib/includes/t.py`）。',
+                        '\n\n属性清单来自 `t.attr`（TransPyC 的 `lib/includes/t.py`）与编译器 codegen 支持的属性名。',
                 },
             ],
             range: {

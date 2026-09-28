@@ -3630,12 +3630,50 @@ function normalizeViperPointeeType(type: Type): Type {
     return core;
 }
 
+// Viper 扩展：两个 pointee 是否属于同一个 REnum（t.REnum tagged-union）家族——
+// 其一是继承自 t.REnum 的**根类**，另一个是声明时**嵌套**在根类 suite 里的
+// **变体类**（如 class LLVMType 内的 class Ptr / Int / Struct）。
+//
+// 变体类不是普通子类（不继承根类），故 isDerivedFrom 判不出来；但 TransPyV 对
+// 「变体指针 ↔ 根指针」只 emit bitcast（tagged-union 的负载地址与联合地址），
+// 两侧可自由互转。此外 match 的变体模式收窄会把 CPtr[LLVMType] 收窄成
+// CPtr[LLVMType.Ptr]（见 patternMatching.narrowTypeBasedOnClassPattern），
+// 若不认这一家族关系，收窄后的指针传回 rawptr[LLVMType] 形参会误报。
+//
+// 判定用 fullName 前缀（'LLVMType.Ptr' ⊂ 'LLVMType'），与 patternMatching 的
+// 收窄判定口径保持一致；同级的不同变体（Ptr vs Int）互不为前缀，仍被拒绝。
+function isViperREnumFamilyPointee(firstPointee: Type, secondPointee: Type): boolean {
+    if (!isClass(firstPointee) || !isClass(secondPointee)) {
+        return false;
+    }
+    const firstFullName = firstPointee.shared.fullName;
+    const secondFullName = secondPointee.shared.fullName;
+    if (!firstFullName || !secondFullName) {
+        return false;
+    }
+    if (firstFullName.startsWith(secondFullName + '.')) {
+        return isViperREnumRootClass(secondPointee);
+    }
+    if (secondFullName.startsWith(firstFullName + '.')) {
+        return isViperREnumRootClass(firstPointee);
+    }
+    return false;
+}
+
+// Viper 扩展：类是否继承自 t.REnum（REnum tagged-union 根类）。
+function isViperREnumRootClass(classType: ClassType): boolean {
+    return classType.shared.mro.some(
+        (baseClass) => isClass(baseClass) && !!baseClass.shared.fullName?.endsWith('.REnum')
+    );
+}
+
 // Viper 扩展：两个 CPtr 之间是否允许隐式转换（指针 → 指针）。
 // 规则（2026-09-28 收紧，原先「同级即无条件允许」）：
 //   1. 级数必须相同（getCPtrLevel）——不同级一律拒绝；
 //   2. 任一侧 pointee 是 void*（CVoid）或未定（rawptr = CPtr[未特化]，其实参是
 //      类自身的 TypeVar）→ 允许（void* 通用指针语义，malloc 等场景依赖它）；
 //   3. pointee 规范化后完全相同 → 允许；
+//   3.5. 同一 REnum 家族（根 ↔ 变体，见 isViperREnumFamilyPointee）→ 允许；
 //   4. 两侧 pointee 都是数值标量（基本类型）→ 按 T 的隐式转换规则
 //      （整数/浮点全方向、整数→浮点需位宽≥、浮点→整数禁止）；
 //   5. 结构体（非基本类型）：仅允许「源类派生自目标类」的**上转型**
@@ -3669,6 +3707,10 @@ function isViperCPtrPointeeAssignable(destPtr: ClassType, srcPtr: ClassType): bo
     }
     // pointee 完全相同 → 允许。
     if (isTypeSame(destPointee, srcPointee)) {
+        return true;
+    }
+    // REnum（t.REnum tagged-union）家族：变体指针 ↔ 根指针 双向允许。
+    if (isViperREnumFamilyPointee(destPointee, srcPointee)) {
         return true;
     }
     // 仅「基本类型（数值标量）」之间按 T 的隐式转换规则放行。

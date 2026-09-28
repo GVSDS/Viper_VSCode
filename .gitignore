@@ -164,6 +164,8 @@ packages/vipeye-internal/src/tests/__viper_variadic_noimport__/
 packages/vipeye-internal/src/tests/__viper_carray_element__/
 packages/vipeye-internal/src/tests/__viper_bracket_array_no_import_t__/
 packages/vipeye-internal/src/tests/__viper_export_extern__/
+packages/vipeye-internal/src/tests/__viper_renum_pointer__/
+packages/vipeye-internal/src/tests/__viper_renum_pointer_matrix__/
 
 # perfCompare.py cached commit bundles
 /build/perfCompare/

@@ -1640,6 +1640,7 @@
         "viperStaticUsedOutsideOfModule": "\"{name}\" is a static symbol and cannot be used across modules (static is visible only inside its defining module)",
         "viperConstDerefAssignment": "Cannot assign through a dereference of a const pointer (the data pointed to by \"{type}\" is read-only)",
         "viperExternVarCannotHaveValue": "An extern variable declaration cannot have an initializer (the symbol is defined externally)",
+        "viperStaticInAnnotationNotAllowed": "'static' is not allowed inside a type annotation; write it before the variable name instead ('static name: type')",
         "viperLenNoLenMethod": "Type \"{name}\" has no __len__ method and cannot be used with len()",
         "unhashableDictKey": "Dictionary key must be hashable",
         "unhashableSetEntry": {

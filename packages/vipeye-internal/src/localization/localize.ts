@@ -1214,6 +1214,8 @@ export namespace Localizer {
             new ParameterizedString<{ type: string }>(getRawString('Diagnostic.viperConstDerefAssignment'));
         export const viperExternVarCannotHaveValue = () =>
             getRawString('Diagnostic.viperExternVarCannotHaveValue');
+        export const viperStaticInAnnotationNotAllowed = () =>
+            getRawString('Diagnostic.viperStaticInAnnotationNotAllowed');
         export const viperLenNoLenMethod = () =>
             new ParameterizedString<{ name: string }>(getRawString('Diagnostic.viperLenNoLenMethod'));
         export const unhashableDictKey = () => getRawString('Diagnostic.unhashableDictKey');

@@ -9,6 +9,8 @@
  *      跨模块 `mod.name` / `mod.fn()` 由 typeEvaluator 的模块成员访问分支报错，
  *      `from mod import name` 由 checker 的 visitImportFromAs 报错；同模块自引用放行。
  *   ④ `static` 是软关键字：`static = 1` / `static: int` / `static(x)` 仍按普通标识符处理。
+ *   ⑤ 注解内前缀 `x: static T = v` **不支持**（TPC 只认语句起始形态）：报专用语法错误，
+ *      且不再连带报「"static" 未定义」（见 parser._checkViperStaticInAnnotationPosition）。
  *
  * 运行：npx jest src/tests/viperStaticModifier.test.ts --runInBand
  */
@@ -264,61 +266,41 @@ def f(static: int) -> int:
     }
 });
 
-// ViperOS 全仓实际写法是**注解内前缀**（`buf_head: static uint32 = 0`，
-// 见 VKernel/Kernel/drivers/**），此前 LSP 只认语句起始形态 `static x: T`，
-// 导致 `static` 在注解里被当普通名引用 → 误报「"static" is not defined」。
-test('注解内 static 前缀（x: static T = v）解析、展示与跨模块拦截', () => {
-    const { program, configOptions, uris, testRoot, serviceProvider } = buildProgram({
-        'lib.vp': `buf_head: static int = 0
+// 语句起始形态是唯一合法写法（与 TPC `_IsStaticModifier` 同口径）：
+// ViperOS 的真实写法是 `static memory_regions: memory_region* = None`，
+// 注解内前缀 `memory_regions: static memory_region* = None` 不再接受。
+test('语句起始 static（static x: T = v）合法，展示为 static 前缀且跨模块拦截', () => {
+    const code = `import t
 
-def touch() -> int:
-    return buf_head
-`,
-        'main.vp': `import lib
+class memory_region:
+    base: uint64
+    size: uint64
 
-def use() -> int:
-    return lib.buf_head
-`,
-    });
+static memory_regions: memory_region* = None
+
+def touch() -> uint64:
+    return memory_regions[0].base
+`;
+    const { program, configOptions, uris, testRoot, serviceProvider } = buildProgram({ 'lib.vp': code });
 
     try {
         const libDiags = getDiagnostics(program, configOptions, uris['lib.vp']);
-        console.log('=== 注解内 static 诊断 ===');
+        console.log('=== static 语句起始形态诊断 ===');
         libDiags.forEach((d) => console.log(`  L${d.line} [category=${d.category}] ${d.message}`));
 
         assert.strictEqual(
-            libDiags.filter((d) => d.category === 0).length,
+            libDiags.filter((d) => d.category === 0 || d.category === 1).length,
             0,
-            `注解内 static 不应报语法/未定义错误：${JSON.stringify(libDiags)}`
-        );
-        assert.strictEqual(
-            libDiags.filter((d) => d.message.includes('static 符号')).length,
-            0,
-            `同模块自引用不应报 static 跨模块错误：${JSON.stringify(libDiags)}`
+            `static memory_regions: memory_region* = None 不应报错：${JSON.stringify(libDiags)}`
         );
 
-        // 注解脱糖为 `t.CStatic | int`，与语句起始形态一样展示为 `static int`。
         const types = collectAnnotatedVarTypes(program, uris['lib.vp']);
         console.log('=== 注解变量类型 ===');
         types.forEach((v, k) => console.log(`  ${k}: ${v}`));
         assert(
-            types.get('buf_head')!.includes('static') && types.get('buf_head')!.includes('int'),
-            `buf_head 应展示为 static int，实际: ${types.get('buf_head')}`
-        );
-
-        // 跨模块取参仍须报错（与语句起始形态同判据）。
-        const mainDiags = getDiagnostics(program, configOptions, uris['main.vp']);
-        console.log('=== 跨模块取参诊断 ===');
-        mainDiags.forEach((d) => console.log(`  L${d.line} [category=${d.category}] ${d.message}`));
-        const staticDiags = mainDiags.filter((d) => d.message.includes('static 符号'));
-        assert.strictEqual(
-            staticDiags.length,
-            1,
-            `lib.buf_head 取用应报一条 static 跨模块错误：${JSON.stringify(mainDiags)}`
-        );
-        assert(
-            staticDiags[0].message.includes('lib.buf_head'),
-            `诊断文案应含 lib.buf_head：${JSON.stringify(staticDiags)}`
+            types.get('memory_regions')!.includes('static') &&
+                types.get('memory_regions')!.includes('memory_region'),
+            `memory_regions 应展示为 static rawptr[memory_region]，实际: ${types.get('memory_regions')}`
         );
     } finally {
         program.dispose();
@@ -327,21 +309,51 @@ def use() -> int:
     }
 });
 
-test('注解内 static 仍受软关键字边界约束：static 单独作为注解名不变', () => {
-    const code = `static: int = 0
-static = 1
+test('注解内 static 前缀（x: static T = v）报专用错误，不连带报 static 未定义', () => {
+    const code = `import t
+
+class memory_region:
+    base: uint64
+    size: uint64
+
+memory_regions: static memory_region* = None
+
+def touch() -> uint64:
+    return memory_regions[0].base
 `;
-    const { program, configOptions, uris, testRoot, serviceProvider } = buildProgram({ 'main.vp': code });
+    const { program, configOptions, uris, testRoot, serviceProvider } = buildProgram({ 'lib.vp': code });
 
     try {
-        const diagnostics = getDiagnostics(program, configOptions, uris['main.vp']);
-        console.log('=== 注解内 static 边界诊断 ===');
+        const diagnostics = getDiagnostics(program, configOptions, uris['lib.vp']);
+        console.log('=== 注解内 static 诊断 ===');
         diagnostics.forEach((d) => console.log(`  L${d.line} [category=${d.category}] ${d.message}`));
 
+        const dedicated = diagnostics.filter((d) => d.message.includes('static 修饰符不支持写在类型注解里'));
         assert.strictEqual(
-            diagnostics.filter((d) => d.category === 0).length,
+            dedicated.length,
+            1,
+            `应报 1 条「注解内 static 不支持」：${JSON.stringify(diagnostics)}`
+        );
+        assert.strictEqual(dedicated[0].category, 0, `应为 error：${JSON.stringify(dedicated[0])}`);
+        assert.strictEqual(dedicated[0].line, 7, `报错应落在第 7 行：${JSON.stringify(dedicated[0])}`);
+
+        // 不再连带报「"static" is not defined」（旧行为），也不应报其它 error。
+        const otherErrors = diagnostics.filter(
+            (d) => d.category === 0 && !d.message.includes('static 修饰符不支持写在类型注解里')
+        );
+        assert.strictEqual(
+            otherErrors.length,
             0,
-            `static 作为普通标识符/变量名不应报语法错误：${JSON.stringify(diagnostics)}`
+            `除专用错误外不应有其它 error：${JSON.stringify(otherErrors)}`
+        );
+
+        // 剩余类型仍解析出元素类型（错误恢复：跳过 static 继续解析 memory_region*）。
+        const types = collectAnnotatedVarTypes(program, uris['lib.vp']);
+        console.log('=== 注解变量类型 ===');
+        types.forEach((v, k) => console.log(`  ${k}: ${v}`));
+        assert(
+            types.get('memory_regions')!.includes('memory_region'),
+            `错误恢复后仍应解析出 memory_region*，实际: ${types.get('memory_regions')}`
         );
     } finally {
         program.dispose();

@@ -1,12 +1,8 @@
 /*
  * viperFunctionHover.test.ts
  *
- * 验证 Viper 方言下 hover 函数时显示详尽调试信息：
- *   - 定义位置（文件:行:列）
- *   - 修饰符（extern/export/inline）
- *   - 泛型参数
- *   - 参数列表（名称、类型、默认值、*args/**kwargs 类别）
- *   - 返回类型
+ * 验证 Viper 方言下 hover 函数时只显示**签名**（不再附加「函数调试信息」区块）：
+ * 原实现会在签名后追加位置/修饰符/泛型参数/参数/返回类型等调试信息，现已移除。
  *
  * 运行：npx jest src/tests/viperFunctionHover.test.ts --runInBand
  */
@@ -67,7 +63,7 @@ function buildProgramForCode(code: string) {
     return { program, configOptions, uri, testDir, serviceProvider };
 }
 
-test('Viper hover 函数显示详尽调试信息', () => {
+test('Viper hover 函数只显示签名（不再附加函数调试信息）', () => {
     const code = `import t, c
 
 export def add[T](a: t.CInt, b: t.CInt = 10) -> t.CInt:
@@ -94,24 +90,14 @@ def use():
     assert(contents.includes('```python'), `should use python code fence: ${contents}`);
     assert(!contents.includes('```viper'), `should not use viper code fence: ${contents}`);
     assert(contents.includes('(function)'), `should include signature: ${contents}`);
-    // 调试信息标题
-    assert(contents.includes('函数调试信息'), `should include debug heading: ${contents}`);
-    // 定义位置（此文件:3:17 —— `add` 在 L3 第 17 列）
-    assert(contents.includes('位置'), `should include 位置: ${contents}`);
-    assert(contents.includes('此文件'), `should include 此文件: ${contents}`);
-    // 修饰符
-    assert(contents.includes('修饰符'), `should include 修饰符: ${contents}`);
-    assert(contents.includes('export'), `should include export modifier: ${contents}`);
-    // 泛型参数
-    assert(contents.includes('泛型参数'), `should include 泛型参数: ${contents}`);
-    assert(contents.includes('[T]'), `should include [T]: ${contents}`);
-    // 参数（类型按源码书写的完整 module 路径展示：注解写的是 `t.CInt`）
-    assert(contents.includes('参数'), `should include 参数: ${contents}`);
-    assert(contents.includes('a: t.CInt'), `should include param a: ${contents}`);
-    assert(contents.includes('b: t.CInt = 10'), `should include param b with default: ${contents}`);
-    // 返回类型
-    assert(contents.includes('返回类型'), `should include 返回类型: ${contents}`);
-    assert(contents.includes('t.CInt'), `should include return type: ${contents}`);
+
+    // 已移除「函数调试信息」区块：标题与各字段均不应再出现。
+    for (const removed of ['函数调试信息', '修饰符', '泛型参数', '返回类型']) {
+        assert(
+            !contents.includes(removed),
+            `hover 不应再包含已移除的调试信息字段「${removed}」：${contents}`
+        );
+    }
 
     program.dispose();
     serviceProvider.dispose();

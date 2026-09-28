@@ -6482,7 +6482,14 @@ export function createTypeEvaluator(
                     baseType.priv.typeArgs &&
                     baseType.priv.typeArgs.length > 0
                 ) {
-                    const pointeeType = baseType.priv.typeArgs[0];
+                    let pointeeType = baseType.priv.typeArgs[0];
+                    // Viper 扩展：pointee 是泛型类型参数（TypeVar）时按其上界具体化。
+                    // `class GSList[T: GSListNode]` 的字段 `Tail: T*`（= CPtr[T]）在类体内
+                    // `self.Tail.Next` 需在 GSListNode 上查成员：不解 TypeVar 就找不到
+                    // `Next`，报「属性“Next”未知」。TPC 侧同理（特化成具体节点类后解析）。
+                    if (isTypeVar(pointeeType)) {
+                        pointeeType = makeTopLevelTypeVarsConcrete(pointeeType);
+                    }
                     if (isClass(pointeeType)) {
                         baseType = TypeBase.isInstance(pointeeType)
                             ? pointeeType
@@ -7750,7 +7757,12 @@ export function createTypeEvaluator(
             // 当访问 CPtr[Struct] 实例的成员时，将属性访问转发到 Struct 类型。
             // 模拟 C 语言的 ptr->field 语义。
             if (isCPtrType(classType) && classType.priv.typeArgs && classType.priv.typeArgs.length > 0) {
-                const pointeeType = classType.priv.typeArgs[0];
+                let pointeeType = classType.priv.typeArgs[0];
+                // Viper 扩展：pointee 是泛型类型参数（TypeVar）时按其上界具体化，
+                // 与成员访问的 CPtr 解引用逻辑（见上方同名分支）保持一致。
+                if (isTypeVar(pointeeType)) {
+                    pointeeType = makeTopLevelTypeVarsConcrete(pointeeType);
+                }
                 if (isClass(pointeeType)) {
                     // 确保是实例形式以便访问实例属性
                     const pointeeInstance = TypeBase.isInstance(pointeeType)
@@ -9040,7 +9052,12 @@ export function createTypeEvaluator(
             baseType.priv.typeArgs &&
             baseType.priv.typeArgs.length > 0
         ) {
-            const pointeeType = baseType.priv.typeArgs[0];
+            let pointeeType = baseType.priv.typeArgs[0];
+            // Viper 扩展：pointee 是泛型类型参数（TypeVar）时按其上界具体化，
+            // 与成员访问的 CPtr 解引用逻辑（见上方同名分支）保持一致。
+            if (isTypeVar(pointeeType)) {
+                pointeeType = makeTopLevelTypeVarsConcrete(pointeeType);
+            }
             if (isClass(pointeeType)) {
                 // T 可能是类对象（如 CPtr[Scheduler]）或类实例，统一转为实例
                 const pointeeInstance = TypeBase.isInstance(pointeeType)
@@ -27247,6 +27264,43 @@ export function createTypeEvaluator(
                 if (isDerivedFrom) {
                     return true;
                 }
+            }
+        }
+
+        // Viper 扩展：泛型类型参数值 → CPtr[T] 隐式取地址语义。
+        // `class GSList[T: GSListNode]` 的 `append(self, node: T)` 里 `self.Head = node`
+        // （`Head: T*` 即 CPtr[T]）是泛型类体内的常规写法，TPC 按特化后的节点指针处理。
+        // 与上一条「类实例 → CPtr[T]」同理（Viper 中类类型的值本身就是指针），
+        // 只是源是 TypeVar 而不是类实例，上一条不命中，故单独放行：
+        //   ① 目标 pointee 与源是**同一个类型参数**（`T` → `T*`）；
+        //   ② 否则把源 TypeVar 具体化为其上界，再按普通规则比较
+        //      （`T`（上界 GSListNode）→ `GSListNode.T*`，如 `self.Tail.Next = node`）。
+        if (
+            isClassInstance(destType) && isCPtrType(destType) &&
+            destType.priv.typeArgs && destType.priv.typeArgs.length > 0 &&
+            isTypeVar(srcType)
+        ) {
+            const pointeeType = destType.priv.typeArgs[0];
+            if (
+                isTypeVar(pointeeType) &&
+                TypeVarType.getNameWithScope(pointeeType) === TypeVarType.getNameWithScope(srcType)
+            ) {
+                return true;
+            }
+            const srcConcrete = makeTopLevelTypeVarsConcrete(srcType);
+            // 未特化泛型基类上的成员类型会退化成 `CPtr[type]`（指向 builtins.type 实例，
+            // 即"某个类对象"）：如 `GSListNode[T]` 的 `Next: T*` 在未特化的 GSListNode
+            // 上解析出的目标类型就是它。这与 rawptr / void* 同属「指针目标未知」，
+            // 按通用指针口径放行，避免泛型类体内的正常赋值误报。
+            if (isClassInstance(pointeeType) && ClassType.isBuiltIn(pointeeType, 'type')) {
+                return true;
+            }
+            if (
+                !isAnyOrUnknown(srcConcrete) &&
+                !isTypeVar(srcConcrete) &&
+                assignType(pointeeType, srcConcrete, undefined, constraints, flags, recursionCount + 1)
+            ) {
+                return true;
             }
         }
 

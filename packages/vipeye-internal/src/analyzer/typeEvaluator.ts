@@ -6894,6 +6894,133 @@ export function createTypeEvaluator(
         };
     }
 
+    // Viper 扩展：判断类是否为「virtual class」（启用多态 vtable）。
+    // 两种等价写法：`virtual class X`（parser 记在 ClassNode.d.viperClassModifier）
+    // 与 `@t.CVTable class X`（装饰器）。
+    function isViperVirtualClass(classType: ClassType): boolean {
+        const decl = classType.shared.declaration;
+        const classNode = decl?.type === DeclarationType.Class ? decl.node : undefined;
+        if (!classNode) {
+            return false;
+        }
+        const fileInfo = AnalyzerNodeInfo.getFileInfo(classNode);
+        if (!IsViperDialect(fileInfo.executionEnvironment.dialect)) {
+            return false;
+        }
+        if (classNode.d.viperClassModifier === 'virtual') {
+            return true;
+        }
+        return classNode.d.decorators.some((decorator) => {
+            const expr = decorator.d.expr;
+            const target = expr.nodeType === ParseNodeType.Call ? expr.d.leftExpr : expr;
+            return (
+                (target.nodeType === ParseNodeType.MemberAccess && target.d.member.d.value === 'CVTable') ||
+                (target.nodeType === ParseNodeType.Name && target.d.value === 'CVTable')
+            );
+        });
+    }
+
+    // Viper 扩展：vtable 槽位赋值中 RHS 的 `self` 类型是否可接受。
+    // 允许：泛指针（rawptr / t.CPtr，即 pointee 未定（TypeVar/Unknown）或 void*），
+    //       或「该类本身 / 其父类」的指针（如 `self: devfs_file*`）。
+    function isViperVtableSelfTypeOk(selfType: Type, classType: ClassType): boolean {
+        if (!isClassInstance(selfType) || !isCPtrType(selfType)) {
+            return false;
+        }
+        const typeArgs = selfType.priv.typeArgs;
+        if (!typeArgs || typeArgs.length === 0) {
+            return true;
+        }
+        const pointee = typeArgs[0];
+        if (isTypeVar(pointee) || isUnknown(pointee) || isCVoidType(pointee)) {
+            return true;
+        }
+        if (!isClass(pointee)) {
+            return false;
+        }
+        const pointeeInstantiable = isInstantiableClass(pointee) ? pointee : ClassType.cloneAsInstantiable(pointee);
+        const inheritanceChain: InheritanceChain = [];
+        return ClassType.isDerivedFrom(classType, pointeeInstantiable, inheritanceChain);
+    }
+
+    // Viper 扩展：判断 `obj.method = func` 是否为 virtual class（vtable）的
+    // **方法槽位赋值**，且按 vtable 语义应当放行。
+    //
+    // 背景：`serial0_file.open = serial0_open`（ViperOS devfs.vp）写入的是 vtable
+    // 槽位，编译器（TPC HandlesAssign / TransPyV CallGenVt._write_vtable_slot）把
+    // RHS 函数直接 bitcast 成 i8* 存进槽位，**不校验签名与 self**；而 LSP 走普通
+    // 成员赋值路径，用「绑定方法类型」比较，于是 RHS 显式写的 `self: rawptr`
+    // 被当成多余参数 → 误报「参数名称不匹配 / 额外参数」。
+    //
+    // 放行条件：
+    //   ① 类是 virtual class，且成员是类里声明的**方法**（函数类型）；
+    //   ② RHS 是函数且带 self；
+    //   ③ RHS 的 self 为泛指针（rawptr / t.CPtr）或该类本身/父类的指针；
+    //   ④ 其余参数名称与类型逐个相同、返回类型相同
+    //      （`*args` / `**kwargs` 不参与比较，两侧可有无）。
+    function isViperVtableMethodSlotAssignment(
+        classType: ClassType,
+        memberSymbol: Symbol,
+        assignedType: Type
+    ): boolean {
+        // classType 可能是**实例**形态（`obj.method = func` 走的是实例成员访问），
+        // 统一转成可实例化形态再判类级别信息（isDerivedFrom 也要求该形态）。
+        const classInstantiable = isInstantiableClass(classType)
+            ? classType
+            : ClassType.cloneAsInstantiable(classType);
+        if (!isViperVirtualClass(classInstantiable)) {
+            return false;
+        }
+        const declaredType = getEffectiveTypeOfSymbol(memberSymbol);
+        if (!isFunction(declaredType) || !isFunction(assignedType)) {
+            return false;
+        }
+        const declaredParams = declaredType.shared.parameters;
+        const assignedParams = assignedType.shared.parameters;
+        if (declaredParams.length === 0 || assignedParams.length === 0) {
+            return false;
+        }
+        if (!isViperVtableSelfTypeOk(FunctionType.getParamType(assignedType, 0), classInstantiable)) {
+            return false;
+        }
+
+        // 收集「除 self 外的非变参参数」，`*args` / `**kwargs` 跳过不比较。
+        const collectRestParams = (fnType: FunctionType) => {
+            const result: { name: string | undefined; type: Type }[] = [];
+            for (let i = 1; i < fnType.shared.parameters.length; i++) {
+                const param = fnType.shared.parameters[i];
+                if (
+                    param.category === ParamCategory.ArgsList ||
+                    param.category === ParamCategory.KwargsDict
+                ) {
+                    continue;
+                }
+                result.push({ name: param.name, type: FunctionType.getParamType(fnType, i) });
+            }
+            return result;
+        };
+        const declaredRest = collectRestParams(declaredType);
+        const assignedRest = collectRestParams(assignedType);
+        if (declaredRest.length !== assignedRest.length) {
+            return false;
+        }
+        for (let i = 0; i < declaredRest.length; i++) {
+            if (declaredRest[i].name !== assignedRest[i].name) {
+                return false;
+            }
+            if (!isTypeSame(declaredRest[i].type, assignedRest[i].type)) {
+                return false;
+            }
+        }
+
+        const declaredReturnType = FunctionType.getEffectiveReturnType(declaredType);
+        const assignedReturnType = FunctionType.getEffectiveReturnType(assignedType);
+        if (!declaredReturnType || !assignedReturnType) {
+            return false;
+        }
+        return isTypeSame(declaredReturnType, assignedReturnType);
+    }
+
     function getTypeOfClassMemberName(
         errorNode: ExpressionNode | undefined,
         classType: ClassType,
@@ -7173,30 +7300,38 @@ export function createTypeEvaluator(
         );
 
         if (!isDescriptorError && usage.method === 'set' && usage.setType) {
-            if (errorNode && memberInfo.symbol.hasTypedDeclarations()) {
-                // This is an assignment to a member with a declared type. Apply
-                // narrowing logic based on the assigned type. Skip this for
-                // descriptor-based accesses.
-                narrowedTypeForSet = isDescriptorApplied
-                    ? usage.setType.type
-                    : narrowTypeBasedOnAssignment(type, usage.setType).type;
-            }
-
-            // Verify that the assigned type is compatible.
-            if (!assignType(type, usage.setType.type, diag?.createAddendum())) {
-                if (!usage.setType.isIncomplete) {
-                    diag?.addMessage(
-                        LocAddendum.memberAssignment().format({
-                            type: printType(usage.setType.type),
-                            name: memberName,
-                            classType: printObjectTypeForClass(classType),
-                        })
-                    );
+            // Viper 扩展：virtual class（vtable）的**方法槽位赋值**（`obj.method = func`）。
+            // 编译器只把 RHS 函数 bitcast 成 i8* 存进 vtable 槽，不校验签名/self，
+            // 故不能按普通成员赋值的「绑定方法类型」比较（见
+            // isViperVtableMethodSlotAssignment）。命中时视为兼容、不做收窄。
+            if (isViperVtableMethodSlotAssignment(classType, memberInfo.symbol, usage.setType.type)) {
+                narrowedTypeForSet = type;
+            } else {
+                if (errorNode && memberInfo.symbol.hasTypedDeclarations()) {
+                    // This is an assignment to a member with a declared type. Apply
+                    // narrowing logic based on the assigned type. Skip this for
+                    // descriptor-based accesses.
+                    narrowedTypeForSet = isDescriptorApplied
+                        ? usage.setType.type
+                        : narrowTypeBasedOnAssignment(type, usage.setType).type;
                 }
 
-                // Do not narrow the type in this case. Assume the declared type.
-                narrowedTypeForSet = type;
-                isDescriptorError = true;
+                // Verify that the assigned type is compatible.
+                if (!assignType(type, usage.setType.type, diag?.createAddendum())) {
+                    if (!usage.setType.isIncomplete) {
+                        diag?.addMessage(
+                            LocAddendum.memberAssignment().format({
+                                type: printType(usage.setType.type),
+                                name: memberName,
+                                classType: printObjectTypeForClass(classType),
+                            })
+                        );
+                    }
+
+                    // Do not narrow the type in this case. Assume the declared type.
+                    narrowedTypeForSet = type;
+                    isDescriptorError = true;
+                }
             }
 
             if (

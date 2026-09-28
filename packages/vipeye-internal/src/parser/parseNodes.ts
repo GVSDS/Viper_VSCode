@@ -1723,6 +1723,13 @@ export interface NameNode extends ParseNodeBase<ParseNodeType.Name> {
         // parser._parseViperStaticAnnotatedStatement）。变量的 Declaration.node
         // 就是这个 NameNode，跨模块取参检查依此判定「声明带 static」。
         isViperStatic?: boolean;
+
+        // Viper 扩展：`__attribute__(name)` 脱糖（见 parser._makeViperAttrMarker）
+        // 时由**裸属性名实参**合成的成员名 `t.attr.<name>`：位置取自实参自身的
+        // token（真实位置，保留跳转/悬停）。属性名是编译器级的开放集合
+        // （TransPyV 支持的名字未必都声明在 t.attr 里），故该名解析不到时
+        // 不报「无法访问属性」，语义高亮直接按已声明属性同款（function）着色。
+        isViperAttrMarkerName?: boolean;
     };
 }
 

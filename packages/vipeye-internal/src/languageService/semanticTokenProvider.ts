@@ -605,7 +605,14 @@ class SemanticTokenWalker extends ParseTreeWalker {
         // 注意：必须在 declInfo 查询之前优先处理，因为 CPtr 解引用转发
         // 可能让 getDeclInfoForNameNode 返回 CPtr.__getattr__ 的 variable
         // 声明（VariableDeclaration），导致误显示为变量颜色。
-        if (nameText === '__before_init__' && this._isViperMemberAccess(node)) {
+        // Viper 扩展：`__attribute__(name)` 脱糖出的属性名（`t.attr.<name>`，
+        // 见 parser._makeViperAttrMarker）。属性名是编译器级的**开放集合**，未必声明在
+        // t.attr 里（如 stackrealign），故不能依赖符号解析（解析不到会落到 undefined
+        // 白色），直接按已声明属性同款（function）着色。
+        if (node.d.isViperAttrMarkerName === true) {
+            tokenType = SemanticTokenTypes.function;
+            tokenModifiers = 0;
+        } else if (nameText === '__before_init__' && this._isViperMemberAccess(node)) {
             tokenType = SemanticTokenTypes.function;
             tokenModifiers = 0;
         } else if (!declInfo || !declInfo.decls || declInfo.decls.length === 0) {

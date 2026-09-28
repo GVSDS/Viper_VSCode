@@ -11,6 +11,8 @@
  *      求值为 t.CAttr（修饰符），不参与类型检查、展示不泄漏
  *   ④ 值位置 `volatile f()` / `volatile 结构体()`（标记调用为 volatile）
  *   ⑤ `__attribute__(` 括号内的属性名补全
+ *   ⑥ 属性名是编译器级开放集合：未声明在 `t.attr` 的名字（如 `stackrealign`）
+ *      也按 function 高亮，且不报「无法访问属性」
  * 负例：`volatile = 2` / `const = 1` / `volatile 1`（非调用）仍须报错。
  *
  * 运行：npx jest src/tests/viperAttribute.test.ts --runInBand
@@ -32,6 +34,7 @@ import { UriEx } from '../common/uri/uriUtils';
 import { FullAccessHost } from '../common/fullAccessHost';
 import { CompletionProvider } from '../languageService/completionProvider';
 import { HoverProvider } from '../languageService/hoverProvider';
+import { SemanticTokenTypes } from '../languageService/semanticTokenTypes';
 import { ParseNodeType, TypeAnnotationNode } from '../parser/parseNodes';
 
 (global as any).__rootDirectory = path.resolve();
@@ -87,6 +90,35 @@ function getDiagnostics(program: Program, configOptions: ConfigOptions, uri: any
         line: diag.range ? diag.range.start.line + 1 : -1,
         message: diag.message,
     }));
+}
+
+/** 语义 token：解码相对编码，返回 Map<line(0-based), {text, tokenType}[]>。 */
+function getSemanticTokens(program: Program, uri: any): Map<number, { text: string; tokenType: number }[]> {
+    const { SemanticTokenProvider } = require('../languageService/semanticTokenProvider');
+    const { LogTracker } = require('../common/logTracker');
+    const provider = new SemanticTokenProvider(new LogTracker());
+    const result = provider.provideFull(program, uri);
+    assert(result, 'no semantic tokens produced');
+
+    const lines = program.getSourceFile(uri)!.getParseResults()!.text.split('\n');
+    const map = new Map<number, { text: string; tokenType: number }[]>();
+    let cursorLine = 0;
+    let cursorChar = 0;
+    for (let i = 0; i < result.data.length; i += 5) {
+        const deltaLine = result.data[i];
+        cursorLine += deltaLine;
+        cursorChar = deltaLine === 0 ? cursorChar + result.data[i + 1] : result.data[i + 1];
+        const length = result.data[i + 2];
+        const entry = {
+            text: (lines[cursorLine] || '').substring(cursorChar, cursorChar + length),
+            tokenType: result.data[i + 3],
+        };
+        if (!map.has(cursorLine)) {
+            map.set(cursorLine, []);
+        }
+        map.get(cursorLine)!.push(entry);
+    }
+    return map;
 }
 
 /** 收集注解变量的展示类型（按变量名索引）。 */
@@ -401,6 +433,63 @@ Attr: __attribute__(section(".x")) const int = 1
 
         for (const name of ['section', 'always_inline', 'aligned', 'packed', 'weak']) {
             assert(text.includes(name), `hover 应列出属性 ${name}：${text.slice(0, 300)}`);
+        }
+    } finally {
+        program.dispose();
+        serviceProvider.dispose();
+        require('fs').rmSync(testDir, { recursive: true, force: true });
+    }
+});
+
+/*
+ * ⑥ 属性名是编译器级的**开放集合**，不一定声明在 `t.attr` 里：
+ *    `stackrealign` 只在 TransPyV 的 codegen 映射里有（FuncGenBase.vp:181），
+ *    真实 t.py 与 LSP 存根 t.vpi 的 `class attr` 都没有它，ViperOS
+ *    `VKernel/Kernel/main.vp:347` 在用。修前 `t.attr.stackrealign` 解析不到 →
+ *    语义 token undefined（白色、不高亮）+ 误报「无法访问类"type[attr]"的属性」。
+ *    修后：解析不到也不报错，语义高亮直接按已声明属性同款（function）着色。
+ */
+test('未在 t.attr 声明的属性名（stackrealign）也高亮且不报「无法访问属性」', () => {
+    const code = `import t
+
+@__attribute__(section(".text.startup"), aligned(16), stackrealign)
+def _start() -> None:
+    pass
+
+@__attribute__(naked)
+def _naked() -> None:
+    pass
+`;
+    const { program, configOptions, uri, serviceProvider, testDir } = buildProgramForCode(code, '__viper_attribute_unknown__');
+
+    try {
+        const diagnostics = getDiagnostics(program, configOptions, uri);
+        console.log('=== 未声明属性名诊断 ===');
+        diagnostics.forEach((d) => console.log(`  L${d.line} [category=${d.category}] ${d.message}`));
+
+        // ① 不再误报「无法访问类 attr 的属性 stackrealign」（编译器对未知属性是静默丢弃）。
+        const attrDiags = diagnostics.filter(
+            (d) => d.message.includes('无法访问') || d.message.includes('stackrealign')
+        );
+        assert.strictEqual(
+            attrDiags.length,
+            0,
+            `未声明属性名不应报「无法访问属性」：${JSON.stringify(attrDiags)}`
+        );
+
+        // ② 语义高亮：section / aligned / stackrealign 都应为 function（与已声明属性同款）。
+        const tokensByLine = getSemanticTokens(program, uri);
+        const decoratorLine = tokensByLine.get(2) || [];
+        console.log('=== 装饰器行语义 token ===');
+        decoratorLine.forEach((t) => console.log(`  [${t.tokenType}] ${t.text}`));
+        for (const name of ['section', 'aligned', 'stackrealign']) {
+            const tok = decoratorLine.find((t) => t.text === name);
+            assert(tok, `该行应有 ${name} 的语义 token：${JSON.stringify(decoratorLine)}`);
+            assert.strictEqual(
+                tok!.tokenType,
+                SemanticTokenTypes.function,
+                `${name} 应为 function 语义 token（未声明属性名原先落到 undefined），实际 ${tok!.tokenType}`
+            );
         }
     } finally {
         program.dispose();

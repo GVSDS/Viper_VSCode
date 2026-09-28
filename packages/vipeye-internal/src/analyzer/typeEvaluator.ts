@@ -6857,7 +6857,10 @@ export function createTypeEvaluator(
                 // Viper 扩展：`[SIZE]T` 数组语法脱糖出的合成 `t.CArray` 成员访问，
                 // 当合成 `t` 未解析（源文件未 import t）时静默退化为 Unknown，
                 // 不再叠加"无法解析成员"诊断（见 parser._parseViperBracketArrayType）。
-                if (!isViperBracketArraySyntheticMember(node)) {
+                // 同理，`__attribute__(name)` 脱糖出的属性名（t.attr.<name>）是编译器级
+                // 开放集合，未声明在 t.attr 的名字（如 stackrealign）也不报（见
+                // isViperAttrMarkerMember）。
+                if (!isViperBracketArraySyntheticMember(node) && !isViperAttrMarkerMember(node)) {
                     addDiagnostic(
                         rule,
                         diagMessage.format({ name: memberName, type: printType(baseType) }) + diag.getString(),
@@ -8831,6 +8834,15 @@ export function createTypeEvaluator(
             node.d.leftExpr.nodeType === ParseNodeType.Name &&
             (node.d.leftExpr.d.isViperBracketArraySynthetic === true || node.d.leftExpr.d.isViperTypedef === true)
         );
+    }
+
+    // Viper 扩展：判断成员访问是否是 `__attribute__(name)` 脱糖出的属性名成员访问
+    // （`t.attr.<name>`，见 parser._makeViperAttrMarker）。属性名是编译器级的**开放
+    // 集合**：TransPyV 的 codegen 支持的名字（如 stackrealign）未必都声明在 t.attr
+    // 里，而编译器对不认识的属性是静默丢弃、不是报错，故这里不报「无法访问属性」
+    // （否则 `@__attribute__(stackrealign)` 会误报一条警告）。
+    function isViperAttrMarkerMember(node: MemberAccessNode): boolean {
+        return node.d.member.d.isViperAttrMarkerName === true;
     }
 
     // Viper 扩展：REnum 变体字段类型（仅取类型，见 getViperREnumVariantFieldInfo）。

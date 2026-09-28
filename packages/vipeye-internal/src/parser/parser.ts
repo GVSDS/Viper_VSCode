@@ -5524,6 +5524,10 @@ export class Parser {
     //   - 已是 `t.attr.X` / `c.Attribute(...)` 形态 → 原样保留（允许混写）
     // 与 TPC/TPV 的 includes/ast/parser.vp `_MakeTAttrMarker` 逐条对应；
     // 成员名复用实参自身的 token（真实位置），故属性名上的跳转/悬停仍指向 t.vpi。
+    // 合成的成员名打上 isViperAttrMarkerName 标记：属性名是编译器级的开放集合
+    // （TransPyV 支持的名字未必都声明在 t.attr 里，如 stackrealign），故该名解析
+    // 不到时不报「无法访问属性」，语义高亮按已声明属性同款着色（见
+    // typeEvaluator.getTypeOfMemberAccess / semanticTokenProvider._classifyNameNode）。
     // 根 `t` 是合成的「隐式模块根」（见 _createViperImplicitModuleName），
     // 不要求源码 `import t`。
     private _makeViperAttrMarker(argExpr: ExpressionNode): ExpressionNode {
@@ -5533,11 +5537,15 @@ export class Parser {
         );
 
         if (argExpr.nodeType === ParseNodeType.Name) {
-            return MemberAccessNode.create(attrRoot, NameNode.create(argExpr.d.token));
+            const memberNameNode = NameNode.create(argExpr.d.token);
+            memberNameNode.d.isViperAttrMarkerName = true;
+            return MemberAccessNode.create(attrRoot, memberNameNode);
         }
 
         if (argExpr.nodeType === ParseNodeType.Call && argExpr.d.leftExpr.nodeType === ParseNodeType.Name) {
-            const inner = MemberAccessNode.create(attrRoot, NameNode.create(argExpr.d.leftExpr.d.token));
+            const memberNameNode = NameNode.create(argExpr.d.leftExpr.d.token);
+            memberNameNode.d.isViperAttrMarkerName = true;
+            const inner = MemberAccessNode.create(attrRoot, memberNameNode);
             return CallNode.create(inner, argExpr.d.args, argExpr.d.trailingComma);
         }
 

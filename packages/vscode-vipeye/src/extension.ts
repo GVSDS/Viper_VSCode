@@ -206,6 +206,15 @@ export async function activate(context: ExtensionContext) {
                                 delete (result[i] as any).stubPath;
                             }
                         }
+
+                        // Viper 扩展：把"以选中编译器 exe 目录为基准"自动发现的 includes 目录
+                        // 追加进 extraPaths，作为工程未声明 includes 时的兜底（服务端据此把它们
+                        // 加进 import 搜索根，排在 .vpj/project.json 的 includes 之后）。
+                        // GetCompilerIncludePaths 只返回真实存在的目录，非 Viper 工具链下为空操作。
+                        AppendCompilerIncludePaths(
+                            ResolveAnalysisConfigSection(result[i], item.section),
+                            viperApi.GetCompilerIncludePaths()
+                        );
                     }
 
                     return result;
@@ -430,7 +439,26 @@ export async function activate(context: ExtensionContext) {
         })
     );
 
+    // 切换编译器（VET 环境切换 / viper.toolchain 配置变更）会改变自动 include 目录：
+    // 主动让服务端重读设置 —— 服务端 onDidChangeConfiguration → 重走 workspace/configuration
+    // → 上面中间件重新注入 extraPaths。订阅早于 client.start()：VET 首发快照常在启动过程中到达，
+    // 此时客户端还没就绪，先记下来，启动完成后补发一次（启动时的首次取配置本身也会读到最新工具链）。
+    let pendingIncludeResync = false;
+    context.subscriptions.push(
+        viperApi.OnDidChangeToolchain(() => {
+            if (client.isRunning()) {
+                void client.sendNotification('workspace/didChangeConfiguration', { settings: null });
+            } else {
+                pendingIncludeResync = true;
+            }
+        })
+    );
+
     await client.start();
+
+    if (pendingIncludeResync) {
+        void client.sendNotification('workspace/didChangeConfiguration', { settings: null });
+    }
 
     // 导出 Viper 核心 API（合并后随本扩展一起提供）。
     return { viperApi };
@@ -499,6 +527,56 @@ function clearSemanticTokenDiskCache(): void {
     } catch {
         // 缓存目录被其它实例占用：跳过即可，下次关停或服务端过期清理仍会处理
     }
+}
+
+/**
+ * 从 `workspace/configuration` 的回执里取出承载分析设置的那个对象：
+ *   - section 为 `viper` 时回执形如 `{ analysis: {...}, toolchain: {...} }`，
+ *     分析设置在 `.analysis` 下（语言服务端 server.ts 就是这么请求的）；
+ *   - section 为 `viper.analysis` 时回执本身就是分析设置（typeServer 的请求）。
+ * 不是普通对象时返回 undefined。
+ */
+function ResolveAnalysisConfigSection(
+    configSection: unknown,
+    section: string
+): { extraPaths?: unknown } | undefined {
+    if (!configSection || typeof configSection !== 'object' || Array.isArray(configSection)) {
+        return undefined;
+    }
+
+    const candidate = section === 'viper' ? (configSection as { analysis?: unknown }).analysis : configSection;
+    return candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+        ? (candidate as { extraPaths?: unknown })
+        : undefined;
+}
+
+/**
+ * 把自动发现的编译器 includes 目录追加到 `extraPaths`（就地修改回执对象）。
+ * 已存在（忽略大小写）的路径不重复追加；空列表或回执不是对象时为空操作。
+ */
+function AppendCompilerIncludePaths(
+    analysisSection: { extraPaths?: unknown } | undefined,
+    includePaths: string[]
+): void {
+    if (!analysisSection || includePaths.length === 0) {
+        return;
+    }
+
+    const merged: string[] = Array.isArray(analysisSection.extraPaths)
+        ? analysisSection.extraPaths.filter((p): p is string => typeof p === 'string')
+        : [];
+
+    const existingKeys = new Set(merged.map((p) => p.toLowerCase()));
+    for (const includePath of includePaths) {
+        const key = includePath.toLowerCase();
+        if (existingKeys.has(key)) {
+            continue;
+        }
+        existingKeys.add(key);
+        merged.push(includePath);
+    }
+
+    analysisSection.extraPaths = merged;
 }
 
 function isConfigSettingSetByUser(configuration: WorkspaceConfiguration, setting: string): boolean {

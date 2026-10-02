@@ -65,6 +65,12 @@ export interface ViperApi {
     /** 获取当前工具链。 */
     GetToolchain(): ToolchainInfo;
 
+    /**
+     * 自动发现编译器自带的 includes 目录（以选中编译器 exe 所在目录为基准向上查找，
+     * 仅返回真实存在的目录）。工程未声明 includes 时由调用方补进搜索路径。
+     */
+    GetCompilerIncludePaths(): string[];
+
     /** 获取 target triple。 */
     GetTargetTriple(workspaceFolder?: string): string | undefined;
 

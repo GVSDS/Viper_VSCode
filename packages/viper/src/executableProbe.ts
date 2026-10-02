@@ -22,7 +22,7 @@ import { ChildProcess, spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 
-import { ViperCheckResult } from './types';
+import type { ViperCheckResult } from './types';
 
 // ===== PE/COFF 常量（与 VET/App/lib/VPe.vp 一一对应） =====
 
@@ -261,11 +261,31 @@ function FormatExeErr(error: unknown): string {
 }
 
 /**
+ * 从捕获输出里取**第一行有效内容**：跳过以 `[` 开头的诊断行（以及空行）后继续往下读。
+ *
+ * 为什么需要：编译器是带 ASan 运行时的构建，`<exe> --version` 会先在 stderr 打几行
+ * `[traceback] …`（如 `[traceback] ready: Ctrl+C prints stack then exits, …`），
+ * 之后才在 stdout 打真正的 `Viper 1.0.5-dev.970 …`。VET 把两条流接到同一个管道，
+ * 靠"整个缓冲前 5 字符"判定；Node 侧两条流分开、到达顺序不定，故显式跳过 `[` 开头的行，
+ * 再对第一行有效内容判前缀（同时对行首空白宽容，避免缩进导致误判）。
+ */
+function FirstMeaningfulLine(output: string): string {
+    for (const line of output.split(/\r?\n/)) {
+        const trimmed = line.trimStart();
+        if (trimmed.length === 0 || trimmed.startsWith('[')) {
+            continue;
+        }
+        return trimmed;
+    }
+    return '';
+}
+
+/**
  * 执行 `<exe> --version`（check 的第 ② 步）：合并捕获 stdout+stderr、5 秒超时、
- * 输出前 5 字符必须是 "Viper"。
+ * 第一行有效内容的前 5 字符必须是 "Viper"（`[` 开头的诊断行跳过，见 FirstMeaningfulLine）。
  *
  * 与 VET 的差别：VET 把 stdout 与 stderr 接到**同一个**管道；Node 做不到，故按到达顺序
- * 追加到同一缓冲。只判前 5 个字符，两种接法结论一致。
+ * 追加到同一缓冲。只判第一行有效内容，两种接法结论一致。
  */
 function ProbeVersion(exePath: string): Promise<{ Ok: true } | { Ok: false; Message: string }> {
     let child: ChildProcess;
@@ -313,7 +333,11 @@ function ProbeVersion(exePath: string): Promise<{ Ok: true } | { Ok: false; Mess
             if (timedOut) {
                 return; // 超时已回执，忽略随后的 close
             }
-            Finish(output.startsWith(VersionPrefix) ? { Ok: true } : { Ok: false, Message: CheckReason.PrefixErr });
+            Finish(
+                FirstMeaningfulLine(output).startsWith(VersionPrefix)
+                    ? { Ok: true }
+                    : { Ok: false, Message: CheckReason.PrefixErr }
+            );
         });
     });
 }

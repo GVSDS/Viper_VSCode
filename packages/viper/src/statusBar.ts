@@ -61,9 +61,7 @@ export class EnvironmentStatusBar implements Disposable {
             selected ? `当前选中: ${selected.DisplayName}\n${selected.Executable}` : '当前选中: （无）',
             `VET: ${this.tool.GetExecutablePath()}`,
             '输出: Vipeye VET 输出通道',
-            state === 'stopped'
-                ? '点击选择编译器（VET 已关闭，已发现的环境仍可选用；重启请用 Restart VET）'
-                : '点击选择编译器',
+            DescribePickHint(state),
         ].join('\n');
         this.item.show();
     }
@@ -74,6 +72,19 @@ export class EnvironmentStatusBar implements Disposable {
             disposable.dispose();
         }
     }
+}
+
+/**
+ * 状态栏 tooltip 里的「点击选择编译器」提示。
+ * VET 没在跑时该入口照样可用：选择时改由扩展**本地**检查该 exe（读 PE + `--version`，带超时），
+ * 不再像以前那样直接失败，所以提示里要说明这一点。
+ */
+function DescribePickHint(state: EnvironmentToolState): string {
+    if (state === 'running') {
+        return '点击选择编译器';
+    }
+    const suffix = '点击选择编译器（VET 未运行，选择时由扩展本地检查该 exe：读 PE + --version）';
+    return state === 'stopped' ? `${suffix}\n重启 VET 请用命令面板的「Restart VET」` : suffix;
 }
 
 function DescribeState(state: EnvironmentToolState): string {

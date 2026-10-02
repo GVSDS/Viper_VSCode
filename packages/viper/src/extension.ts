@@ -256,7 +256,8 @@ async function CreateProjectCommand(): Promise<void> {
 }
 
 /**
- * 弹文件选择框挑一个 exe，并经 VET 的 check 通道校验。
+ * 弹文件选择框挑一个 exe，并做 Viper 编译器校验。
+ * 校验优先走 VET 的 check 通道；VET 未启用/未运行时由扩展本地模拟（读 PE + `--version`，均带超时）。
  * 返回回执；用户取消时返回 undefined（校验失败会在这里给出错误提示）。
  */
 async function PickAndCheckExecutable(tool: EnvironmentTool): Promise<ViperCheckResult | undefined> {
@@ -272,12 +273,12 @@ async function PickAndCheckExecutable(tool: EnvironmentTool): Promise<ViperCheck
     }
 
     return window.withProgress(
-        { location: ProgressLocation.Notification, title: `VET 正在检查 ${path.basename(exePath)}…` },
+        { location: ProgressLocation.Notification, title: `正在检查 ${path.basename(exePath)}…` },
         async () => {
             try {
                 return await tool.CheckExecutable(exePath);
             } catch (e) {
-                void window.showErrorMessage(`VET 检查失败：${e instanceof Error ? e.message : String(e)}`);
+                void window.showErrorMessage(`检查失败：${e instanceof Error ? e.message : String(e)}`);
                 return undefined;
             }
         }
@@ -285,8 +286,8 @@ async function PickAndCheckExecutable(tool: EnvironmentTool): Promise<ViperCheck
 }
 
 /**
- * 「选择编译器…」：选一个 exe，经 VET check 通过后并入环境清单并立刻切换过去
- * （VET 会把该 exe 入库，后续轮次快照里也会带着它）。
+ * 「选择编译器…」：选一个 exe，校验通过后并入环境清单并立刻切换过去
+ * （走 VET check 时 VET 会把该 exe 入库，后续轮次快照里也会带着它）。
  */
 async function PickManualCompiler(
     tool: EnvironmentTool,
@@ -305,7 +306,7 @@ async function PickManualCompiler(
         return selected;
     }
 
-    void window.showErrorMessage(`VET 检查未通过：${DescribeCheckMessage(result.Message)}`);
+    void window.showErrorMessage(`检查未通过：${DescribeCheckMessage(result.Message)}`);
     return undefined;
 }
 
@@ -320,7 +321,7 @@ async function CheckEnvironmentCommand(tool: EnvironmentTool): Promise<void> {
     if (result.Ok && environment) {
         void window
             .showInformationMessage(
-                `VET 检查通过：${environment.DisplayName}（${environment.Arch}）`,
+                `检查通过：${environment.DisplayName}（${environment.Arch}）`,
                 '选择为当前环境',
                 '显示详情'
             )
@@ -334,13 +335,13 @@ async function CheckEnvironmentCommand(tool: EnvironmentTool): Promise<void> {
         return;
     }
 
-    void window.showErrorMessage(`VET 检查未通过：${DescribeCheckMessage(result.Message)}`);
+    void window.showErrorMessage(`检查未通过：${DescribeCheckMessage(result.Message)}`);
 }
 
-/** 把 VET 回执里的 check_msg 固定原因串翻译成可读说明。 */
+/** 把校验回执里的原因串（VET 的 check_msg / 本地模拟的同名原因串）翻译成可读说明。 */
 function DescribeCheckMessage(message: string | undefined): string {
     if (!message) {
-        return '未知原因（VET 未给出 check_msg）';
+        return '未知原因（未给出原因串）';
     }
     switch (message) {
         case 'NOT_FOUND':

@@ -20,6 +20,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { commands, Disposable, Event, EventEmitter, OutputChannel, window, workspace } from 'vscode';
 
+import { LocalCheckExecutable } from './executableProbe';
 import { ViperCheckResult, ViperEnvironment } from './types';
 
 /**
@@ -136,7 +137,35 @@ export class EnvironmentTool implements Disposable {
     }
 
     /**
-     * 通过 VET 的 check 通道检查一个 exe（用户手动指定位置时用）。
+     * 检查一个 exe 是否可用作 Viper 编译器（用户手动指定位置时用）。
+     *
+     * 优先走 VET 的 check 通道；**VET 未启用/未运行/心跳关闭时回退到本地模拟**
+     * （`executableProbe.LocalCheckExecutable`：读 PE/.PRVERSN + `<exe> --version` 带超时），
+     * 两条路径的通过判据与失败原因串完全一致，调用方无需区分。
+     */
+    CheckExecutable(exePath: string): Promise<ViperCheckResult> {
+        if (this.CanUseCheckChannel()) {
+            return this.CheckViaVet(exePath);
+        }
+
+        this.AppendLog(
+            `[vscode] VET check 通道不可用（${DescribeStateForMessage(this.state)}），改用本地检查: ${exePath}`
+        );
+        return LocalCheckExecutable(exePath, (line) => this.AppendLog(line));
+    }
+
+    /**
+     * check 通道是否可用：需要 VET 处于 **running**（启动中/重启中的请求要等它扫完一轮
+     * 才可能进确认窗口，等不到回执就会白等超时）、开了心跳（看门狗是请求的转发方）、
+     * 且 stdin 仍可写。其余情形一律走本地模拟，保证选编译器随时可用。
+     */
+    private CanUseCheckChannel(): boolean {
+        const config = this.ReadConfig();
+        return this.state === 'running' && config.confirmSeconds > 0 && !!this.process && this.process.stdin.writable;
+    }
+
+    /**
+     * 通过 VET 的 check 通道检查一个 exe。
      *
      * 通道形态：请求从 **stdin** 写入一行 `{"check": "<绝对路径>", "id": <整数>}`，
      * 由看门狗（confirm-watch）识别后经匿名管道转发给 scan；回执是 **stdout** 的一行 JSON，
@@ -144,7 +173,7 @@ export class EnvironmentTool implements Disposable {
      *
      * 通过后 VET 会把该项入库并写入缓存文件，下一轮（≤ scanIntervalMs）快照里就会出现它。
      */
-    CheckExecutable(exePath: string): Promise<ViperCheckResult> {
+    private CheckViaVet(exePath: string): Promise<ViperCheckResult> {
         const config = this.ReadConfig();
         if (config.confirmSeconds <= 0) {
             return Promise.reject(

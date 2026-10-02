@@ -302,7 +302,10 @@ class FlowChartBuilder {
         }
     }
 
-    /** 是否为终止语句（return / raise / break / continue）。它们位于 StatementList 内部。 */
+    /**
+     * 是否为终止语句（return / raise / break / continue / fallthrough）。
+     * 它们位于 StatementList 内部。
+     */
     private _isTerminatorStatement(statement: StatementNode): boolean {
         if (statement.nodeType !== ParseNodeType.StatementList) {
             return false;
@@ -316,7 +319,9 @@ class FlowChartBuilder {
             nodeType === ParseNodeType.Return ||
             nodeType === ParseNodeType.Raise ||
             nodeType === ParseNodeType.Break ||
-            nodeType === ParseNodeType.Continue
+            nodeType === ParseNodeType.Continue ||
+            // Viper 扩展：match-case 内的 `fallthrough`（case 穿透）同样终止当前分支。
+            nodeType === ParseNodeType.Fallthrough
         );
     }
 

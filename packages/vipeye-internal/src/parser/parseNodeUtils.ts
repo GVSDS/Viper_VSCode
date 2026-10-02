@@ -37,6 +37,7 @@ export const ParseNodeTypeMap: ParseNodeTypeMapType = {
     DictionaryExpandEntry: ParseNodeType.DictionaryExpandEntry,
     DictionaryKeyEntry: ParseNodeType.DictionaryKeyEntry,
     Ellipsis: ParseNodeType.Ellipsis,
+    Fallthrough: ParseNodeType.Fallthrough,
     If: ParseNodeType.If,
     Import: ParseNodeType.Import,
     ImportAs: ParseNodeType.ImportAs,

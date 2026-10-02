@@ -205,6 +205,7 @@ namespace Keywords {
         'const',
         'volatile',
         'typedef',
+        'fallthrough',
         'inline',
         'export',
         'extern',

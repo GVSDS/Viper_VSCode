@@ -49,6 +49,7 @@ export const enum ParseNodeType {
 
     DictionaryKeyEntry, // 20
     Ellipsis,
+    Fallthrough,
     If,
     Import,
     ImportAs,
@@ -2395,6 +2396,30 @@ export namespace ContinueNode {
     }
 }
 
+/**
+ * Viper 扩展：`fallthrough` 语句（case 穿透）。
+ * 与 `break` 同属「终止当前 match 分支」的控制流语句，区别是去向为**下一个 case 体**
+ * 而不是 match 之后。是软关键字：仅在 match-case 体内、且独占一条简单语句时才是本节点，
+ * 其它位置仍是普通标识符（见 parser._isAtViperFallthroughStatement）。
+ */
+export interface FallthroughNode extends ParseNodeBase<ParseNodeType.Fallthrough> {}
+
+export namespace FallthroughNode {
+    export function create(range: TextRange) {
+        const node: FallthroughNode = {
+            start: range.start,
+            length: range.length,
+            nodeType: ParseNodeType.Fallthrough,
+            id: _nextNodeId++,
+            parent: undefined,
+            a: undefined,
+            d: {},
+        };
+
+        return node;
+    }
+}
+
 export interface ReturnNode extends ParseNodeBase<ParseNodeType.Return> {
     d: {
         expr?: ExpressionNode | undefined;
@@ -2873,6 +2898,7 @@ export type ParseNode =
     | DictionaryExpandEntryNode
     | DictionaryKeyEntryNode
     | EllipsisNode
+    | FallthroughNode
     | IfNode
     | ImportNode
     | ImportAsNode

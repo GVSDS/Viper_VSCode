@@ -68,6 +68,7 @@ import {
     ErrorNode,
     ExceptNode,
     ExpressionNode,
+    FallthroughNode,
     ForNode,
     FormatStringNode,
     FunctionAnnotationNode,
@@ -244,6 +245,10 @@ export class Parser {
     private _parseOptions: ParseOptions = new ParseOptions();
     private _diagSink: DiagnosticSink = new DiagnosticSink();
     private _isInLoop = false;
+    // Viper 扩展：正在解析 match 的某个 case 体。与 _isInLoop 一样是"可 break 作用域"
+    // 的一种：match 内的裸 break 表示结束整个 match（对齐编译器语义），故不再报
+    // breakOutsideLoop；fallthrough 也仅在此作用域内才是软关键字语句。
+    private _isInMatchCase = false;
     private _isInFunction = false;
     private _isInExceptionGroup = false;
     private _isParsingTypeAnnotation = false;
@@ -988,7 +993,13 @@ export class Parser {
             guardExpression = this._parseTestExpression(/* allowAssignmentExpression */ true);
         }
 
+        // Viper 扩展：case 体是「可 break 作用域」——裸 break 结束整个 match，
+        // fallthrough 收窄为软关键字语句；离开 case 体后恢复（与循环的 _isInLoop 同法）。
+        const wasInMatchCase = this._isInMatchCase;
+        this._isInMatchCase = true;
         const suite = this._parseSuite(this._isInFunction);
+        this._isInMatchCase = wasInMatchCase;
+
         return CaseNode.create(caseToken, casePattern, this._isPatternIrrefutable(casePattern), guardExpression, suite);
     }
 
@@ -2933,7 +2944,9 @@ export class Parser {
     private _parseBreakStatement(): BreakNode {
         const breakToken = this._getKeywordToken(KeywordType.Break);
 
-        if (!this._isInLoop) {
+        // Viper 扩展：match-case 内的裸 break 表示结束整个 match（对齐编译器语义），
+        // 与循环内的 break 一样属于合法「可跳出作用域」，不再报 breakOutsideLoop。
+        if (!this._isInLoop && !this._isInMatchCase) {
             this._addSyntaxError(LocMessage.breakOutsideLoop(), breakToken);
         } else if (this._isInExceptionGroup) {
             this._addSyntaxError(LocMessage.breakInExceptionGroup(), breakToken);
@@ -3460,6 +3473,11 @@ export class Parser {
             return this._parseViperTypedefStatement();
         }
 
+        // Viper 扩展：match-case 内的裸 `fallthrough`（case 穿透）软关键字语句。
+        if (this._isAtViperFallthroughStatement()) {
+            return this._parseViperFallthroughStatement();
+        }
+
         switch (this._peekKeywordType()) {
             case KeywordType.Pass:
                 return this._parsePassStatement();
@@ -3609,6 +3627,32 @@ export class Parser {
 
         const leftExpr = TypeAnnotationNode.create(nameNode, annotationNode);
         return AssignmentNode.create(leftExpr, rightExpr);
+    }
+
+    // Viper 扩展：判定语句起始处是否为 match-case 体内的裸 `fallthrough`。
+    // `fallthrough` 是软关键字，三个条件同时满足才算语句：
+    //   ① 方言为 viper；② 正处于某个 case 体内（_isInMatchCase）；
+    //   ③ 冒号后独占一条简单语句 —— 后跟行尾 / `;` / 文件尾。
+    // 不满足时保持普通标识符解析（`fallthrough = 1` 是赋值、`fallthrough()` 是调用、
+    // `x.fallthrough` 是成员访问；case 外的裸 `fallthrough` 仍按未定义名报错）。
+    private _isAtViperFallthroughStatement(): boolean {
+        if (this._parseOptions.dialect !== 'viper' || !this._isInMatchCase) {
+            return false;
+        }
+        const keywordToken = this._peekToken();
+        if (keywordToken.type !== TokenType.Identifier || (keywordToken as IdentifierToken).value !== 'fallthrough') {
+            return false;
+        }
+        const nextType = this._peekToken(1).type;
+        return nextType === TokenType.NewLine || nextType === TokenType.Semicolon || nextType === TokenType.EndOfStream;
+    }
+
+    // Viper 扩展：`fallthrough` 语句（case 穿透）。节点只承载位置，
+    // 「穿透到下一个 case」的语义由编译器（TransPyC/TransPyV）承担。
+    private _parseViperFallthroughStatement(): FallthroughNode {
+        const fallthroughToken = this._getNextToken();
+        assert(fallthroughToken.type === TokenType.Identifier);
+        return FallthroughNode.create(fallthroughToken);
     }
 
     private _makeExpressionOrTuple(

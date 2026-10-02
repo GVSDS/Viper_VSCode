@@ -33,6 +33,7 @@ import {
     EllipsisNode,
     ErrorNode,
     ExceptNode,
+    FallthroughNode,
     ForNode,
     FormatStringNode,
     FunctionAnnotationNode,
@@ -184,6 +185,9 @@ export function getChildNodes(node: ParseNode): (ParseNode | undefined)[] {
 
         case ParseNodeType.Except:
             return [node.d.typeExpr, node.d.name, node.d.exceptSuite];
+
+        case ParseNodeType.Fallthrough:
+            return [];
 
         case ParseNodeType.For:
             return [node.d.targetExpr, node.d.iterableExpr, node.d.forSuite, node.d.elseSuite];
@@ -440,6 +444,9 @@ export class ParseTreeVisitor<T> {
 
             case ParseNodeType.Except:
                 return this.visitExcept(node);
+
+            case ParseNodeType.Fallthrough:
+                return this.visitFallthrough(node);
 
             case ParseNodeType.For:
                 return this.visitFor(node);
@@ -708,6 +715,11 @@ export class ParseTreeVisitor<T> {
     }
 
     visitExcept(node: ExceptNode) {
+        return this._default;
+    }
+
+    // Viper 扩展：match-case 内的裸 `fallthrough` 语句（case 穿透）。
+    visitFallthrough(node: FallthroughNode) {
         return this._default;
     }
 

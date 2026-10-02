@@ -169,6 +169,8 @@ packages/vipeye-internal/src/tests/__viper_renum_pointer__/
 packages/vipeye-internal/src/tests/__viper_renum_pointer_matrix__/
 packages/vipeye-internal/src/tests/__viper_generic_bound__/
 packages/vipeye-internal/src/tests/__viper_generic_bound_none__/
+packages/vipeye-internal/src/tests/__viper_match_break_fallthrough__/
+packages/vipeye-internal/src/tests/__viper_match_break_fallthrough_neg__/
 
 # perfCompare.py cached commit bundles
 /build/perfCompare/

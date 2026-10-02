@@ -44,6 +44,7 @@ import {
     DelNode,
     ExceptNode,
     ExpressionNode,
+    FallthroughNode,
     ForNode,
     FunctionNode,
     GlobalNode,
@@ -1445,6 +1446,17 @@ export class Binder extends ParseTreeWalker {
         this._currentFlowNode = Binder._unreachableStructuralFlowNode;
 
         // Break nodes don't have any children.
+        return false;
+    }
+
+    override visitFallthrough(node: FallthroughNode): boolean {
+        // Viper 扩展：`fallthrough` 结束当前 case 体（控制流交给下一个 case），
+        // 故本条之后同 case 体内的语句不可达。去向不是「match 之后」，
+        // 故不像 break 那样挂到 _currentBreakTarget；下一个 case 的入口不建模
+        // （visitMatch 的 postMatchLabel 依赖「未终止的 case 体」收口）。
+        this._currentFlowNode = Binder._unreachableStructuralFlowNode;
+
+        // Fallthrough nodes don't have any children.
         return false;
     }
 

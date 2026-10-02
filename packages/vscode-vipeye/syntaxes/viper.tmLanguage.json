@@ -31,7 +31,7 @@
             "patterns": [
                 {
                     "name": "keyword.control.flow.viper",
-                    "match": "\\b(if|elif|else|while|for|in|return|break|continue|pass|raise|try|except|finally|with|as|import|from|yield|async|await|del|assert|lambda|match|case|define)\\b"
+                    "match": "\\b(if|elif|else|while|for|in|return|break|continue|fallthrough|pass|raise|try|except|finally|with|as|import|from|yield|async|await|del|assert|lambda|match|case|define)\\b"
                 },
                 {
                     "name": "storage.type.function.viper",
